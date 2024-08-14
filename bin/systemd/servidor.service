@@ -1,0 +1,12 @@
+[Unit]
+Description=Puto robot servidor
+After=syslog.target network.target alsa-utils.target
+
+[Service]
+ExecStart=/home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/server-movida.py
+
+Restart=always
+RestartSec=120
+
+[Install]
+WantedBy=multi-user.target

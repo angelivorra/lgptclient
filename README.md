@@ -9,8 +9,18 @@
 ```
 
 
-## Comando para arrancar servicio
+## Comando para arrancar servicio cliente
 ```
-sudo /home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/cliente.py 
+sudo /home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/cliente-bluetooth.py 
 ```
+
+## Comando para arrancar servidor
+```
+sudo /home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/server-movida.py 
+```
+
+
+# Bluetooth
+
+Como pairear terminales.
 
