@@ -19,7 +19,6 @@ git clone git@gitlab.com:angel.ivorra/lgptclient.git /home/angel/lgptclient
 ```shell
  python3 -m venv /home/angel/lgptclient/venv
  source /home/angel/lgptclient/venv/bin/activate
- 
 ```
 
 

@@ -1,0 +1,23 @@
+<CONFIG>
+        <ROOTFOLDER value="/home/angel/lgptclient/lgpt/songs/"/>
+        <SAMPLELIB value="/home/angel/lgptclient/lgpt/samplelib"/>
+
+        <AUDIOAPI value='Linux ALSA'/>
+        <AUDIODEVICE value="hw:IQaudIODAC"/>
+        <AUDIOBUFFERSIZE value='512'/>
+        <AUDIOPREBUFFERCOUNT value='3'/>
+	
+        <!--
+        <BACKGROUND value="000000" /> 
+        <FOREGROUND value="FFFFFF" /> 
+        <HICOLOR1 value="F41B38" /> 
+        <HICOLOR2 value="FF0000" /> 
+        <SONGVIEW_FE value="A55B8F" /> 
+        <SONGVIEW_00 value="853B6F" /> 
+        <CURSORCOLOR value = "FF00DD"/> 
+        <ROWCOLOR1 value = "BA28F9"/> 
+        <ROWCOLOR2 value = "FF00FF"/>
+        <ALTROWNUMBER value = "4"/>
+        -->	
+
+</CONFIG>
