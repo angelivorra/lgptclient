@@ -4,26 +4,29 @@ import RPi.GPIO as GPIO
 import time
 import logging
 import signal
+import json
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s %(levelname)s:%(message)s',
+    format='%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s',
+    level=logging.INFO,
+    datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-BOMBO = 17
-CAJA1 = 27
-CAJA2 = 22
-TIEMPO = 0.05
+with open('cliente.json') as f:
+    config = json.load(f)
+
+# Extract instruments and TIEMPO from the configuration
+instruments = config["instruments"]
+TIEMPO = config["tiempo"]
 
 # Set up GPIO
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(BOMBO, GPIO.OUT)
-GPIO.setup(CAJA2, GPIO.OUT)
-GPIO.setup(CAJA1, GPIO.OUT)
-GPIO.output(CAJA1, GPIO.LOW)
-GPIO.output(CAJA2, GPIO.LOW)
-GPIO.output(BOMBO, GPIO.LOW)
+
+# Set up each pin from the JSON configuration
+for pin in instruments.values():
+    GPIO.setup(pin, GPIO.OUT)
+    GPIO.output(pin, GPIO.LOW)
 
 async def activate_instrumento(ins):
     GPIO.output(ins, GPIO.HIGH)
@@ -38,13 +41,9 @@ async def handle_event(reader):
                 logger.info("Connection closed by the server")
                 break
             note = data.decode('utf-8').strip()
-            print(f"Received note - {note}")
-            if note == "60":
-                asyncio.ensure_future(activate_instrumento(BOMBO))
-            elif note == "61":
-                asyncio.ensure_future(activate_instrumento(CAJA1))
-            elif note == "62":
-                asyncio.ensure_future(activate_instrumento(CAJA2))
+            #logger.info(f"Received note - {note}")
+            if note in instruments:
+                asyncio.ensure_future(activate_instrumento(instruments[note]))
         except Exception as e:
             logger.error(f"Error handling event: {e}")
             break
@@ -71,7 +70,7 @@ def cleanup():
     GPIO.cleanup()
 
 if __name__ == '__main__':
-    server_addr = '192.168.100.1'
+    server_addr = '10.42.0.1'
     server_port = 8888  # Replace with the correct port
 
     try:

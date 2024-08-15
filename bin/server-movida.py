@@ -57,6 +57,7 @@ async def bluetooth_server():
 
 async def send_event_to_client(client_sock, event):
     try:
+        logger.info(str(event))
         client_sock.send(str(event).encode('utf-8'))
     except Exception as e:
         logger.error(f"Failed to send event to client: {e}")

@@ -8,7 +8,10 @@ MIDI_PORT = "inout"
 
 # Configure logging
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(
+    format='%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s',
+    level=logging.INFO,
+    datefmt='%Y-%m-%d %H:%M:%S')
 
 # TCP Server settings
 TCP_PORT = 8888  # Define the port to listen on
@@ -55,9 +58,9 @@ async def send_event_to_client(writer, event):
     return None
 
 async def broadcast_event(event):
+    logger.info(str(event))
     tasks = [send_event_to_client(writer, event) for reader, writer in clients]
-    results = await asyncio.gather(*tasks)
-
+    results = await asyncio.gather(*tasks)    
     # Remove clients that failed to receive the message
     for result in results:
         if result is not None:

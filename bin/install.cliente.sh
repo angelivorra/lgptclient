@@ -39,5 +39,12 @@ wget https://files.waveshare.com/upload/1/18/Waveshare_fbcp.zip
 unzip Waveshare_fbcp.zip
 cd Waveshare_fbcp/
 sudo chmod +x ./shell/*
+rm -r build/
+mkdir build
+cd build
+sudo cmake -DSPI_BUS_CLOCK_DIVISOR=20 -DWAVESHARE_1INCH69_LCD=ON -DBACKLIGHT_CONTROL=ON -DSTATISTICS=0 ..
+sudo make -j
+sudo cp /home/angel/Waveshare_fbcp/build/fbcp /usr/local/bin/fbcp
 
-sudo reboot
+#sudo nano /etc/rc.local
+#sudo reboot
