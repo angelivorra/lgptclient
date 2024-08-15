@@ -5,10 +5,7 @@
 ```shell
  python3 -m venv /home/angel/lgptclient/venv
  source /home/angel/lgptclient/venv/bin/activate
- 
-```
-
-
+ ```
 ## Comando para arrancar servicio cliente
 ```
 sudo /home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/cliente-bluetooth.py 
@@ -19,8 +16,8 @@ sudo /home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/cliente-
 sudo /home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/server-movida.py 
 ```
 
+## Comando para ver clientes conectados
 
-# Bluetooth
-
-Como pairear terminales.
-
+```
+arp -a
+```
