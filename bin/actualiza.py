@@ -46,6 +46,7 @@ class Sftp:
             # Download file from SFTP
             self.connection.put("/home/angel/lgptclient/bin/lcd.py", "/home/angel/lcd.py")
             self.connection.put("/home/angel/lgptclient/bin/cliente-tcp.py", "/home/angel/cliente-tcp.py")
+            self.connection.put("/home/angel/lgptclient/bin/cliente.maleta.json", "/home/angel/config.json")
             self.connection.put("/home/angel/lgptclient/requirements.txt", "/home/angel/requirements.txt")
             print("upload completed")
 

@@ -60,7 +60,7 @@ async def send_event_to_client(writer, event):
 async def broadcast_event(event):
     logger.info(str(event))
     tasks = [send_event_to_client(writer, event) for reader, writer in clients]
-    results = await asyncio.gather(*tasks)    
+    results = await asyncio.gather(*tasks)
     # Remove clients that failed to receive the message
     for result in results:
         if result is not None:

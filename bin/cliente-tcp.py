@@ -13,7 +13,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-with open('cliente.json') as f:
+with open('/home/angel/config.json') as f:
     config = json.load(f)
 
 # Extract instruments and TIEMPO from the configuration

@@ -40,7 +40,7 @@ WantedBy=multi-user.target
 ## Poner esto en /etc/rc.local
 ```
 nmcli dev wifi hotspot ifname wlan0 ssid test password "test1234"
-sudo /home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/lgpt.py & 
+sudo /home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/run-lgpt.py &
 ```
 
 # Inslacion cliente
@@ -88,4 +88,3 @@ sudo /home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/server-m
 ```
 arp -a
 ```
-
