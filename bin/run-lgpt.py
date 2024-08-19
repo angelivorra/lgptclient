@@ -26,7 +26,7 @@ def main():
 
 def restart_alsa():
   print('Restart Servidor...')
-  #run(["sudo", "systemctl", "restart", "servidor"])
+  run(["sudo", "systemctl", "restart", "servidor"])
 
 if __name__ == "__main__":
   main()

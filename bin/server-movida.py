@@ -1,91 +1,103 @@
 import asyncio
 import pickle
+import csv
+import os
 from alsa_midi import AsyncSequencerClient, WRITE_PORT, NoteOnEvent
 import logging
-import bluetooth
-import subprocess
+from datetime import datetime
 
+# Constants
 MIDI_CLIENT_NAME = 'movida'
 MIDI_PORT = "inout"
+TCP_PORT = 8888  # Define the port to listen on
+TCP_BACKLOG = 5  # Number of unaccepted connections
+CSV_FILENAME = '/home/angel/midi_notes_log.csv'
 
-# Configure logging
+# Logging configuration
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
-# Add console logging
+logging.basicConfig(
+    format='%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s',
+    level=logging.INFO,
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
-# Bluetooth settings
-BT_PORT = 3  # Arbitrary non-privileged port
-BT_BACKLOG = 1
+clients = []  # Connected TCP clients
 
-def get_bluetooth_mac():
+def initialize_csv(filename):
+    """Initialize CSV file with headers if it doesn't exist."""
+    if os.path.exists(filename):
+        os.path.remove(filename)
+    with open(filename, mode='w', newline='') as file:
+        writer = csv.writer(file)        
+
+async def handle_client(reader, writer):
+    """Handle TCP client connections."""
+    addr = writer.get_extra_info('peername')
+    logger.info(f"Connected to {addr}")
+    clients.append((reader, writer))
+
     try:
-        result = subprocess.run(['hcitool', 'dev'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        output = result.stdout.decode('utf-8')
-        lines = output.split('\n')
-        for line in lines:
-            if '\t' in line:
-                parts = line.split('\t')
-                if len(parts) > 2:
-                    return parts[2].strip()
-    except Exception as e:
-        logger.error(f"Failed to get Bluetooth MAC address: {e}")
-    return None
-
-async def bluetooth_server():
-    server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
-    server_sock.bind(("", BT_PORT))
-    server_sock.listen(BT_BACKLOG)
-    
-    local_mac = get_bluetooth_mac()
-    if local_mac:
-        logger.info(f"Bluetooth server started and listening on {local_mac}")
-    else:
-        logger.warning("Failed to get the Bluetooth MAC address")
-
-    clients = []
-
-    def accept_clients():
         while True:
-            client_sock, address = server_sock.accept()
-            logger.info(f"Accepted connection from {address}")
-            clients.append(client_sock)
-
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, accept_clients)
-
-    return clients
-
-async def send_event_to_client(client_sock, event):
-    try:
-        logger.info(str(event))
-        client_sock.send(str(event).encode('utf-8'))
+            data = await reader.read(100)
+            if not data:
+                break
+            
+            # Client sends back a confirmation with the timestamp when it received the event
+            received_timestamp = datetime.utcnow().timestamp()
+            original_timestamp = float(data.decode('utf-8'))
+            delay = received_timestamp - original_timestamp
+            logger.info(f"Round-trip delay to {addr}: {delay:.6f} seconds")
+            
     except Exception as e:
-        logger.error(f"Failed to send event to client: {e}")
-        return client_sock
-    return None
+        logger.error(f"Connection error with {addr}: {e}")
+    finally:
+        logger.info(f"Closing connection to {addr}")
+        clients.remove((reader, writer))
+        writer.close()
+        await writer.wait_closed()
 
-async def broadcast_event(clients, event):
-    tasks = [send_event_to_client(client_sock, event) for client_sock in clients]
-    results = await asyncio.gather(*tasks)
+async def tcp_server():
+    """Start TCP server to accept incoming connections."""
+    server = await asyncio.start_server(handle_client, host='0.0.0.0', port=TCP_PORT, backlog=TCP_BACKLOG)
+    addr = server.sockets[0].getsockname()
+    logger.info(f"Serving on {addr}")
 
-    # Remove clients that failed to receive the message
-    for result in results:
-        if result is not None:
-            clients.remove(result)
+    async with server:
+        await server.serve_forever()
+
+async def broadcast_event(event):
+    """Broadcast a MIDI event to all connected TCP clients."""
+    message = f"{event.note},{timestamp}"
+    tasks = [writer.write(message.encode('utf-8')) for _, writer in clients]
+    await asyncio.gather(*tasks)
+    for writer in clients:
+        await writer.drain()  # Ensure data is sent immediately
+
+async def log_event_to_csv(note):
+    """Log the note and timestamp to a CSV file."""
+    timestamp_ms = int(datetime.now().timestamp() * 1000)
+    with open(CSV_FILENAME, mode='a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([timestamp_ms, note])
 
 async def main():
-    clients = await bluetooth_server()
-
-    client = AsyncSequencerClient(MIDI_CLIENT_NAME)
-    port = client.create_port(MIDI_PORT, WRITE_PORT) 
+    # Initialize CSV logging
+    initialize_csv(CSV_FILENAME)
     
+    # Start TCP server
+    asyncio.create_task(tcp_server())
+
+    # Initialize MIDI client and port
+    client = AsyncSequencerClient(MIDI_CLIENT_NAME)
+    port = client.create_port(MIDI_PORT, WRITE_PORT)
     logger.info("MIDI client and port created")
 
+    # Listen for MIDI events
     while True:
         event = await client.event_input()
         if isinstance(event, NoteOnEvent):
             logger.debug(f"Received NoteOnEvent: {event.note}")
-            await broadcast_event(clients, event.note)
+            await broadcast_event(event)
 
 if __name__ == '__main__':
     asyncio.run(main())
