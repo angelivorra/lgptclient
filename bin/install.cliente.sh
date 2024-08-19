@@ -9,7 +9,7 @@
 
 sudo apt update
 sudo apt upgrade -y
-sudo apt install -y python3-setuptools mc unzip python3-pip python3-pil python3-numpy cmake  libraspberrypi-dev raspberrypi-kernel-headers
+sudo apt install -y python3-setuptools mc unzip python3-pip python3-pil libopenblas-dev python3-numpy cmake  libraspberrypi-dev raspberrypi-kernel-headers
 
 cd
 wget http://www.airspayce.com/mikem/bcm2835/bcm2835-1.71.tar.gz

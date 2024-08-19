@@ -19,6 +19,7 @@ git clone git@gitlab.com:angel.ivorra/lgptclient.git /home/angel/lgptclient
 ```shell
  python3 -m venv /home/angel/lgptclient/venv
  source /home/angel/lgptclient/venv/bin/activate
+ pip3 install -r /home/angel/lgptclient/requirements
 ```
 
 ## Instalamos servidor /etc/system.d/system/servidor.service
@@ -43,6 +44,19 @@ nmcli dev wifi hotspot ifname wlan0 ssid test password "test1234"
 sudo /home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/run-lgpt.py &
 ```
 
+## Comandos
+
+```shell
+#Vemos logs
+/home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/server-logs.py
+
+## Actualizar clientes
+/home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/actualiza.py 10.42.0.73
+
+```
+
+
+
 # Inslacion cliente
 
 ## Actiamos spi 
@@ -61,7 +75,11 @@ descomentar dtparam=i2c_arm=on
 
 ## Instalamos 
 ```
-asd
+python -m pip cache purge
+rm -r /home/angel/venv
+python3 -m venv /home/angel/venv
+/home/angel/venv/bin/pip3 install --upgrade pip
+/home/angel/venv/bin/pip3 install -r /home/angel/requirements.txt -vv
 ```
 
 ## Tocamos rc.local
@@ -74,14 +92,16 @@ hdmi_mode=87
 display_rotate=3
 ```
 
+
+
 ## Comando para arrancar servicio cliente
 ```
-sudo /home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/cliente-bluetooth.py 
+sudo /home/angel/venv/bin/python3 /home/angel/lgptclient/bin/cliente-tcp.py
 ```
 
 ## Comando para arrancar servidor
 ```
-sudo /home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/server-movida.py 
+sudo /home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/server-tcp.py 
 ```
 
 ## Comando para ver clientes conectados

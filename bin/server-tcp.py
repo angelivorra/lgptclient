@@ -11,7 +11,7 @@ MIDI_CLIENT_NAME = 'movida'
 MIDI_PORT = "inout"
 TCP_PORT = 8888  # Define the port to listen on
 TCP_BACKLOG = 5  # Number of unaccepted connections that the system will allow before refusing new connections
-CSV_FILENAME = 'midi_notes_log.csv'
+CSV_FILENAME = '/home/angel/midi_notes_log.csv'
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -24,10 +24,11 @@ clients = []  # Connected TCP clients
 
 def initialize_csv(filename):
     """Initialize CSV file with headers if it doesn't exist."""
-    if not os.path.exists(filename):
-        with open(filename, mode='w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(['Timestamp (ms)', 'Note'])
+    if os.path.exists(filename):
+        os.unlink(filename)
+    with open(filename, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['tiempo', 'nota'])
 
 async def handle_client(reader, writer):
     """Handle TCP client connections."""
@@ -71,8 +72,8 @@ async def send_event_to_client(writer, event):
 
 async def broadcast_event(event):
     """Broadcast a MIDI event to all connected TCP clients."""
-    logger.info(str(event))
-    tasks = [send_event_to_client(writer, event) for reader, writer in clients]
+    #logger.info(str(event))
+    tasks = [send_event_to_client(writer, event.note) for reader, writer in clients]
     results = await asyncio.gather(*tasks)
     # Remove clients that failed to receive the message
     for result in results:
