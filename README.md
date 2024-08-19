@@ -51,7 +51,7 @@ sudo /home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/run-lgpt
 /home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/server-logs.py
 
 ## Actualizar clientes
-/home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/actualiza.py 10.42.0.73
+/home/angel/lgptclient/venv/bin/python3 /home/angel/lgptclient/bin/actualiza.py 10.42.0.73 --pip True
 
 ```
 

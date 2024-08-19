@@ -7,6 +7,7 @@ import paramiko
 
 parser = argparse.ArgumentParser(prog='Actualiza')
 parser.add_argument('ip')
+parser.add_argument('--pip', default=False)
 args = parser.parse_args()
 
 class Sftp:
@@ -46,7 +47,7 @@ class Sftp:
 
             # Download file from SFTP
             self.connection.put("/home/angel/lgptclient/bin/lcd.py", "/home/angel/lcd.py")
-            self.connection.put("/home/angel/lgptclient/bin/cliente-tcp.py", "/home/angel/cliente-tcp.py")
+            self.connection.put("/home/angel/lgptclient/bin/cliente-copilot.py", "/home/angel/cliente-tcp.py")
             self.connection.put("/home/angel/lgptclient/bin/server-logs.py", "/home/angel/logs.py")
             self.connection.put("/home/angel/lgptclient/bin/cliente.maleta.json", "/home/angel/config.json")
             self.connection.put("/home/angel/lgptclient/requirements.txt", "/home/angel/requirements.txt")
@@ -75,12 +76,13 @@ if __name__ == "__main__":
     sftp.connect()
     sftp.upload()
     sftp.disconnect()
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(args.ip)
-    ejecuta(ssh, 'python -m pip cache purge')
-    ejecuta(ssh, 'rm -r /home/angel/venv')
-    ejecuta(ssh, 'python3 -m venv /home/angel/venv')
-    ejecuta(ssh, '/home/angel/venv/bin/pip3 install --upgrade pip')
-    ejecuta(ssh, '/home/angel/venv/bin/pip3 install -r /home/angel/requirements.txt')
-    ssh.close()
+    if args.pip:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(args.ip)
+        ejecuta(ssh, 'python -m pip cache purge')
+        ejecuta(ssh, 'rm -r /home/angel/venv')
+        ejecuta(ssh, 'python3 -m venv /home/angel/venv')
+        ejecuta(ssh, '/home/angel/venv/bin/pip3 install --upgrade pip')
+        ejecuta(ssh, '/home/angel/venv/bin/pip3 install -r /home/angel/requirements.txt')
+        ssh.close()

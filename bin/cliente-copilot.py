@@ -1,10 +1,13 @@
 import asyncio
 import pickle
+import signal
 import RPi.GPIO as GPIO
 import time
 import logging
-import signal
+import os
 import json
+import csv
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -12,6 +15,8 @@ logging.basicConfig(
     level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S'
 )
+
+CSV_FILENAME = '/home/angel/midi_notes_log.csv'
 
 with open('/home/angel/config.json') as f:
     config = json.load(f)
@@ -28,6 +33,14 @@ for pin in instruments.values():
     GPIO.setup(pin, GPIO.OUT)
     GPIO.output(pin, GPIO.LOW)
 
+
+def initialize_csv(filename):
+    """Initialize CSV file with headers if it doesn't exist."""
+    if os.path.exists(filename):
+        os.unlink(filename)
+    with open(filename, mode='w', newline='') as file:
+        writer = csv.writer(file)
+
 async def activate_instrumento(ins):
     GPIO.output(ins, GPIO.HIGH)
     await asyncio.sleep(TIEMPO)
@@ -40,8 +53,18 @@ async def handle_event(reader):
             if not data:
                 logger.info("Connection closed by the server")
                 break
-            note = data.decode('utf-8').strip()
-            #logger.info(f"Received note - {note}")
+            logger.info(data.strip())
+            sent_timestamp, note  = data.decode('utf-8').strip().split(',')
+            sent_timestamp = int(sent_timestamp)
+            current_timestamp = int(datetime.now().timestamp() * 1000)
+            
+            # Log the received note and timestamps
+                        
+            # Save to CSV
+            with open(CSV_FILENAME, mode='a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow([sent_timestamp, note, current_timestamp])
+            
             if note in instruments:
                 asyncio.ensure_future(activate_instrumento(instruments[note]))
         except Exception as e:
@@ -60,10 +83,7 @@ async def tcp_client(addr, port):
             await asyncio.sleep(5)
         except Exception as e:
             logger.info(f"An unexpected error occurred: {e}. Retrying in 5 seconds...")
-            await asyncio.sleep(5)
-        finally:
-            writer.close()
-            await writer.wait_closed()
+            await asyncio.sleep(5)        
 
 def cleanup():
     logger.info('Cleaning up GPIO')
