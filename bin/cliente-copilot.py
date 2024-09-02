@@ -106,6 +106,7 @@ def cleanup():
 if __name__ == '__main__':
     server_addr = '10.42.0.1'
     server_port = 8888  # Replace with the correct port
+    initialize_csv(CSV_FILENAME)
 
     try:
         signal.signal(signal.SIGTERM, lambda signum, frame: cleanup())

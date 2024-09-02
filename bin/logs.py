@@ -98,6 +98,8 @@ def analize_data():
         "Max Time Difference (ms)": max_time_difference,
         "Average Time Difference (ms)": avg_time_difference,
     }
+    
+    return stats_summary
 
 
 
