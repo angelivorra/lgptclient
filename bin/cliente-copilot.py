@@ -1,5 +1,5 @@
 import asyncio
-import pickle
+import re
 import signal
 import RPi.GPIO as GPIO
 import time
@@ -40,6 +40,7 @@ def initialize_csv(filename):
         os.unlink(filename)
     with open(filename, mode='w', newline='') as file:
         writer = csv.writer(file)
+        writer.writerow(["timestamp_sent", "note", "timestamp_received"])
 
 async def activate_instrumento(ins):
     GPIO.output(ins, GPIO.HIGH)
@@ -49,11 +50,24 @@ async def activate_instrumento(ins):
 async def handle_event(reader):
     while True:
         try:
-            data = await reader.read(1024)
+            data = await reader.readline()
             if not data:
                 logger.info("Connection closed by the server")
                 break
-            logger.info(data.strip())
+            
+            data = data.strip()
+            
+            logger.info(data)
+            cleaned_data = re.sub(r'[^0-9,]', '', data.decode('utf-8'))
+            
+            # Validate the cleaned data
+            try:
+                sent_timestamp, note = cleaned_data.strip().split(',')
+                sent_timestamp = int(sent_timestamp)
+                current_timestamp = int(datetime.now().timestamp() * 1000)
+            except ValueError:
+                logger.error("Received malformed data, skipping row")
+                continue
             sent_timestamp, note  = data.decode('utf-8').strip().split(',')
             sent_timestamp = int(sent_timestamp)
             current_timestamp = int(datetime.now().timestamp() * 1000)
@@ -65,8 +79,8 @@ async def handle_event(reader):
                 writer = csv.writer(file)
                 writer.writerow([sent_timestamp, note, current_timestamp])
             
-            if note in instruments:
-                asyncio.ensure_future(activate_instrumento(instruments[note]))
+            #if note in instruments:
+            #    asyncio.ensure_future(activate_instrumento(instruments[note]))
         except Exception as e:
             logger.error(f"Error handling event: {e}")
             break

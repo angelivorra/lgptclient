@@ -2,6 +2,7 @@ import asyncio
 import pickle
 import csv
 import os
+import socket
 from alsa_midi import AsyncSequencerClient, WRITE_PORT, NoteOnEvent
 import logging
 from datetime import datetime
@@ -28,9 +29,13 @@ def initialize_csv(filename):
     if os.path.exists(filename):
         os.unlink(filename)
     with open(filename, mode='w', newline='') as file:
-        writer = csv.writer(file)        
+        writer = csv.writer(file)
+        writer.writerow(["timestamp_sent", "note"])
 
 async def handle_client(reader, writer):
+    sock = writer.get_extra_info('socket')
+    if sock:
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     clients.append(writer)
     try:
         while True:
@@ -75,7 +80,7 @@ async def main():
             event = await client.event_input()
             if isinstance(event, NoteOnEvent):
                 timestamp = int(datetime.now().timestamp() * 1000)
-                logger.debug(f"Received NoteOnEvent: {event.note} at {timestamp} ms")
+                logger.info(f"Received NoteOnEvent: {event.note} at {timestamp} ms")
                 await broadcast_event(event.note, timestamp)
                 await log_event_to_csv(event.note, timestamp)
 
