@@ -6,14 +6,15 @@ import os
 import paramiko
 
 parser = argparse.ArgumentParser(prog='Actualiza')
-parser.add_argument('ip')
+parser.add_argument('--debug' , default=False)
 parser.add_argument('--pip', default=False)
 args = parser.parse_args()
+IP_MALETA = "10.42.0.73"
 
-class Sftp:
-    def __init__(self, hostname):
+class SftpMaleta:
+    def __init__(self):
         self.connection = None
-        self.hostname = args.ip
+        self.hostname = IP_MALETA
         self.username = "angel"
         self.port = 22
 
@@ -50,7 +51,7 @@ class Sftp:
             self.connection.put("/home/angel/lgptclient/bin/cliente-copilot.py", "/home/angel/cliente-tcp.py")
             self.connection.put("/home/angel/lgptclient/bin/cliente.maleta.json", "/home/angel/config.json")
             self.connection.put("/home/angel/lgptclient/requirements.txt", "/home/angel/requirements.txt")
-            print("upload completed")
+            print("Maleta updated")
 
         except Exception as err:
             raise Exception(err)
@@ -69,19 +70,21 @@ def ejecuta(ssh, comando):
 
 if __name__ == "__main__":
     
-    sftp = Sftp(hostname=args.ip)
+    sftp = SftpMaleta()
 
     # Connect to SFTP
     sftp.connect()
     sftp.upload()
     sftp.disconnect()
-    if args.pip:
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(args.ip)
-        ejecuta(ssh, 'python -m pip cache purge')
-        ejecuta(ssh, 'rm -r /home/angel/venv')
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(IP_MALETA)
+    if args.pip:        
+        ejecuta(ssh, 'python -m pip cache purge')        
+        ejecuta(ssh, 'rm -r /home/angel/venv')        
         ejecuta(ssh, 'python3 -m venv /home/angel/venv')
         ejecuta(ssh, '/home/angel/venv/bin/pip3 install --upgrade pip')
-        ejecuta(ssh, '/home/angel/venv/bin/pip3 install -r /home/angel/requirements.txt')
-        ssh.close()
+        ejecuta(ssh, '/home/angel/venv/bin/pip3 install -r /home/angel/requirements.txt')                
+    ejecuta(ssh, 'rm /home/angel/midi_notes_log.csv')
+    ejecuta(ssh, 'sudo systemctl restart cliente')
+    ssh.close()

@@ -12,6 +12,8 @@ MIDI_CLIENT_NAME = 'movida'
 MIDI_PORT = "inout"
 TCP_PORT = 8888  # Define the port to listen on
 CSV_FILENAME = '/home/angel/midi_notes_log.csv'
+DEBUG_NOTES = False
+TMP_FILE = '/tmp/debug_notes.tmp'
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -63,7 +65,8 @@ async def broadcast_event(note, timestamp):
 
 async def main():
     # Initialize CSV logging
-    initialize_csv(CSV_FILENAME)    
+    if DEBUG_NOTES:
+        initialize_csv(CSV_FILENAME)    
     
     # Initialize MIDI client and port
     client = AsyncSequencerClient(MIDI_CLIENT_NAME)
@@ -80,9 +83,15 @@ async def main():
             event = await client.event_input()
             if isinstance(event, NoteOnEvent):
                 timestamp = int(datetime.now().timestamp() * 1000)
-                logger.info(f"Received NoteOnEvent: {event.note} at {timestamp} ms")
-                await broadcast_event(event.note, timestamp)
-                await log_event_to_csv(event.note, timestamp)
+                await broadcast_event(event.note, timestamp)           
+                if DEBUG_NOTES:                    
+                    logger.info(f"Received NoteOnEvent: {event.note} at {timestamp} ms")
+                    await log_event_to_csv(event.note, timestamp)
+                
 
 if __name__ == '__main__':
+    if os.path.exists(TMP_FILE):
+        DEBUG_NOTES = True
+        os.remove(TMP_FILE)
+        logger.info("Debug Mode Initiated")
     asyncio.run(main())

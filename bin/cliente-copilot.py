@@ -1,6 +1,7 @@
 import asyncio
 import re
 import signal
+import subprocess
 import RPi.GPIO as GPIO
 import time
 import logging
@@ -17,6 +18,9 @@ logging.basicConfig(
 )
 
 CSV_FILENAME = '/home/angel/midi_notes_log.csv'
+DEBUG_NOTES = False
+TMP_FILE = '/tmp/debug_notes.tmp'
+WIFI_FILE = '/home/angel/wifi.json'
 
 with open('/home/angel/config.json') as f:
     config = json.load(f)
@@ -25,15 +29,50 @@ with open('/home/angel/config.json') as f:
 instruments = config["instruments"]
 TIEMPO = config["tiempo"]
 
-# Set up GPIO
-GPIO.setmode(GPIO.BCM)
 
-# Set up each pin from the JSON configuration
-for pin in instruments.values():
-    GPIO.setup(pin, GPIO.OUT)
-    GPIO.output(pin, GPIO.LOW)
+#Inicializamos puertos GPIO
+def init_gpio():
+    # Set up GPIO
+    GPIO.setmode(GPIO.BCM)
 
+    # Set up each pin from the JSON configuration
+    for pin in instruments.values():
+        GPIO.setup(pin, GPIO.OUT)
+        GPIO.output(pin, GPIO.LOW)
 
+# Guardamos datos de la calidad del wifi
+def save_wifi_quality():
+    # Using the 'iw' command to get wlan0 information
+    try:
+        result = subprocess.run(['iw', 'dev', 'wlan0', 'link'], capture_output=True, text=True).stdout
+    except Exception as e:
+        print(f"Error executing 'iw': {e}")
+        return None
+
+    wifi_info = {
+        'name': None,
+        'signal_strength': None,
+        'tx_bitrate': None,
+        'rx_bitrate': None,
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+    
+    for line in result.splitlines():
+        if 'SSID' in line:
+            wifi_info['name'] = line.split('SSID')[-1].strip()
+        elif 'signal' in line:
+            wifi_info['signal_strength'] = line.split('signal')[-1].strip()
+        elif 'tx bitrate' in line:
+            wifi_info['tx_bitrate'] = line.split('tx bitrate')[-1].strip()
+        elif 'rx bitrate' in line:
+            wifi_info['rx_bitrate'] = line.split('rx bitrate')[-1].strip()
+    
+    if wifi_info:
+        with open(WIFI_FILE, 'w') as file:
+            json.dump(wifi_info, file, indent=4)
+    
+    return wifi_info
+    
 def initialize_csv(filename):
     """Initialize CSV file with headers if it doesn't exist."""
     if os.path.exists(filename):
@@ -72,15 +111,16 @@ async def handle_event(reader):
             sent_timestamp = int(sent_timestamp)
             current_timestamp = int(datetime.now().timestamp() * 1000)
             
-            # Log the received note and timestamps
-                        
-            # Save to CSV
-            with open(CSV_FILENAME, mode='a', newline='') as file:
-                writer = csv.writer(file)
-                writer.writerow([sent_timestamp, note, current_timestamp])
             
-            #if note in instruments:
-            #    asyncio.ensure_future(activate_instrumento(instruments[note]))
+            
+            if note in instruments:
+                asyncio.ensure_future(activate_instrumento(instruments[note]))
+            
+            # Log the received note and timestamps
+            if DEBUG_NOTES:
+                with open(CSV_FILENAME, mode='a', newline='') as file:
+                    writer = csv.writer(file)
+                    writer.writerow([sent_timestamp, note, current_timestamp])
         except Exception as e:
             logger.error(f"Error handling event: {e}")
             break
@@ -102,15 +142,47 @@ async def tcp_client(addr, port):
 def cleanup():
     logger.info('Cleaning up GPIO')
     GPIO.cleanup()
+    # Stop the asyncio event loop
+    asyncio.get_event_loop().stop()
+
+
+async def shutdown(loop, signal=None):
+    """Cleanup tasks tied to the service's shutdown."""
+    if signal:
+        logger.info(f"Received exit signal {signal.name}...")
+    
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    
+    [task.cancel() for task in tasks]
+    logger.info("Canceling outstanding tasks")
+    
+    await asyncio.gather(*tasks, return_exceptions=True)
+    logger.info("Tasks canceled, stopping loop")
+    
+    loop.stop()
+
+def setup_signal_handlers(loop):
+    """Setup signal handlers for SIGTERM and SIGINT."""
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda: asyncio.ensure_future(shutdown(loop, sig)))
 
 if __name__ == '__main__':
     server_addr = '10.42.0.1'
     server_port = 8888  # Replace with the correct port
-    initialize_csv(CSV_FILENAME)
-
+    
+    init_gpio()
+    
+    if os.path.exists(TMP_FILE):
+        DEBUG_NOTES = True
+        os.remove(TMP_FILE)
+        logger.info("Debug Mode Initiated")
+        initialize_csv(CSV_FILENAME)    
+        save_wifi_quality()
+    
     try:
-        signal.signal(signal.SIGTERM, lambda signum, frame: cleanup())
-        asyncio.run(tcp_client(server_addr, server_port))
+        loop = asyncio.get_event_loop()
+        setup_signal_handlers(loop)
+        loop.run_until_complete(tcp_client(server_addr, server_port))
     except KeyboardInterrupt:
         logger.error("Program interrupted")
     finally:
