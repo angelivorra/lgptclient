@@ -9,5 +9,5 @@ if __name__ == '__main__':
     run(["rm","-r","/home/angel/lgptclient/venv"])
     run(["python3", "-m", "venv", "/home/angel/lgptclient/venv"])
     run(["/home/angel/lgptclient/venv/bin/pip3", "install", "-r", "/home/angel/lgptclient/requirements.txt"])
-    run(["home/angel/lgptclient/venv/bin/ansible-playbook", "/home/angel/lgptclient/ansible/init-server.yaml"])
+    run(["/home/angel/lgptclient/venv/bin/ansible-playbook", "/home/angel/lgptclient/ansible/init-server.yaml"])
     
