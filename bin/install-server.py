@@ -6,6 +6,6 @@ if __name__ == '__main__':
     run(["sudo","apt","update"])
     run(["sudo","apt","upgrade","-y"])
     run(["git","pull","origin", "main"], cwd=r'/home/angel/lgptclient')
-    #run(["rm","-r","/home/angel/lgptclient/venv"])
-    #run(["python3", "-m", "venv", "/home/angel/lgptclient/venv"])
-    
+    run(["rm","-r","/home/angel/lgptclient/venv"])
+    run(["python3", "-m", "venv", "/home/angel/lgptclient/venv"])
+    run(["/home/angel/lgptclient/venv/bin/pip3", "install", "-r", "/home/angel/lgptclient/requirements"])

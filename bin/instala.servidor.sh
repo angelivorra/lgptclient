@@ -10,4 +10,3 @@ sudo apt-install git libsdl1.2-dev libssl1.1 libopenblas-dev dnsmasq -y
 git config --global user.name "Angel Ivorra"
 git config --global user.email "angel.ivorra@gmail.com"
 
-python 
