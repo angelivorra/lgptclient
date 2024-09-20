@@ -1,0 +1,5 @@
+---
+- name: Debug message
+  ansible.builtin.debug:
+    msg:
+    - "Prueba"
