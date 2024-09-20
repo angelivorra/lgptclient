@@ -1,12 +1,12 @@
 #10.42.0.73
 import argparse
+import time
 import pysftp
 from urllib.parse import urlparse
 import os
 import paramiko
 
 parser = argparse.ArgumentParser(prog='Actualiza')
-parser.add_argument('--debug' , default=False)
 parser.add_argument('--pip', default=False)
 args = parser.parse_args()
 IP_MALETA = "10.42.0.73"
@@ -63,9 +63,11 @@ def ejecuta(ssh, comando):
     exit_status = stdout.channel.recv_exit_status()
     if exit_status == 0:
         print("Hecho")
+        return stdout.readlines()
     else:
         print(f"Error {exit_status}")
-        print(f"Errores {stderr}")
+        print(f"Errores {stderr.readlines()}")
+        return False
     
 
 if __name__ == "__main__":
@@ -85,6 +87,13 @@ if __name__ == "__main__":
         ejecuta(ssh, 'python3 -m venv /home/angel/venv')
         ejecuta(ssh, '/home/angel/venv/bin/pip3 install --upgrade pip')
         ejecuta(ssh, '/home/angel/venv/bin/pip3 install -r /home/angel/requirements.txt')                
+        
     ejecuta(ssh, 'rm /home/angel/midi_notes_log.csv')
     ejecuta(ssh, 'sudo systemctl restart cliente')
+    time.sleep(2)
+    status = ejecuta(ssh, 'sudo systemctl status cliente')
+    output=''
+    for line in status:
+        output=output+line
+    print(output)
     ssh.close()
