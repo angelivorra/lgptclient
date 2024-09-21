@@ -1,5 +1,7 @@
 ---
+
 - name: Configure wifi private network
+  become: True
   community.general.nmcli:
     type: wifi
     conn_name: ANGELIA
@@ -7,12 +9,64 @@
     ssid: ANGEL_IA
     wifi_sec:
       psk: angelia2020
-      key-mgmt: wpa-eap
-      proto: wpa
+      key-mgmt: "wpa-psk"  # Changed from wpa-eap to wpa-psk
+      proto: 
+        - "wpa"         # Changed from wpa to rsn for WPA2
     wifi:
       mode: ap
       powersave: 2
     autoconnect: true
-    routes4: 192.168.3.0/24
+    ip4:
+      - "192.168.3.1"
+    routes4: 
+      - "192.168.3.0/24"
     method4: manual
     state: present
+
+- name: Restart network service  
+  become: True
+  ansible.builtin.service:
+    name: NetworkManager
+    state: restarted
+
+- name: net.ipv4.ip_forward
+  become: True
+  ansible.posix.sysctl:      
+    name: net.ipv4.ip_forward
+    value: '1'
+    sysctl_set: true
+
+- name: Ensure iptables-persistent is installed
+  become: True
+  apt:
+    name: iptables-persistent
+    state: present
+
+- name: Set up NAT for wlan0
+  become: True
+  iptables:
+    chain: POSTROUTING
+    table: nat
+    out_interface: eth0
+    jump: MASQUERADE
+
+# - name: Allow established connections from eth0 to wlan0
+#   become: True
+#   iptables:
+#     chain: FORWARD
+#     in_interface: eth0
+#     out_interface: wlan0
+#     state: RELATED,ESTABLISHED
+#     jump: ACCEPT
+
+- name: Allow all traffic from wlan0 to eth0
+  become: True
+  iptables:
+    chain: FORWARD
+    in_interface: wlan0
+    out_interface: eth0
+    jump: ACCEPT
+
+- name: Save iptables rules
+  become: True
+  command: netfilter-persistent save
