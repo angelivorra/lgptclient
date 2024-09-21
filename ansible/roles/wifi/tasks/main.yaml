@@ -1,5 +1,18 @@
 ---
-- name: Debug message
-  ansible.builtin.debug:
-    msg:
-    - "Prueba"
+- name: Configure wifi private network
+  community.general.nmcli:
+    type: wifi
+    conn_name: ANGELIA
+    ifname: "wlan0"
+    ssid: ANGEL_IA
+    wifi_sec:
+      psk: angelia2020
+      key-mgmt: wpa-eap
+      proto: wpa
+    wifi:
+      mode: ap
+      powersave: 2
+    autoconnect: true
+    routes4: 192.168.3.0/24
+    method4: manual
+    state: present
