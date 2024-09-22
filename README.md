@@ -1,5 +1,10 @@
 # Servidor robot
 
+## Ver errores servidor wifi
+```
+sudo journalctl -u hostapd
+```
+
 ## Poner esto en /etc/rc.local
 ```
 nmcli dev wifi hotspot ifname wlan0 ssid test password "test1234"
