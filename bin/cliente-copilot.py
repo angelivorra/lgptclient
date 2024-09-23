@@ -167,7 +167,7 @@ def setup_signal_handlers(loop):
         loop.add_signal_handler(sig, lambda: asyncio.ensure_future(shutdown(loop, sig)))
 
 if __name__ == '__main__':
-    server_addr = '10.42.0.1'
+    server_addr = '192.168.0.2'
     server_port = 8888  # Replace with the correct port
     
     init_gpio()
@@ -177,7 +177,7 @@ if __name__ == '__main__':
         os.remove(TMP_FILE)
         logger.info("Debug Mode Initiated")
         initialize_csv(CSV_FILENAME)    
-        save_wifi_quality()
+        #save_wifi_quality()
     
     try:
         loop = asyncio.get_event_loop()

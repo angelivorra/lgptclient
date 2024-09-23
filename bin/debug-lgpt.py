@@ -41,9 +41,7 @@ def main():
     run(["touch", TMP_FILE])
     print('Restart Servidor...')
     run(["sudo", "systemctl", "restart", "servidor"])
-    activa_debug("10.42.0.73")
-    
-    
+    activa_debug("192.168.0.3")
 
     try:
       data = run(f"sudo  {LGPT}", capture_output=True, shell=True)

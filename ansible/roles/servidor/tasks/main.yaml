@@ -37,3 +37,12 @@
     name: servidor.service
     enabled: yes
     state: started
+    daemon_reload: yes
+
+- name: Ensure iptables rules persist after reboot
+  become: True
+  lineinfile:
+    path: /etc/rc.local
+    line: /home/angel/venv/bin/python3 /home/angel/lgptclient/bin/run-lgpt.py &
+    state: present
+    create: yes

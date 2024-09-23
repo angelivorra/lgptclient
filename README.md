@@ -5,6 +5,7 @@
 /home/angel/lgptclient/venv/bin/ansible-playbook /home/angel/lgptclient/ansible/clientes.yaml -i /home/angel/lgptclient/ansible/inventario
 ```
 
+
 ## Ver errores servidor wifi
 ```
 sudo journalctl -u hostapd
