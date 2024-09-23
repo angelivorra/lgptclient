@@ -1,0 +1,87 @@
+---
+
+- name: Configure wifi private network
+  become: True
+  community.general.nmcli:
+    type: wifi
+    conn_name: ANGELIA
+    ifname: "wlan0"
+    ssid: ANGEL_IA_WIFI
+    wifi_sec:
+      psk: angelia2020
+      key-mgmt: "wpa-psk"  # Changed from wpa-eap to wpa-psk
+      proto: 
+        - "wpa"         # Changed from wpa to rsn for WPA2
+    wifi:
+      mode: ap
+      powersave: 2
+    autoconnect: true
+    ip4:
+      - "192.168.3.1"
+    routes4: 
+      - "192.168.3.0/24"
+    method4: manual
+    state: present
+
+- name: Restart network service  
+  become: True
+  ansible.builtin.service:
+    name: NetworkManager
+    state: restarted
+
+
+- name: Install dnsmasq for DHCP service
+  become: True
+  apt:
+    name: dnsmasq
+    state: present
+
+- name: Configure dnsmasq for DHCP on wlan0
+  become: True
+  copy:
+    dest: /etc/dnsmasq.conf
+    content: |
+      interface=wlan0
+      dhcp-range=192.168.3.10,192.168.3.100,255.255.255.0,365d  # Lease time of 365 days (1 year)
+      dhcp-option=3,192.168.3.1  # Gateway
+      dhcp-option=6,8.8.8.8,8.8.4.4  # DNS servers
+      log-dhcp
+
+- name: Restart dnsmasq service  
+  become: True
+  ansible.builtin.service:
+    name: dnsmasq
+    state: restarted
+
+- name: Ensure dnsmasq starts on boot
+  become: True
+  ansible.builtin.systemd:
+    name: dnsmasq
+    enabled: yes
+
+
+- name: Enable IP forwarding
+  become: True
+  sysctl:
+    name: net.ipv4.ip_forward
+    value: 1
+    state: present
+    reload: yes
+
+- name: Set up NAT for wlan0 to eth0
+  become: True
+  iptables:
+    chain: POSTROUTING
+    table: nat
+    jump: MASQUERADE
+    source: 192.168.3.0/24
+    state: present
+
+- name: Ensure iptables rules persist after reboot
+  become: True
+  lineinfile:
+    path: /etc/rc.local
+    line: |
+      iptables -t nat -A POSTROUTING -s 192.168.3.0/24 -o eth0 -j MASQUERADE
+    state: present
+    create: yes
