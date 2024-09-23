@@ -3,4 +3,5 @@
   hosts: localhost
   gather_facts: no
   roles:
-    - wifi
+    #- wifi
+    - servidor

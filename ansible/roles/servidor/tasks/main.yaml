@@ -1,7 +1,39 @@
 ---
 
-- name: Update and dist-upgrade apt packages
-  apt:
-    update_cache: yes
-    upgrade: dist
-    cache_valid_time: 3600
+- name: Delete content & directory
+  ansible.builtin.file:
+    state: absent
+    path: /home/angel/venv/
+
+- name: Ensure the Python virtual environment exists
+  command: python3 -m venv /home/angel/venv/
+
+- name: Install Python packages in the virtual environment
+  pip:
+    requirements: /home/angel/lgptclient/requirements.txt
+    virtualenv: /home/angel/venv/
+
+- name: Install systemd service for the Python script
+  become: True
+  copy:
+    dest: /etc/systemd/system/servidor.service
+    content: |
+      [Unit]
+      Description=Servidor
+      After=network.target
+ 
+      [Service]
+      User=angel
+      WorkingDirectory=/home/angel/
+      ExecStart=/home/angel/venv/bin/python /home/angel/lgptclient/bin/server-copilot.py
+      Restart=always
+
+      [Install]
+      WantedBy=multi-user.target
+ 
+- name: Enable and start the service
+  become: True
+  systemd:
+    name: servidor.service
+    enabled: yes
+    state: started

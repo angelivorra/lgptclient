@@ -1,5 +1,5 @@
-alsa_midi==1.0.2
-numpy==2.0.1
-pysftp==0.2.9
-RPi.GPIO==0.7.1
-ansible==10.4.0
+alsa_midi
+numpy
+pysftp
+RPi.GPIO
+ansible

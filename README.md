@@ -1,5 +1,10 @@
 # Servidor robot
 
+## Instalar todos los clientes
+```
+/home/angel/lgptclient/venv/bin/ansible-playbook /home/angel/lgptclient/ansible/clientes.yaml -i /home/angel/lgptclient/ansible/inventario
+```
+
 ## Ver errores servidor wifi
 ```
 sudo journalctl -u hostapd
