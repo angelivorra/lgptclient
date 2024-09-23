@@ -72,7 +72,8 @@ def save_wifi_quality():
             json.dump(wifi_info, file, indent=4)
     
     return wifi_info
-    
+
+   
 def initialize_csv(filename):
     """Initialize CSV file with headers if it doesn't exist."""
     if os.path.exists(filename):

@@ -2,7 +2,7 @@
 import pysftp
 from urllib.parse import urlparse
 import os
-import pandas as pd
+import statistics
 
 CSV_FILENAME = '/home/angel/midi_notes_log.csv'
 TMP_FILENAME = '/home/angel/midi_notes_maleta.csv'
@@ -59,35 +59,49 @@ def ejecuta(ssh, comando):
         print(f"Errores {stderr}")
     
 
-def analize_data():
+def analyze_data():
     # Load the data from the uploaded CSV files
-    midi_notes_log = pd.read_csv(CSV_FILENAME)
-    midi_notes_maleta = pd.read_csv(TMP_FILENAME)
+    midi_notes_log = read_csv_to_dict(CSV_FILENAME)
+    midi_notes_maleta = read_csv_to_dict(TMP_FILENAME)
+
+    # Convert timestamps to integers for accurate calculation
+    for note in midi_notes_log:
+        note['timestamp_sent'] = int(note['timestamp_sent'])
     
-    # Convert timestamps to integers for accurate calculation (if they aren't already)
-    midi_notes_log['timestamp_sent'] = midi_notes_log['timestamp_sent'].astype(int)
-    midi_notes_maleta['timestamp_sent'] = midi_notes_maleta['timestamp_sent'].astype(int)
-    midi_notes_maleta['timestamp_received'] = midi_notes_maleta['timestamp_received'].astype(int)
+    for note in midi_notes_maleta:
+        note['timestamp_sent'] = int(note['timestamp_sent'])
+        note['timestamp_received'] = int(note['timestamp_received'])
 
     # Calculate the number of notes sent
-    total_notes_sent = midi_notes_log.shape[0]
+    total_notes_sent = len(midi_notes_log)
 
     # Calculate the number of notes received
-    total_notes_received = midi_notes_maleta.shape[0]
+    total_notes_received = len(midi_notes_maleta)
 
     # Calculate the percentage of notes received
-    percent_notes_received = (total_notes_received / total_notes_sent) * 100
+    percent_notes_received = (total_notes_received / total_notes_sent) * 100 if total_notes_sent > 0 else 0
 
-    # Merge the log and maleta data on the timestamp and note to find matching pairs
-    merged_data = pd.merge(midi_notes_log, midi_notes_maleta, on=['timestamp_sent', 'note'])
+    # Create a list to hold merged data
+    merged_data = []
+    for sent in midi_notes_log:
+        for received in midi_notes_maleta:
+            if (sent['timestamp_sent'] == received['timestamp_sent'] and
+                    sent['note'] == received['note']):
+                merged_data.append({
+                    'timestamp_sent': sent['timestamp_sent'],
+                    'timestamp_received': received['timestamp_received']
+                })
 
     # Calculate the time difference between sent and received timestamps
-    merged_data['time_difference'] = merged_data['timestamp_received'] - merged_data['timestamp_sent']
+    time_differences = [
+        received['timestamp_received'] - sent['timestamp_sent']
+        for sent, received in zip(merged_data, merged_data)
+    ]
 
     # Calculate min, max, and average time differences
-    min_time_difference = merged_data['time_difference'].min()
-    max_time_difference = merged_data['time_difference'].max()
-    avg_time_difference = merged_data['time_difference'].mean()
+    min_time_difference = min(time_differences) if time_differences else 0
+    max_time_difference = max(time_differences) if time_differences else 0
+    avg_time_difference = statistics.mean(time_differences) if time_differences else 0
 
     # Summarize statistics in a dictionary
     stats_summary = {
@@ -98,11 +112,6 @@ def analize_data():
         "Max Time Difference (ms)": max_time_difference,
         "Average Time Difference (ms)": avg_time_difference,
     }
-    
-    return stats_summary
-
-
-
 
 
 if __name__ == "__main__":

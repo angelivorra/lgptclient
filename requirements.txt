@@ -3,3 +3,5 @@ numpy
 pysftp
 RPi.GPIO
 ansible
+tabulate
+pandas
