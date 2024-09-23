@@ -1,0 +1,6 @@
+---
+- name: Instalamos cliente
+  hosts: maleta
+  gather_facts: no
+  roles:
+    - cliente

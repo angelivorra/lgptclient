@@ -1,0 +1,68 @@
+---
+
+- name: Update and dist-upgrade apt packages
+  become: True
+  apt:
+    update_cache: yes
+    upgrade: dist
+    cache_valid_time: 3600
+
+- name: Copy requirements.txt to target
+  template:
+    src: /home/angel/lgptclient/requirements_maleta.txt
+    dest: /home/angel/requirements.txt
+    owner: angel
+    group: angel
+
+- name: Copy Python Script to target
+  template:
+    src: /home/angel/lgptclient/bin/cliente-copilot.py
+    dest: /home/angel/cliente.py
+    owner: angel
+    group: angel
+
+- name: Delete content & directory
+  ansible.builtin.file:
+    state: absent
+    path: /home/angel/venv/
+
+- name: Ensure the Python virtual environment exists
+  command: python3 -m venv /home/angel/venv/
+
+- name: Install Python packages in the virtual environment
+  pip:
+    requirements: /home/angel/requirements.txt
+    virtualenv: /home/angel/venv/    
+
+- name: Ensure  directory exists and is empty
+  file:
+    path: /home/angel/log
+    state: absent
+    owner: angel
+    group: angel
+
+- name: Ensure directory exists and is empty
+  file:
+    path: /home/angel/log
+    state: directory
+    owner: angel
+    group: angel
+
+- name: Install systemd service for the Python script
+  become: True
+  copy:
+    dest: /etc/systemd/system/cliente.service
+    content: |
+      [Unit]
+      Description=Cliente
+      After=network.target
+ 
+      [Service]
+      User=angel
+      WorkingDirectory=/home/angel/
+      ExecStart=/home/angel/venv/bin/python /home/angel/cliente.py
+      Restart=always
+
+      [Install]
+      WantedBy=multi-user.target
+ 

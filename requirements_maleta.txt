@@ -1,0 +1,3 @@
+wheel
+RPi.GPIO
+pillow

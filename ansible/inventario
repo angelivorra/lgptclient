@@ -1,0 +1,9 @@
+[all:vars]
+ansible_user=angel
+
+[maleta]
+192.168.0.3
+
+[robot]
+192.168.0.4
+
