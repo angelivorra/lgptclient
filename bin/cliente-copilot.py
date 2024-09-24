@@ -2,6 +2,7 @@ import asyncio
 import re
 import signal
 import subprocess
+from typing import List, Union
 import RPi.GPIO as GPIO
 import time
 import logging
@@ -39,6 +40,23 @@ def init_gpio():
     for pin in instruments.values():
         GPIO.setup(pin, GPIO.OUT)
         GPIO.output(pin, GPIO.LOW)
+
+async def show_images(images: Union[str, List[str]], delay: int):
+    # Convert milliseconds to seconds for asyncio.sleep
+    delay_in_seconds = delay / 1000.0
+    
+    # If images is a string (single file path)
+    if isinstance(images, str):
+        cmd = f"sudo fbi -a {images} -T 1 --nocomments --noverbose"
+        os.system(cmd)  # Execute the command synchronously
+
+    # If images is a list (multiple file paths)
+    elif isinstance(images, list):
+        for img in images:
+            cmd = f"sudo fbi -a {img} -T 1 --nocomments --noverbose"
+            os.system(cmd)  # Execute the command synchronously
+            await asyncio.sleep(delay_in_seconds)  # Delay in between each image
+
 
 # Guardamos datos de la calidad del wifi
 def save_wifi_quality():

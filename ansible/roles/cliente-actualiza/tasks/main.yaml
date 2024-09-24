@@ -1,0 +1,51 @@
+---
+
+- name: Copy Python Script to target
+  template:
+    src: /home/angel/lgptclient/bin/cliente-copilot.py
+    dest: /home/angel/cliente.py
+    owner: angel
+    group: angel
+
+- name: Copy Python Script to target
+  template:
+    src: "/home/angel/lgptclient/bin/cliente.{{ansible_hostname}}.json"
+    dest: /home/angel/config.json
+    owner: angel
+    group: angel    
+
+- name: Create image dir
+  ansible.builtin.file:
+    state: directory
+    path: /home/angel/images/
+    owner: angel
+    group: angel
+
+- name: Copy file and set permissions with Ansible
+  copy:
+    src: /home/angel/lgptclient/images/
+    dest: /home/angel/images/
+    owner: angel
+    group: angel
+
+- name: Ensure  directory exists and is empty
+  file:
+    path: /home/angel/log
+    state: absent
+    owner: angel
+    group: angel
+
+- name: Ensure directory exists and is empty
+  file:
+    path: /home/angel/log
+    state: directory
+    owner: angel
+    group: angel
+
+- name: Enable and start the service
+  become: True
+  systemd:
+    name: cliente.service
+    enabled: yes
+    state: started
+    daemon_reload: yes
