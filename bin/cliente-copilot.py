@@ -29,7 +29,12 @@ with open('/home/angel/config.json') as f:
 # Extract instruments and TIEMPO from the configuration
 instruments = config["instruments"]
 TIEMPO = config["tiempo"]
-
+images_dict = {
+    48: '/home/angel/images/three.jpg',
+    49: '/home/angel/images/two.jpg',
+    50: '/home/angel/images/one.jpg',
+    51: '/home/angel/images/go.jpg',
+}
 
 #Inicializamos puertos GPIO
 def init_gpio():
@@ -41,7 +46,7 @@ def init_gpio():
         GPIO.setup(pin, GPIO.OUT)
         GPIO.output(pin, GPIO.LOW)
 
-async def show_images(images: Union[str, List[str]], delay: int):
+async def show_images(images: Union[str, List[str]], delay: int = 500):
     # Convert milliseconds to seconds for asyncio.sleep
     delay_in_seconds = delay / 1000.0
     
@@ -91,7 +96,6 @@ def save_wifi_quality():
     
     return wifi_info
 
-   
 def initialize_csv(filename):
     """Initialize CSV file with headers if it doesn't exist."""
     if os.path.exists(filename):
@@ -130,10 +134,16 @@ async def handle_event(reader):
             sent_timestamp = int(sent_timestamp)
             current_timestamp = int(datetime.now().timestamp() * 1000)
             
+            note = int(note)
+            print(f"recievedNote({note})")
             
-            
-            if note in instruments:
+            if note in images_dict:
+                image_path = images_dict[note]
+                # Show the image immediately with no delay
+                await show_images(image_path, delay=0)
+            elif note in instruments:
                 asyncio.ensure_future(activate_instrumento(instruments[note]))
+            
             
             # Log the received note and timestamps
             if DEBUG_NOTES:

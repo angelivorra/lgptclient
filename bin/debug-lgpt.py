@@ -49,6 +49,16 @@ class SftpCliente:
 
         except Exception as err:
             raise Exception(err)
+        
+    def upload(self):
+        try:
+
+            # Download file from SFTP
+            self.connection.put("/home/angel/lgptclient/bin/cliente-copilot.py", "/home/angel/cliente.py")
+            print(f"{self.nombre} Descargado")
+
+        except Exception as err:
+            raise Exception(err)
 
 def ejecuta(ssh, comando):
     print(f"Ejecutamos Comando {comando}")
@@ -69,6 +79,7 @@ def activa_debug(host):
 
     ejecuta(ssh, 'touch /tmp/debug_notes.tmp')    
     ejecuta(ssh, 'sudo systemctl restart cliente')
+    ejecuta(ssh, 'sudo fbi -a /home/angel/images/terminal-bg.jpg -T 1 --nocomments --noverbose')
     time.sleep(2)
     status = ejecuta(ssh, 'sudo systemctl status cliente')
     output=''
@@ -144,8 +155,13 @@ def main():
     run(["touch", TMP_FILE])
     print('Restart Servidor...')
     run(["sudo", "systemctl", "restart", "servidor"])
-    activa_debug("192.168.0.3")    
     
+    sftp = SftpCliente("192.168.0.3", "maleta")
+    sftp.connect()
+    sftp.upload()
+    sftp.disconnect()
+    
+    activa_debug("192.168.0.3")
 
     try:
       data = run(f"sudo  {LGPT}", capture_output=True, shell=True)

@@ -26,7 +26,7 @@
     src: "/home/angel/lgptclient/bin/cliente.{{ansible_hostname}}.json"
     dest: /home/angel/config.json
     owner: angel
-    group: angel    
+    group: angel
 
 - name: Delete content & directory
   ansible.builtin.file:
@@ -90,3 +90,11 @@
     enabled: yes
     state: started
     daemon_reload: yes
+
+- name: 
+  become: True
+  lineinfile:
+    path: /etc/rc.local
+    line: fbi -a /home/angel/images/terminal-bg.jpg -T 1 --nocomments --noverbose
+    state: present
+    create: yes
