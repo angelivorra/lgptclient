@@ -77,7 +77,7 @@
       [Service]
       User=angel
       WorkingDirectory=/home/angel/
-      ExecStart=/home/angel/venv/bin/python /home/angel/cliente.py
+      ExecStart=/home/angel/venv/bin/python /home/angel/main_server.py
       Restart=always
 
       [Install]
@@ -90,11 +90,3 @@
     enabled: yes
     state: started
     daemon_reload: yes
-
-- name: 
-  become: True
-  lineinfile:
-    path: /etc/rc.local
-    line: fbi -a /home/angel/images/terminal-bg.jpg -T 1 --nocomments --noverbose
-    state: present
-    create: yes

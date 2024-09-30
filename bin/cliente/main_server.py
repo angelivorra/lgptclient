@@ -37,7 +37,7 @@ async def handle_event(reader):
             cleaned_data = data.decode('utf-8').strip().split(',')
 
             try:
-                sent_timestamp, note = map(int, cleaned_data)
+                sent_timestamp, note, channel = map(int, cleaned_data)
             except ValueError:
                 logger.error("Received malformed data, skipping row")
                 continue
