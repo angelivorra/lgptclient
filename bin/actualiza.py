@@ -5,11 +5,44 @@ import pysftp
 from urllib.parse import urlparse
 import os
 import paramiko
+from PIL import Image
 
 parser = argparse.ArgumentParser(prog='Actualiza')
 parser.add_argument('--pip', default=False)
 args = parser.parse_args()
-IP_MALETA = "10.42.0.73"
+IP_MALETA = "192.168.0.3"
+
+
+from PIL import Image
+
+def png_to_bin(png_path, bin_path, screenx, screeny, bpp=24):
+    """
+    Convert a PNG image to raw binary format for framebuffer.
+
+    :param png_path: Path to the PNG image.
+    :param bin_path: Path to save the raw binary image.
+    :param screenx: Width of the screen in pixels.
+    :param screeny: Height of the screen in pixels.
+    :param bpp: Bits per pixel (e.g., 24 for RGB, 32 for ARGB).
+    """
+    # Open the PNG image using Pillow
+    img = Image.open(png_path)
+    
+    # Ensure the image matches the screen size (resize if necessary)
+    img = img.resize((screenx, screeny))
+    
+    # Convert the image to the desired format (RGB or RGBA depending on bpp)
+    if bpp == 24:
+        img = img.convert("RGB")
+    elif bpp == 32:
+        img = img.convert("RGBA")
+    
+    # Get the raw pixel data
+    img_data = img.tobytes()
+    
+    # Save the raw data to a .bin file
+    with open(bin_path, "wb") as f:
+        f.write(img_data)
 
 class SftpMaleta:
     def __init__(self):
@@ -47,10 +80,11 @@ class SftpMaleta:
         try:
 
             # Download file from SFTP
-            self.connection.put("/home/angel/lgptclient/bin/lcd.py", "/home/angel/lcd.py")
-            self.connection.put("/home/angel/lgptclient/bin/cliente-copilot.py", "/home/angel/cliente-tcp.py")
+            self.connection.put("/home/angel/lgptclient/bin/cliente/main_server.py", "/home/angel/bin/main_server.py")
+            self.connection.put("/home/angel/lgptclient/bin/cliente/image_events.py", "/home/angel/bin/image_events.py")
+            self.connection.put("/home/angel/lgptclient/bin/cliente/gpio_events.py", "/home/angel/bin/gpio_events.py")            
             self.connection.put("/home/angel/lgptclient/bin/cliente.maleta.json", "/home/angel/config.json")
-            self.connection.put("/home/angel/lgptclient/requirements.txt", "/home/angel/requirements.txt")
+            self.connection.put("/home/angel/lgptclient/requirements_maleta.txt", "/home/angel/requirements.txt")
             print("Maleta updated")
 
         except Exception as err:
@@ -73,6 +107,8 @@ def ejecuta(ssh, comando):
 if __name__ == "__main__":
     
     sftp = SftpMaleta()
+
+    genera_imagenes
 
     # Connect to SFTP
     sftp.connect()

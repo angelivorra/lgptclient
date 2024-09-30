@@ -1,12 +1,8 @@
-#import pyvips
 import asyncio
 import os
 import mmap
 import getpass
 from pathlib import Path
-
-# Cache directory for images
-CACHE_DIR = '/home/angel/img/.cache'
 
 # Framebuffer class for handling the HDMI display
 class Framebuffer:
@@ -50,11 +46,7 @@ async def _display_image_sequence(id: int, loop: int, delay: int):
         image_path = Path(f"/home/angel/img/{image_id:03d}.xxx")
         if not image_path.exists():
             return None
-        # img = pyvips.Image.new_from_file(str(image_path))
-        # img = img.resize(fb.screenx / img.width)
-        # img = img.write_to_memory()
-        # return img
-        return False
+
 
     if loop <= 0:
         img_data = load_image(id)

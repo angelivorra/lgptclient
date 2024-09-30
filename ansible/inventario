@@ -2,8 +2,8 @@
 ansible_user=angel
 
 [maleta]
-192.168.0.3
+192.168.0.3 screenx=800 screeny=480
 
 [robot]
-192.168.0.4
+192.168.0.4 screenx=800 screeny=480
 

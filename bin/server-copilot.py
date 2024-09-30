@@ -40,11 +40,11 @@ async def handle_client(reader, writer):
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     clients.append(writer)
     try:
-        if DEBUG_NOTES:
-            await asyncio.sleep(5)  # Wait for 5 seconds after connection
-            # Start sending test data after 5 seconds
-            await send_data(count=2000, channels=[1, 2], persecond=20)
-            await send_data(count=2000, channels=[3, 4], persecond=30)
+        # if DEBUG_NOTES:
+        #     await asyncio.sleep(5)  # Wait for 5 seconds after connection
+        #     # Start sending test data after 5 seconds
+        #     await send_data(count=2000, channels=[1, 2], persecond=20)
+        #     await send_data(count=2000, channels=[3, 4], persecond=30)
         while True:
             data = await reader.read(100)
             if not data:
