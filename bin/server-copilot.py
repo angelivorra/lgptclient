@@ -59,6 +59,10 @@ async def log_event_to_csv(note, timestamp):
 
 async def broadcast_event(event, timestamp):
     message = f"{timestamp},{event.note},{event.channel},{event.\n"
+    if DEBUG_NOTES:                    
+        logger.info(f"Received NoteOnEvent: {event.note} at {timestamp} ms")
+        await log_event_to_csv(event.note, timestamp)
+
     for client in clients:
         client.write(message.encode())
         await client.drain()
@@ -84,9 +88,6 @@ async def main():
             if isinstance(event, NoteOnEvent):
                 timestamp = int(datetime.now().timestamp() * 1000)
                 await broadcast_event(event, timestamp)
-                if DEBUG_NOTES:                    
-                    logger.info(f"Received NoteOnEvent: {event.note} at {timestamp} ms")
-                    await log_event_to_csv(event.note, timestamp)
                 
 
 if __name__ == '__main__':

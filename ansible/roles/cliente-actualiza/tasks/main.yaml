@@ -1,9 +1,15 @@
 ---
-
 - name: Copy Python Script to target
   template:
     src: /home/angel/lgptclient/bin/cliente/*
     dest: /home/angel/
+    owner: angel
+    group: angel
+
+- name: Copy requirements.txt to target
+  template:
+    src: "/home/angel/lgptclient/requirements_{{{{ansible_hostname}}}}.txt"
+    dest: /home/angel/requirements.txt
     owner: angel
     group: angel
 

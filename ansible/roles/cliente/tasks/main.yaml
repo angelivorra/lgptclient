@@ -1,47 +1,50 @@
 ---
+# - name: Update and dist-upgrade apt packages
+#   become: True
+#   apt:
+#     update_cache: yes
+#     upgrade: dist
+#     cache_valid_time: 3600
 
-- name: Update and dist-upgrade apt packages
-  become: True
-  apt:
-    update_cache: yes
-    upgrade: dist
-    cache_valid_time: 3600
+# - name: Delete content & directory
+#   ansible.builtin.file:
+#     state: absent
+#     path: /home/angel/venv/
 
-- name: Copy requirements.txt to target
-  template:
-    src: /home/angel/lgptclient/requirements_maleta.txt
-    dest: /home/angel/requirements.txt
+- name: Create image dir
+  ansible.builtin.file:
+    state: directory
+    path: /home/angel/images/
+    owner: angel
+    group: angel
+
+- name: Copy file and set permissions with Ansible
+  copy:
+    src: /home/angel/lgptclient/images/
+    dest: /home/angel/images/
     owner: angel
     group: angel
 
 - name: Copy Python Script to target
-  template:
-    src: /home/angel/lgptclient/bin/cliente-copilot.py
-    dest: /home/angel/cliente.py
+  copy:
+    src: /home/angel/lgptclient/bin/cliente/
+    dest: /home/angel/bin
     owner: angel
     group: angel
 
-- name: Copy Python Script to target
+- name: Copy config file to target
   template:
     src: "/home/angel/lgptclient/bin/cliente.{{ansible_hostname}}.json"
     dest: /home/angel/config.json
     owner: angel
     group: angel
 
-- name: Delete content & directory
-  ansible.builtin.file:
-    state: absent
-    path: /home/angel/venv/
-
-- name: Create image dir
-  ansible.builtin.file:
-    state: directory
-    path: /home/angel/images/
-
-- name: Copy file and set permissions with Ansible
-  copy:
-    src: /home/angel/lgptclient/images/
-    dest: /home/angel/images/
+- name: Copy requirements.txt to target
+  template:
+    src: "/home/angel/lgptclient/requirements_{{ansible_hostname}}.txt"
+    dest: /home/angel/requirements.txt
+    owner: angel
+    group: angel
 
 - name: Ensure the Python virtual environment exists
   command: python3 -m venv /home/angel/venv/
@@ -49,7 +52,7 @@
 - name: Install Python packages in the virtual environment
   pip:
     requirements: /home/angel/requirements.txt
-    virtualenv: /home/angel/venv/    
+    virtualenv: /home/angel/venv/
 
 - name: Ensure  directory exists and is empty
   file:
@@ -77,7 +80,7 @@
       [Service]
       User=angel
       WorkingDirectory=/home/angel/
-      ExecStart=/home/angel/venv/bin/python /home/angel/main_server.py
+      ExecStart=/home/angel/venv/bin/python /home/angel/bin/main_server.py
       Restart=always
 
       [Install]
