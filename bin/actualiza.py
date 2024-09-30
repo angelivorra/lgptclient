@@ -6,6 +6,8 @@ from urllib.parse import urlparse
 import os
 import paramiko
 from PIL import Image
+from pathlib import Path
+
 
 parser = argparse.ArgumentParser(prog='Actualiza')
 parser.add_argument('--pip', default=False)
@@ -102,13 +104,60 @@ def ejecuta(ssh, comando):
         print(f"Error {exit_status}")
         print(f"Errores {stderr.readlines()}")
         return False
+
+
+def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=24):
+    """
+    Convert all PNG files (001.png to 999.png) in the origin folder to raw binary format and save to the destiny folder.
+    
+    :param origin_folder: Path to the folder containing PNG images.
+    :param destiny_folder: Path to the folder to save the raw binary files.
+    :param width: Width of the screen in pixels (for resizing).
+    :param height: Height of the screen in pixels (for resizing).
+    :param bpp: Bits per pixel (default is 24 for RGB, use 32 for ARGB).
+    """
+    # Ensure destiny folder exists
+    Path(destiny_folder).mkdir(parents=True, exist_ok=True)
+    
+    for i in range(1, 1000):
+        png_file = Path(origin_folder) / f"{i:03d}.png"
+        bin_file = Path(destiny_folder) / f"{i:03d}.bin"
+        
+        if png_file.exists():
+            print(f"Processing {png_file}...")
+            # Open the PNG image using Pillow
+            img = Image.open(png_file)
+            
+            # Resize the image to match the target width and height
+            img = img.resize((width, height))
+            
+            # Convert the image to the desired format (RGB or RGBA depending on bpp)
+            if bpp == 24:
+                img = img.convert("RGB")
+            elif bpp == 32:
+                img = img.convert("RGBA")
+            
+            # Get the raw pixel data
+            img_data = img.tobytes()
+            
+            # Save the raw data to a .bin file
+            with open(bin_file, "wb") as f:
+                f.write(img_data)
+            
+            print(f"Saved {bin_file}")
+        else:
+            print(f"File {png_file} not found, skipping...")
+
     
 
 if __name__ == "__main__":
     
+    convert_all_png_to_bin("/home/angel/lgptclient/images/", "/home/angel/lgptclient/images800480/", 800, 480)
+    exit(0)
+
     sftp = SftpMaleta()
 
-    genera_imagenes
+    
 
     # Connect to SFTP
     sftp.connect()

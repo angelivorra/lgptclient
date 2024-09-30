@@ -9,13 +9,17 @@ class Framebuffer:
     def __init__(self, fbpath="/dev/fb0"):
         if os.system('getent group video | grep -q "\b'+ getpass.getuser() +'\b"') == 1:
             os.system("sudo adduser " + getpass.getuser() + " video")
-        _ = open("/sys/class/graphics/fb0/virtual_size", "r")
-        __ = _.read()
-        self.screenx, self.screeny = [int(i) for i in __.split(",")]
-        _.close()
-        _ = open("/sys/class/graphics/fb0/bits_per_pixel", "r")
-        self.bpp = int(_.read()[:2])
-        _.close()
+        # _ = open("/sys/class/graphics/fb0/virtual_size", "r")
+        # __ = _.read()
+        # self.screenx, self.screeny = [int(i) for i in __.split(",")]
+        # _.close()
+        # _ = open("/sys/class/graphics/fb0/bits_per_pixel", "r")
+        # self.bpp = int(_.read()[:2])
+        # print(f"Screenx {self.screenx} ScreenY {self.screeny} bpp {self.bpp}")
+        # _.close()
+        self.screenx = 800
+        self.screeny = 480
+        self.bpp = 16
         self.fbpath = fbpath
         self.fbdev = os.open(self.fbpath, os.O_RDWR)
         self.fb = mmap.mmap(self.fbdev, self.screenx*self.screeny*self.bpp//8, mmap.MAP_SHARED, mmap.PROT_WRITE|mmap.PROT_READ, offset=0)
@@ -43,9 +47,17 @@ async def _display_image_sequence(id: int, loop: int, delay: int):
     fb.clear()  # Clear the framebuffer before starting
     
     def load_image(image_id):
-        image_path = Path(f"/home/angel/img/{image_id:03d}.xxx")
+        print(f"/home/angel/images/{image_id:03d}.bin")
+        image_path = Path(f"/home/angel/images/{image_id:03d}.bin")
+    
         if not image_path.exists():
             return None
+        
+        # Open the binary image file and read its contents
+        with open(image_path, "rb") as f:
+            img_data = f.read()
+        
+        return img_data
 
 
     if loop <= 0:
@@ -53,8 +65,9 @@ async def _display_image_sequence(id: int, loop: int, delay: int):
         if img_data:
             fb.draw_image(img_data)
     else:
-        for i in range(loop):
-            img_data = load_image(id + i)
-            if img_data:
-                fb.draw_image(img_data)
-            await asyncio.sleep(delay / 1000)
+        while True:
+            for i in range(loop):
+                img_data = load_image(id + i)
+                if img_data:
+                    fb.draw_image(img_data)
+                await asyncio.sleep(delay / 1000)

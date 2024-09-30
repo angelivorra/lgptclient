@@ -5,6 +5,7 @@ if __name__ == '__main__':
     print('Instalamos servidor...')
     run(["sudo","apt","update"])
     run(["sudo","apt","upgrade","-y"])
+    run(["sudo","apt","install","-y", "libopenjp2-7"])    
     run(["git","pull","origin", "main"], cwd=r'/home/angel/lgptclient')
     run(["rm","-r","/home/angel/lgptclient/venv"])
     run(["python3", "-m", "venv", "/home/angel/lgptclient/venv"])

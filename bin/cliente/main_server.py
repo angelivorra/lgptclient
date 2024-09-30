@@ -57,9 +57,9 @@ async def handle_event(reader):
                 
             except ValueError:
                 logger.error("Received malformed data, skipping row")
-                continue
+                continue            
 
-            if note in instruments:
+            if channel == 1 and note in instruments:
                 asyncio.ensure_future(activate_instrumento(instruments[note]))
                 
             
@@ -73,7 +73,8 @@ async def tcp_client(addr, port):
             logger.info(f"Attempting to connect to {addr}:{port}")
             reader, writer = await asyncio.open_connection(addr, port)
             logger.info("Connected to server")
-            await handle_event(reader)
+            asyncio.ensure_future(handle_image(1, loop=6, delay=10))
+            await handle_event(reader)            
         except (ConnectionError, OSError) as e:
             logger.info(f"Connection failed: {e}. Retrying in 5 seconds...")
             await asyncio.sleep(5)
