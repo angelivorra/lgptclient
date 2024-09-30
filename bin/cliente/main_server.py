@@ -1,4 +1,6 @@
 import asyncio
+import csv
+from datetime import datetime
 import os
 import json
 import signal
@@ -24,6 +26,15 @@ with open('/home/angel/config.json') as f:
 instruments = config["instruments"]
 TIEMPO = config["tiempo"]
 
+def initialize_csv(filename):
+    """Initialize CSV file with headers if it doesn't exist."""
+    if os.path.exists(filename):
+        os.unlink(filename)
+    with open(filename, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["timestamp_sent", "note", "timestamp_received"])
+
+
 async def handle_event(reader):
     while True:
         try:
@@ -37,13 +48,20 @@ async def handle_event(reader):
             cleaned_data = data.decode('utf-8').strip().split(',')
 
             try:
-                sent_timestamp, note, channel = map(int, cleaned_data)
+                sent_timestamp, note, channel, velocity = map(int, cleaned_data)
+                current_timestamp = int(datetime.now().timestamp() * 1000)
+                if DEBUG_NOTES:
+                    with open(CSV_FILENAME, mode='a', newline='') as file:
+                        writer = csv.writer(file)
+                        writer.writerow([sent_timestamp, note, current_timestamp])
+                
             except ValueError:
                 logger.error("Received malformed data, skipping row")
                 continue
 
             if note in instruments:
                 asyncio.ensure_future(activate_instrumento(instruments[note]))
+                
             
         except Exception as e:
             logger.error(f"Error handling event: {e}")
@@ -87,6 +105,7 @@ if __name__ == '__main__':
         DEBUG_NOTES = True
         os.remove(TMP_FILE)
         logger.info("Debug Mode Initiated")
+        initialize_csv(CSV_FILENAME)
 
     try:
         loop = asyncio.get_event_loop()

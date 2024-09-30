@@ -3,6 +3,7 @@ import pickle
 import csv
 import os
 import socket
+import random
 from alsa_midi import AsyncSequencerClient, WRITE_PORT, NoteOnEvent
 import logging
 from datetime import datetime
@@ -18,7 +19,6 @@ TMP_FILE = '/tmp/debug_notes.tmp'
 # Logging configuration
 logger = logging.getLogger(__name__)
 logging.basicConfig(
-    #format='%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s',
     format='%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s',
     level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S'
@@ -32,7 +32,7 @@ def initialize_csv(filename):
         os.unlink(filename)
     with open(filename, mode='w', newline='') as file:
         writer = csv.writer(file)
-        writer.writerow(["timestamp_sent", "note"])
+        writer.writerow(["timestamp_sent", "note", "channel", "velocity"])
 
 async def handle_client(reader, writer):
     sock = writer.get_extra_info('socket')
@@ -40,6 +40,11 @@ async def handle_client(reader, writer):
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     clients.append(writer)
     try:
+        if DEBUG_NOTES:
+            await asyncio.sleep(5)  # Wait for 5 seconds after connection
+            # Start sending test data after 5 seconds
+            await send_data(count=2000, channels=[1, 2], persecond=20)
+            await send_data(count=2000, channels=[3, 4], persecond=30)
         while True:
             data = await reader.read(100)
             if not data:
@@ -51,21 +56,36 @@ async def handle_client(reader, writer):
         writer.close()
         await writer.wait_closed()
 
-async def log_event_to_csv(note, timestamp):
+async def send_data(count, channels, persecond):
+    """Send random NoteOnEvent data to clients."""
+    interval = 1.0 / persecond  # Time between each note per channel
+    for _ in range(count):
+        timestamp = int(datetime.now().timestamp() * 1000)
+        for channel in channels:
+            note = random.randint(1, 150)
+            velocity = random.randint(1, 150)
+            message = f"{timestamp},{note},{channel},{velocity}\n"
+            for client in clients:
+                client.write(message.encode())
+                await client.drain()
+            await log_event_to_csv(note, timestamp, channel, velocity)
+            timestamp = timestamp + 1
+        await asyncio.sleep(interval)  # Delay for persecond rate
+
+async def log_event_to_csv(note, timestamp, channel, velocity):
     """Log the note and timestamp to a CSV file."""    
     with open(CSV_FILENAME, mode='a', newline='') as file:
         writer = csv.writer(file)
-        writer.writerow([timestamp, note])
+        writer.writerow([timestamp, note, channel, velocity])
 
 async def broadcast_event(event, timestamp):
-    message = f"{timestamp},{event.note},{event.channel},{event.\n"
-    if DEBUG_NOTES:                    
-        logger.info(f"Received NoteOnEvent: {event.note} at {timestamp} ms")
-        await log_event_to_csv(event.note, timestamp)
-
+    message = f"{timestamp},{event.note},{event.channel},{event.velocity}\n"
     for client in clients:
         client.write(message.encode())
         await client.drain()
+    if DEBUG_NOTES:
+        await log_event_to_csv(event.note, timestamp, event.channel, event.velocity)
+        
 
 async def main():
     # Initialize CSV logging
@@ -88,7 +108,6 @@ async def main():
             if isinstance(event, NoteOnEvent):
                 timestamp = int(datetime.now().timestamp() * 1000)
                 await broadcast_event(event, timestamp)
-                
 
 if __name__ == '__main__':
     if os.path.exists(TMP_FILE):
