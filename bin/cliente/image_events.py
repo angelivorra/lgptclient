@@ -3,6 +3,7 @@ import os
 import mmap
 import getpass
 from pathlib import Path
+import random
 
 # Framebuffer class for handling the HDMI display
 class Framebuffer:
@@ -35,10 +36,19 @@ class Framebuffer:
 # Store the task to be cancelled when a new image event arrives
 current_task = None
 
+async def activate_image(id: int, velocity: int):
+    if velocity == 127:
+        velocity = 0
+    print(f"activate_image({id},{velocity})")
+    await handle_image(id,velocity, 50)
+    
+
 async def handle_image(id: int, loop: int, delay: int):
     global current_task
     if current_task:
+        print(f"cancel()")
         current_task.cancel()
+    print(f"activate_image({id},{loop},{delay})")
     current_task = asyncio.ensure_future(_display_image_sequence(id, loop, delay))
     await current_task
 
@@ -65,9 +75,13 @@ async def _display_image_sequence(id: int, loop: int, delay: int):
         if img_data:
             fb.draw_image(img_data)
     else:
-        while True:
+        while True:            
             for i in range(loop):
                 img_data = load_image(id + i)
                 if img_data:
                     fb.draw_image(img_data)
                 await asyncio.sleep(delay / 1000)
+            r1 = random.randint(1, 4)
+            await asyncio.sleep(r1)
+            
+            

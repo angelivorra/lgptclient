@@ -81,9 +81,7 @@ def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=16)
         if png_file.exists():
             print(f"Processing {png_file}...")
             png_to_bin(png_file, bin_file, width, height, bpp)
-            print(f"Saved {bin_file}")
+            #print(f"Saved {bin_file}")
         else:
-            print(f"File {png_file} not found, skipping...")
-
-if __name__ == "__main__":
-    convert_all_png_to_bin("/home/angel/lgptclient/images/", "/home/angel/lgptclient/images800480/", 800, 480, 16)
+            #print(f"File {png_file} not found, skipping...")
+            pass

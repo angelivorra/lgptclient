@@ -6,7 +6,7 @@ import json
 import signal
 import logging
 from gpio_events import init_gpio, activate_instrumento
-from image_events import handle_image
+from image_events import activate_image, handle_image
 
 # Logger setup
 logger = logging.getLogger(__name__)
@@ -59,9 +59,10 @@ async def handle_event(reader):
                 logger.error("Received malformed data, skipping row")
                 continue            
 
-            if channel == 1 and note in instruments:
+            if channel == 0 and note in instruments:
                 asyncio.ensure_future(activate_instrumento(instruments[note]))
-                
+            elif channel == 1:
+                asyncio.ensure_future(activate_image(note, velocity))
             
         except Exception as e:
             logger.error(f"Error handling event: {e}")
@@ -73,7 +74,7 @@ async def tcp_client(addr, port):
             logger.info(f"Attempting to connect to {addr}:{port}")
             reader, writer = await asyncio.open_connection(addr, port)
             logger.info("Connected to server")
-            asyncio.ensure_future(handle_image(1, loop=6, delay=10))
+            #asyncio.ensure_future(handle_image(1, loop=6, delay=100))
             await handle_event(reader)            
         except (ConnectionError, OSError) as e:
             logger.info(f"Connection failed: {e}. Retrying in 5 seconds...")
