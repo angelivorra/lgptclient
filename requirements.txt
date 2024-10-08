@@ -6,3 +6,4 @@ ansible
 tabulate
 pandas
 pillow
+pydub
