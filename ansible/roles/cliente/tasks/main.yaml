@@ -1,10 +1,10 @@
 ---
-# - name: Update and dist-upgrade apt packages
-#   become: True
-#   apt:
-#     update_cache: yes
-#     upgrade: dist
-#     cache_valid_time: 3600
+- name: Update and dist-upgrade apt packages
+  become: True
+  apt:
+    update_cache: yes
+    upgrade: dist
+    cache_valid_time: 3600
 
 - name: Delete content & directory
   ansible.builtin.file:

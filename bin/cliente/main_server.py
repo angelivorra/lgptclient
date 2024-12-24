@@ -24,6 +24,7 @@ with open('/home/angel/config.json') as f:
     config = json.load(f)
 
 instruments = config["instruments"]
+print(instruments)
 TIEMPO = config["tiempo"]
 
 def initialize_csv(filename):
@@ -58,9 +59,11 @@ async def handle_event(reader):
             except ValueError:
                 logger.error("Received malformed data, skipping row")
                 continue            
-
-            if channel == 0 and note in instruments:
-                asyncio.ensure_future(activate_instrumento(instruments[note]))
+            
+            strnote = str(note)
+            if channel == 0 and strnote in instruments:
+                logger.info(f"activate_instrumento{instruments[strnote]}")
+                asyncio.ensure_future(activate_instrumento(instruments[strnote]))                        
             elif channel == 1:
                 asyncio.ensure_future(activate_image(note, velocity))
             

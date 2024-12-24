@@ -39,22 +39,23 @@ current_task = None
 async def activate_image(id: int, velocity: int):
     if velocity == 127:
         velocity = 0
-    print(f"activate_image({id},{velocity})")
+    #print(f"activate_image({id},{velocity})")
     await handle_image(id,velocity, 50)
     
 
 async def handle_image(id: int, loop: int, delay: int):
     global current_task
     if current_task:
-        print(f"cancel()")
+        #print(f"cancel()")
         current_task.cancel()
-    print(f"activate_image({id},{loop},{delay})")
-    current_task = asyncio.ensure_future(_display_image_sequence(id, loop, delay))
+    #print(f"activate_image({id},{loop},{delay})")
+    current_task = asyncio.ensure_future(_display_image_sequence(id+1, loop, delay))
     await current_task
 
 async def _display_image_sequence(id: int, loop: int, delay: int):
     fb = Framebuffer()
     fb.clear()  # Clear the framebuffer before starting
+    print(f"ImageSequence({id:03d},{loop})")
     
     def load_image(image_id):
         print(f"/home/angel/images/{image_id:03d}.bin")

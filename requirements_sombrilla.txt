@@ -1,0 +1,4 @@
+wheel
+RPi.GPIO
+pillow
+pyvips

@@ -57,6 +57,56 @@ def empty_folder(folder_path):
                 file.unlink()  # Remove file
             elif file.is_dir():
                 shutil.rmtree(file)  # Remove subdirectories
+                
+def note_from_index(index):
+    """
+    Convierte un índice numérico a una nota musical con octava.
+    
+    :param index: Índice del archivo (001-999).
+    :return: Nombre de la nota correspondiente en formato CDEFGAB y octava.
+    """
+    # Definir las notas musicales en formato CDEFGAB con sostenidos
+    notas = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    
+    # Calcular la posición de la nota en la lista
+    base_index = (index - 1) % 12
+    
+    # Calcular la octava correspondiente
+    octava = (index - 1) // 12 - 2  # Empieza en menos2 para ajustar las octavas
+    
+    # Convertir la octava negativa al formato "menosX"
+    if octava < 0:
+        octava_str = f"menos{abs(octava)}"
+    else:
+        octava_str = str(octava)
+    
+    # Determinar la nota
+    nota = notas[base_index]
+    
+    # Formar el nombre con la octava
+    return f"{octava_str}.{nota}"
+
+
+def resize_png(source_png, dest_png, width=800, height=480):
+    """
+    Redimensiona una imagen PNG a 800x480 y la guarda en la ruta de destino.
+    
+    :param source_png: Ruta al archivo PNG de origen.
+    :param dest_png: Ruta al archivo PNG de destino.
+    :param width: Ancho de la imagen (por defecto 800).
+    :param height: Alto de la imagen (por defecto 480).
+    """
+    dest_dir = Path(dest_png).parent
+    dest_dir.mkdir(parents=True, exist_ok=True)    
+    
+    # Abrir la imagen PNG de origen
+    img = Image.open(source_png)
+    
+    # Redimensionar la imagen a las dimensiones especificadas
+    img_resized = img.resize((width, height))
+    
+    # Guardar la imagen redimensionada en la ruta de destino
+    img_resized.save(dest_png)
 
 def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=16):
     """
@@ -77,11 +127,14 @@ def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=16)
     for i in range(1, 1000):
         png_file = Path(origin_folder) / f"{i:03d}.png"
         bin_file = Path(destiny_folder) / f"{i:03d}.bin"
+        pngd_file = Path(destiny_folder) / f"imagenes_pi/{i:05d}.{note_from_index(i)}.png"
         
         if png_file.exists():
             print(f"Processing {png_file}...")
             png_to_bin(png_file, bin_file, width, height, bpp)
-            #print(f"Saved {bin_file}")
+            resize_png(png_file, pngd_file)
+            print(f"Saved {pngd_file}")
+            #print(note_from_index(i))
         else:
             #print(f"File {png_file} not found, skipping...")
             pass

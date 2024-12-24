@@ -10,7 +10,7 @@ parser = argparse.ArgumentParser(prog='Actualiza')
 parser.add_argument('--pip', default=False)
 args = parser.parse_args()
 
-IP_MALETA = "192.168.0.3"
+IP_MALETA = "192.168.0.4"
 
 def ejecuta(ssh, comando):
     print(f"Ejecutamos Comando {comando}")
