@@ -27,7 +27,7 @@ def ejecuta(ssh, comando):
 if __name__ == "__main__":
         
     print("Generamos imágenes 800 480")
-    convert_all_png_to_bin("/home/angel/lgptclient/images/", "/home/angel/lgptclient/images800480/", 800, 480)
+    convert_all_png_to_bin("/home/angel/lgptclient/images/", "/home/angel/lgptclient/imagessombrilla/", 800, 480, invert=True)
     
     sftp = SftpCliente(IP_MALETA, "sombrilla")
     sftp.connect()

@@ -4,7 +4,7 @@ from pathlib import Path
 import paramiko
 import pysftp
 
-IMG_FOLDER = Path("/home/angel/lgptclient/images800480")
+
 REMOTE_FOLDER  = "/home/angel/images/"
 
 class SftpCliente:
@@ -68,6 +68,7 @@ class SftpCliente:
         self.connection.put(f"/home/angel/lgptclient/requirements_{self.cliente}.txt", "/home/angel/requirements.txt")
 
     def upload_images(self):
+        IMG_FOLDER = Path(f"/home/angel/lgptclient/images{self.cliente}")
         print(f"Uploading images")
         # Upload all .bin files from /home/angel/images800480/ to /home/angel/images/            
         for bin_file in IMG_FOLDER.glob("*.bin"):

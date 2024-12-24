@@ -108,7 +108,7 @@ def resize_png(source_png, dest_png, width=800, height=480):
     # Guardar la imagen redimensionada en la ruta de destino
     img_resized.save(dest_png)
 
-def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=16):
+def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=16, invert=False):
     """
     Convert all PNG files (001.png to 999.png) in the origin folder to raw binary format and save to the destiny folder.
     
@@ -117,6 +117,7 @@ def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=16)
     :param width: Width of the screen in pixels (for resizing).
     :param height: Height of the screen in pixels (for resizing).
     :param bpp: Bits per pixel (default is 16 for RGB565, can be 24 for RGB or 32 for RGBA).
+    :param invert: Boolean flag to invert the image vertically (default is False).
     """
     # Ensure destiny folder exists
     Path(destiny_folder).mkdir(parents=True, exist_ok=True)
@@ -130,11 +131,19 @@ def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=16)
         pngd_file = Path(destiny_folder) / f"imagenes_pi/{i:05d}.{note_from_index(i)}.png"
         
         if png_file.exists():
+            img = Image.open(png_file)
+            
+            if invert:
+                img = img.transpose(Image.FLIP_TOP_BOTTOM)
+                img = img.transpose(Image.FLIP_LEFT_RIGHT)
+            
+            # Ensure the directory for the processed image exists
+            pngd_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            img.save(pngd_file)
             print(f"Processing {png_file}...")
-            png_to_bin(png_file, bin_file, width, height, bpp)
-            resize_png(png_file, pngd_file)
+            png_to_bin(pngd_file, bin_file, width, height, bpp)
+            resize_png(pngd_file, pngd_file)
             print(f"Saved {pngd_file}")
-            #print(note_from_index(i))
         else:
-            #print(f"File {png_file} not found, skipping...")
             pass
