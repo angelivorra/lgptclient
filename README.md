@@ -117,8 +117,6 @@ hdmi_mode=87
 display_rotate=3
 ```
 
-
-
 ## Comando para arrancar servicio cliente
 ```
 sudo /home/angel/venv/bin/python3 /home/angel/lgptclient/bin/cliente-tcp.py
