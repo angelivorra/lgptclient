@@ -122,7 +122,7 @@ def generar_markdown_imagenes(folder):
         if len(parts) >= 3 and parts[1].startswith("menos"):
             num_str = parts[1].replace("menos","-")
             title = parts[2] + num_str
-            lines.append(f"![{title}]({folder}/{filename})\n")
+            lines.append(f"![{title}](images800480/imagenes_pi/{filename})\n")
     return ''.join(lines) 
 
 def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=16, invert=False):
