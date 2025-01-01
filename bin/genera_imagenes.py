@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from PIL import Image
 import struct
@@ -107,6 +108,22 @@ def resize_png(source_png, dest_png, width=800, height=480):
     
     # Guardar la imagen redimensionada en la ruta de destino
     img_resized.save(dest_png)
+
+
+def generar_markdown_imagenes(folder):
+    archivos_png = sorted([
+        f for f in os.listdir(folder) 
+        if f.lower().endswith('.png')
+    ])
+    lines = []
+    for filename in archivos_png:
+        parts = filename.split('.')
+        # parts: ["00001","menos2","C","png"]
+        if len(parts) >= 3 and parts[1].startswith("menos"):
+            num_str = parts[1].replace("menos","-")
+            title = parts[2] + num_str
+            lines.append(f"![{title}]({folder}/{filename})\n")
+    return ''.join(lines) 
 
 def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=16, invert=False):
     """
