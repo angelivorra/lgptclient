@@ -7,7 +7,7 @@
 | D1     | 38    | Caja2  |
 | D#1/Eb1| 39    | Bombo+Caja |
 | E1     | 40    | Platillo |
-| F1     | 41    | |
+| F1     | 41    | Bombo chico |
 | F#1/Gb1| 42    | |
 | G1     | 43    | |
 | G#1/Ab1| 44    | |
