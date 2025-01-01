@@ -4,6 +4,8 @@ from PIL import Image
 import struct
 import shutil
 
+import urllib
+
 def png_to_bin(png_path, bin_path, screenx, screeny, bpp=24):
     """
     Convert a PNG image to raw binary format for framebuffer.
@@ -122,7 +124,8 @@ def generar_markdown_imagenes(folder):
         if len(parts) >= 3 and parts[1].startswith("menos"):
             num_str = parts[1].replace("menos","-")
             title = parts[2] + num_str
-            lines.append(f"![{title}](images800480/imagenes_pi/{filename})\n")
+            encoded_filename = urllib.parse.quote(filename)
+            lines.append(f"![{title}](images800480/imagenes_pi/{encoded_filename})\n")
     return ''.join(lines) 
 
 def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=16, invert=False):
