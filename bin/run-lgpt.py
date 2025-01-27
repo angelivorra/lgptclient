@@ -7,7 +7,7 @@ DATABASE = "/home/angel/lgpt.data"
 
 def main():
   while True:
-    restart_alsa()
+    restart_server()
     try:
       data = run(LGPT, capture_output=True, shell=True)
 
@@ -24,8 +24,8 @@ def main():
     except (EOFError, KeyboardInterrupt):
       pass
 
-def restart_alsa():
-  print('Restart Servidor...')
+def restart_server():
+  print('Restart Server...')
   run(["sudo", "systemctl", "restart", "servidor"])
 
 if __name__ == "__main__":

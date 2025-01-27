@@ -19,10 +19,17 @@ def init_gpio():
         GPIO.output(pin, GPIO.LOW)
 
 async def activate_instrumento(ins):
-    GPIO.output(ins, GPIO.HIGH)
+    if isinstance(ins, int):
+        ins = [ins]
+    
+    for pin in ins:
+        GPIO.output(pin, GPIO.HIGH)
+    
     await asyncio.sleep(TIEMPO)
-    GPIO.output(ins, GPIO.LOW)
-
+    
+    for pin in ins:
+        GPIO.output(pin, GPIO.LOW)
+        
 def cleanup_gpio():
     logger.info('Cleaning up GPIO')
     GPIO.cleanup()

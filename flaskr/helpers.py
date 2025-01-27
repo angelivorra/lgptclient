@@ -1,6 +1,13 @@
 # helpers.py
 
 import subprocess
+import socket
+
+IPS = [
+    {'ip': '192.168.0.3', 'name': 'Obdulia'},
+    {'ip': '192.168.0.4', 'name': 'Carmen'},
+]
+
 
 def check_service_status(service_name):
     try:
@@ -18,3 +25,23 @@ def check_service_status(service_name):
 
     except Exception as e:
         return False, str(e)
+    
+    
+def send_command_locally(cmd_data, socket_path='/tmp/copilot.sock'):
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.connect(socket_path)
+            s.sendall(cmd_data.encode())
+            response = s.recv(1024)
+        return response.decode()
+    except Exception as e:
+        return str(e)
+
+
+def get_extra_device_data(row):
+    #Call the 
+
+
+def getDevices():
+    for row in IPS:
+        row.update(get_extra_device_data(row))

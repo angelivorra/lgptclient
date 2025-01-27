@@ -15,6 +15,7 @@ TCP_PORT = 8888  # Define the port to listen on
 CSV_FILENAME = '/home/angel/midi_notes_log.csv'
 DEBUG_NOTES = False
 TMP_FILE = '/tmp/debug_notes.tmp'
+UNIX_SOCKET_PATH = '/tmp/copilot.sock'
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -33,6 +34,23 @@ def initialize_csv(filename):
     with open(filename, mode='w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(["timestamp_sent", "note", "channel", "velocity"])
+
+
+async def handle_local_client(reader, writer):
+    try:
+        while True:
+            data = await reader.read(1024)
+            if not data:
+                break
+            # Process incoming command here
+            response = f"Received: {data.decode()}"
+            writer.write(response.encode())
+            await writer.drain()
+    except asyncio.CancelledError:
+        pass
+    finally:
+        writer.close()
+        await writer.wait_closed()
 
 async def handle_client(reader, writer):
     sock = writer.get_extra_info('socket')
@@ -91,17 +109,25 @@ async def main():
     # Initialize CSV logging
     if DEBUG_NOTES:
         initialize_csv(CSV_FILENAME)    
+
+    # Remove socket if it already exists
+    if os.path.exists(UNIX_SOCKET_PATH):
+        os.remove(UNIX_SOCKET_PATH)
     
     # Initialize MIDI client and port
     client = AsyncSequencerClient(MIDI_CLIENT_NAME)
     port = client.create_port(MIDI_PORT, WRITE_PORT)
     logger.info("MIDI client and port created")
+    
+    # Start a UNIX domain socket server
+    server_local = await asyncio.start_unix_server(handle_local_client, path=UNIX_SOCKET_PATH)
+    logger.info(f"Local UNIX socket server started on {UNIX_SOCKET_PATH}")
 
     # Start TCP server
     server = await asyncio.start_server(handle_client, '0.0.0.0', TCP_PORT)
     logger.info(f"TCP server started on port {TCP_PORT}")
 
-    async with server:
+    async with server, server_local:
         # Listen for MIDI events
         while True:
             event = await client.event_input()

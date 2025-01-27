@@ -45,7 +45,7 @@ async def handle_event(reader):
                 break
 
             data = data.strip()
-            logger.info(data)
+            logger.debug(data)
             cleaned_data = data.decode('utf-8').strip().split(',')
 
             try:
@@ -62,7 +62,7 @@ async def handle_event(reader):
             
             strnote = str(note)
             if channel == 0 and strnote in instruments:
-                logger.info(f"activate_instrumento{instruments[strnote]}")
+                logger.debug(f"activate_instrumento{instruments[strnote]}")
                 asyncio.ensure_future(activate_instrumento(instruments[strnote]))                        
             elif channel == 1:
                 asyncio.ensure_future(activate_image(note, velocity))

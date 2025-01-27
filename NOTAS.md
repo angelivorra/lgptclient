@@ -1,15 +1,18 @@
 # Notas de C1 a C5
 
+Notas en el canal 00 midi se convierten en eventos de robot
+Notas en el canal 01 del midi son imagenes
+
 | Nota   | Valor | Accion |
 |--------|-------|--------|
 | C1     | 36    | Bombo  |
 | C#1/Db1| 37    | Caja1  |
 | D1     | 38    | Caja2  |
 | D#1/Eb1| 39    | Bombo+Caja |
-| E1     | 40    | Platillo |
+| E1     | 40    | Crash |
 | F1     | 41    | Bombo chico |
-| F#1/Gb1| 42    | |
-| G1     | 43    | |
+| F#1/Gb1| 42    | Bombo + Crash |
+| G1     | 43    | Caja + Crash |
 | G#1/Ab1| 44    | |
 | A1     | 45    | |
 | A#1/Bb1| 46    | |

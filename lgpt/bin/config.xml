@@ -3,9 +3,15 @@
         <SAMPLELIB value="/home/angel/lgptclient/lgpt/samplelib"/>
 
         <AUDIOAPI value='Linux ALSA'/>
-        <AUDIODEVICE value="hw:IQaudIODAC"/>
+        
+	<AUDIODEVICE value="movida"/>
+	
         <AUDIOBUFFERSIZE value='512'/>
         <AUDIOPREBUFFERCOUNT value='3'/>
+
+	<!-- 
+          <MIDIDELAY value="10"/>
+        -->
 	
         <!--
         <BACKGROUND value="000000" /> 
