@@ -4,7 +4,7 @@
 
         <AUDIOAPI value='Linux ALSA'/>
         
-	<AUDIODEVICE value="movida"/>
+	<AUDIODEVICE value="hw:Loopback,0"/>
 	
         <AUDIOBUFFERSIZE value='512'/>
         <AUDIOPREBUFFERCOUNT value='3'/>
