@@ -31,7 +31,7 @@ def restart_server():
   print('Restart Server...')
   run(["sudo", "killall", "arecord"])
   run(["sudo", "killall", "aplay"])
-  subprocess.run("sudo arecord -D hw:Loopback,1 -f cd | sudo aplay -D movida", shell=True)
+  subprocess.Popen("sudo arecord -D hw:Loopback,1 -f cd | sudo aplay -D movida", shell=True)
   run(["sudo", "systemctl", "restart", "servidor"])
 
 if __name__ == "__main__":
