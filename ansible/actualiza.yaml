@@ -1,6 +1,7 @@
 ---
 - name: Instalamos cliente
-  hosts: maleta
+  hosts: sombrilla
   gather_facts: yes
   roles:
-    - cliente-actualiza
+    #- cliente-actualiza
+    - servicio-panel

@@ -55,7 +55,7 @@ async def handle_image(id: int, loop: int, delay: int):
 async def _display_image_sequence(id: int, loop: int, delay: int):
     fb = Framebuffer()
     fb.clear()  # Clear the framebuffer before starting
-    print(f"ImageSequence({id:03d},{loop})")
+    #print(f"ImageSequence({id:03d},{loop})")
     
     def load_image(image_id):
         print(f"/home/angel/images/{image_id:03d}.bin")

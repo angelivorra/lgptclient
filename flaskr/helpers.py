@@ -1,5 +1,4 @@
 # helpers.py
-
 import subprocess
 import socket
 import json
@@ -8,7 +7,6 @@ IPS = [
     {'ip': '192.168.0.3', 'name': 'Obdulia'},
     {'ip': '192.168.0.4', 'name': 'Carmen'},
 ]
-
 
 def check_service_status(service_name):
     try:
@@ -26,8 +24,8 @@ def check_service_status(service_name):
 
     except Exception as e:
         return False, str(e)
-    
-    
+
+
 def send_command_locally(cmd_data, socket_path='/tmp/copilot.sock'):
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:

@@ -15,6 +15,11 @@
   <title>{{name}}</title>
   <script>
     $(document).ready(function () {
+      $('.device-button').on('click', function () {
+        var deviceIp = $(this).data('ip');
+        //alert('Device IP: ' + deviceIp);
+        location.href = 'http://' + deviceIp + ':8080/robot/';
+      });
       $('#controlForm').on('submit', function (e) {
         e.preventDefault();
 
@@ -58,7 +63,7 @@
     <section id="devices">
       <p class="grid">
         {% for device in devices %}
-        <button>{{ device.name }}</button>
+        <button type="button" class="device-button" data-ip="{{ device.ip }}">{{ device.name }}</button></a>         
         {% endfor %}
       </p>
     </section>

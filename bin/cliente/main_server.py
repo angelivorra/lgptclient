@@ -30,7 +30,7 @@ def initialize_csv(filename):
         os.unlink(filename)
     with open(filename, mode='w', newline='') as file:
         writer = csv.writer(file)
-        writer.writerow(["timestamp_sent", "note", "timestamp_received"])
+        writer.writerow(["timestamp_sent", "note", "timestamp_received", "timestamp_executed"])
 
 def parse_config(config_line):
     """Parse the CONFIG line and set global parameters"""
@@ -89,7 +89,7 @@ async def handle_event(reader):
             strnote = str(note)
             if channel == 0 and strnote in instruments:
                 logger.debug(f"activate_instrumento{instruments[strnote]}")
-                asyncio.ensure_future(activate_instrumento(instruments[strnote]))                        
+                asyncio.ensure_future(activate_instrumento(instruments[strnote]))
             elif channel == 1:
                 if debug_mode:
                     logger.debug(f"Activating image with note={note}, velocity={velocity}")

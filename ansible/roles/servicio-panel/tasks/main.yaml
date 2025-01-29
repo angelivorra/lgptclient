@@ -1,0 +1,77 @@
+---
+- name: Stop the service panel if it exists
+  become: true
+  service:
+    name: panel
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+
+- name: Ensure  directory exists and is empty
+  become: true
+  file:
+    path: /home/angel/panel
+    state: absent
+
+- name: Ensure  directory exists and is empty
+  become: true
+  file:
+    path: /home/angel/venvflask/
+    state: absent
+
+- name: Ensure directory exists and is empty
+  become: true
+  file:
+    path: /home/angel/panel
+    state: directory
+    owner: angel
+    group: angel
+
+- name: Copy files from /home/angel/lgptclient/flaskr to /home/angel/panel
+  become: true
+  ansible.builtin.copy:
+    src: /home/angel/lgptclient/flaskr/
+    dest: /home/angel/panel/
+    owner: angel
+    group: angel
+    mode: '0755'
+
+- name: Create a Python virtual environment
+  command: python3 -m venv /home/angel/venvflask/
+
+- name: Install requirements in the virtual environment
+  pip:
+    requirements: /home/angel/panel/requirements.txt
+    virtualenv: /home/angel/venvflask/
+
+- name: Install systemd service for the Python script
+  become: True
+  copy:
+    dest: /etc/systemd/system/panel.service
+    content: |
+        [Unit]
+        Description=Pandel de control
+        After=network.target
+
+        [Service]
+        Type=notify
+        NotifyAccess=main
+        User=angel
+        Group=angel
+        WorkingDirectory=/home/angel/panel
+        ExecStart=/home/angel/venvflask/bin/gunicorn -b 0.0.0.0:8080 -w 1 wsgy:app
+        ExecReload=/bin/kill -s HUP $MAINPID
+        KillMode=mixed
+        TimeoutStopSec=5
+        PrivateTmp=true
+
+        [Install]
+        WantedBy=multi-user.target
+
+- name: Enable and start the service
+  become: True
+  systemd:
+    name: panel.service
+    enabled: yes
+    state: started
+    daemon_reload: yes
