@@ -1,8 +1,12 @@
 import os
 import subprocess
+import time
 
-from flask import Flask, render_template
-from helpers import check_service_status  # Import the helper function
+from flask import Flask, redirect, render_template
+from helpers import check_service_status, get_devices, restart_service, save_config, read_config
+from flask import request
+from flask import jsonify
+
 
 def create_app(test_config=None):
     # create and configure the app
@@ -26,10 +30,27 @@ def create_app(test_config=None):
 
 
 
-    @app.route('/', methods=('GET', 'POST'))
+    @app.route('/', methods=(['GET']))
     def home():
-        name = "Cliente01"
-        is_active_b, logs_b = check_service_status("bluetooth")
-        return render_template('home.html', is_active_b = is_active_b, logs_b = logs_b)
+        name = subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip()        
+        is_active, logs = check_service_status("servidor")
+        devices = get_devices()
+        config = read_config()
+        with open('/home/angel/arecord.log', 'r') as file:
+            audio = file.read()
+        #print(config)
+        return render_template('home.html', name=name, is_active=is_active, logs=logs, devices = devices, config = config, audio = audio)
 
+    @app.route('/', methods=(['POST']))
+    def restart():        
+        delay = request.form.get('delay', type=int, default=0)
+        debug = request.form.get('debug', type=bool, default=False)
+        save_config({"delay": delay, "debug": debug})
+        subprocess.run(['sudo', 'pkill', '-f', 'lgpt.rpi-exe'])        
+        restart_service("servidor")
+        time.sleep(2)
+        return jsonify({"status": "ok"})
+
+
+    
     return app

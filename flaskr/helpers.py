@@ -2,6 +2,7 @@
 
 import subprocess
 import socket
+import json
 
 IPS = [
     {'ip': '192.168.0.3', 'name': 'Obdulia'},
@@ -37,11 +38,49 @@ def send_command_locally(cmd_data, socket_path='/tmp/copilot.sock'):
     except Exception as e:
         return str(e)
 
+def read_config(file_path='/home/angel/lgptclient/bin/config.json'):
+    try:
+        with open(file_path, 'r') as config_file:
+            config = json.load(config_file)
+        return config
+    except Exception as e:
+        return {"error": str(e)}
+
+def load_config():
+    config = read_config()
+    if "error" in config:
+        print(f"Error reading config: {config['error']}")
+        return None
+    return config
+
+def save_config(config, file_path='/home/angel/lgptclient/bin/config.json'):
+    try:
+        with open(file_path, 'w') as config_file:
+            json.dump(config, config_file, indent=4)
+        return True
+    except Exception as e:
+        return {"error": str(e)}
+    
+def restart_service(service_name):
+    try:
+        # Restart the service
+        restart_cmd = f'sudo systemctl restart {service_name}'
+        restart_result = subprocess.run(restart_cmd.split(), capture_output=True, text=True)
+        
+        if restart_result.returncode == 0:
+            return True, "Service restarted successfully"
+        else:
+            return False, restart_result.stderr.strip()
+    except Exception as e:
+        return False, str(e)
 
 def get_extra_device_data(row):
-    #Call the 
+    return {}
 
 
-def getDevices():
-    for row in IPS:
-        row.update(get_extra_device_data(row))
+def get_devices():
+    r = IPS.copy()
+    for row in r:
+        extra_data = get_extra_device_data(row)
+        row.update(extra_data)
+        return r

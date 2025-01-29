@@ -6,48 +6,106 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark" />
   <link rel="stylesheet" href="{{ url_for('static', filename='pico.indigo.min.css') }}">
-  <script src="{{ url_for('static', filename='htmx.min.js') }}"></script>
-  <title>Cliente</title>
+  <script src="{{ url_for('static', filename='jquery-3.7.1.min.js') }}"></script>
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32x32.png') }}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon-16x16.png') }}">
+  <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='static.css') }}">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>{{name}}</title>
+  <script>
+    $(document).ready(function () {
+      $('#controlForm').on('submit', function (e) {
+        e.preventDefault();
+
+        $('#submitBtn').prop('disabled', true);
+        $('#loadingIndicator').show();
+        $('#error-message').hide();
+
+        $.ajax({
+          url: $(this).attr('action'),
+          method: 'POST',
+          data: $(this).serialize(),
+          success: function () {
+            $('#loadingIndicator').hide();
+            $('#submitBtn').prop('disabled', false);
+            location.reload();
+          },
+          error: function (xhr) {
+            $('#error-message').show().text('Error: ' + xhr.responseText);
+            $('#loadingIndicator').hide();
+            $('#submitBtn').prop('disabled', false);
+          }
+        });
+      });
+    });
+  </script>
 </head>
 
 <body>
-  <header></header>
-  <main>
-    <h1>Movida</h1>
-    <table>
-      <thead>
-        <tr>
-          <th>IP</th>
-          <th>Estado</th>
-          <th>Acciones</th>
-        </tr>
-      </thead>
-      <tbody>
-        <!-- Ejemplo de dispositivo -->
-        <tr>
-          <td>192.168.1.10</td>
-          <td><span style="color: yellow;">●</span> Conectado</td>
-          <td>
-            <button hx-get="/acciones/192.168.1.10" hx-target="#menu-192168110" hx-swap="innerHTML">
-              Mostrar menú
-            </button>
-          </td>
-        </tr>
-        <tr>
-          <td>192.168.1.20</td>
-          <td><span style="color: red;">●</span> Desconectado</td>
-          <td>
-            <button hx-get="/acciones/192.168.1.20" hx-target="#menu-192168120" hx-swap="innerHTML">
-              Mostrar menú
-            </button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+  <header class="container">
+    <hgroup>
+      {% if is_active %}
+      <h1>Movida</h1>
+      {% else %}
+      <h1>Error</h1>
+      {% endif %}
+      <p>Control remoto robots.</p>
+    </hgroup>
+  </header>
+  <main class="container">
+    {% if devices %}
+    <section id="devices">
+      <p class="grid">
+        {% for device in devices %}
+        <button>{{ device.name }}</button>
+        {% endfor %}
+      </p>
+    </section>
+    {% else %}
+    <section id="vacio">
+      <p>No hay na.</p>
+    </section>
+    {% endif %}
 
-    <!-- Contenedores para HTMX -->
-    <div id="menu-192168110"></div>
-    <div id="menu-192168120"></div>
+    <section id="control">
+      <h2>Retraso</h2>
+
+      <div id="error-message" class="error-message" style="display: none; color: red;"></div>
+
+      <div class="hx-indicator" id="loadingIndicator" style="display: none;">
+        <article aria-busy="true"></article>
+      </div>
+
+      <form id="controlForm" action="{{ url_for('home') }}" method="post">
+        <!-- Loading indicator -->
+
+        <label for="delay">Cuanto
+          <input type="text" id="delay" name="delay" value="{{ config.delay }}" />
+        </label>
+
+        <fieldset>
+          <label for="debug">
+            <input type="checkbox" role="switch" id="debug" name="debug" {% if config.debug %} checked {% endif %} />
+            Debug
+          </label>
+        </fieldset>
+
+        <input type="submit" value="Aplicar" id="submitBtn">
+
+      </form>
+    </section>
+
+    <section id="audio">
+      <h2>Audio</h2>
+      <article><pre>{{audio}}</pre></article>
+    </section>
+
+    <section id="servicio">
+      <h2>Servicio</h2>
+      <article ><pre>{{logs}}</pre></article>
+    </section>
+
   </main>
   <footer></footer>
 </body>

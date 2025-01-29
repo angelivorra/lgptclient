@@ -6,7 +6,9 @@ from genera_imagenes import convert_all_png_to_bin,generar_markdown_imagenes
 from ftpcliente import SftpCliente
 
 
-
+GENERATE_IMAGES = False
+UPLOAD_IMAGES = False
+RESTART_SERVICE = False
 
 
 def ejecuta(ssh, comando):
@@ -24,22 +26,26 @@ def ejecuta(ssh, comando):
 def actualiza_sombrilla(pip=False):
         
     print("Generamos imágenes 800 480")
-    convert_all_png_to_bin("/home/angel/lgptclient/images/", "/home/angel/lgptclient/imagessombrilla/", 800, 480, invert=True)
+    if GENERATE_IMAGES:
+        convert_all_png_to_bin("/home/angel/lgptclient/images/", "/home/angel/lgptclient/imagessombrilla/", 800, 480, invert=True)
     IP_SOMBRILLA = "192.168.0.4"        
     sftp = SftpCliente(IP_SOMBRILLA, "sombrilla")
     sftp.connect()
     sftp.update_sources()
-    sftp.upload_images()
+    if UPLOAD_IMAGES:
+        sftp.upload_images()
     
     if pip:
         sftp.update_pyton()
 
-    sftp.ejecuta('sudo systemctl restart cliente')
-    time.sleep(2)
-    status = sftp.ejecuta('sudo systemctl status cliente')
-    output=''
-    for line in status:
-        output=output+line
+    if RESTART_SERVICE:
+        sftp.ejecuta('sudo systemctl restart cliente')
+        time.sleep(2)
+        status = sftp.ejecuta('sudo systemctl status cliente')
+        output=''
+        for line in status:
+            output=output+line
     
     sftp.disconnect()
-    print(output)
+    if RESTART_SERVICE:
+        print(output)

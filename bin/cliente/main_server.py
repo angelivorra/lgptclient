@@ -16,15 +16,12 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-DEBUG_NOTES = False
 CSV_FILENAME = '/home/angel/midi_notes_log.csv'
-TMP_FILE = '/tmp/debug_notes.tmp'
 
 with open('/home/angel/config.json') as f:
     config = json.load(f)
 
 instruments = config["instruments"]
-print(instruments)
 TIEMPO = config["tiempo"]
 
 def initialize_csv(filename):
@@ -35,8 +32,32 @@ def initialize_csv(filename):
         writer = csv.writer(file)
         writer.writerow(["timestamp_sent", "note", "timestamp_received"])
 
+def parse_config(config_line):
+    """Parse the CONFIG line and set global parameters"""
+    try:
+        cmd, delay, debug = config_line.split(',')
+        if cmd != 'CONFIG':
+            raise ValueError("Invalid config format")        
+        
+        delay = int(delay)
+        debug_mode = debug.lower() == 'true'
+        
+        logger.info(f"Configuration set: delay={delay}ms, debug={debug_mode}")
+        return True, delay, debug_mode
+    except Exception as e:
+        logger.error(f"Error parsing config: {e}")
+        return False, 0, False
+
 
 async def handle_event(reader):
+    config_line = (await reader.readline()).decode().strip()
+    success, delay, debug_mode = parse_config(config_line)
+    if not success:
+        logger.error("Failed to parse initial configuration")
+        return
+    if debug_mode:
+        initialize_csv(CSV_FILENAME)
+
     while True:
         try:
             data = await reader.readline()
@@ -45,16 +66,21 @@ async def handle_event(reader):
                 break
 
             data = data.strip()
-            logger.debug(data)
+            if debug_mode:
+                logger.debug(f"Raw data received: {data}")
+            
             cleaned_data = data.decode('utf-8').strip().split(',')
 
             try:
                 sent_timestamp, note, channel, velocity = map(int, cleaned_data)
                 current_timestamp = int(datetime.now().timestamp() * 1000)
-                if DEBUG_NOTES:
+                if debug_mode:
                     with open(CSV_FILENAME, mode='a', newline='') as file:
                         writer = csv.writer(file)
                         writer.writerow([sent_timestamp, note, current_timestamp])
+                
+                if debug_mode:
+                    logger.debug(f"Processed data: timestamp={sent_timestamp}, note={note}, channel={channel}, velocity={velocity}")
                 
             except ValueError:
                 logger.error("Received malformed data, skipping row")
@@ -65,6 +91,8 @@ async def handle_event(reader):
                 logger.debug(f"activate_instrumento{instruments[strnote]}")
                 asyncio.ensure_future(activate_instrumento(instruments[strnote]))                        
             elif channel == 1:
+                if debug_mode:
+                    logger.debug(f"Activating image with note={note}, velocity={velocity}")
                 asyncio.ensure_future(activate_image(note, velocity))
             
         except Exception as e:
@@ -105,12 +133,6 @@ if __name__ == '__main__':
     server_port = 8888  # Replace with the correct port
     
     init_gpio()
-
-    if os.path.exists(TMP_FILE):
-        DEBUG_NOTES = True
-        os.remove(TMP_FILE)
-        logger.info("Debug Mode Initiated")
-        initialize_csv(CSV_FILENAME)
 
     try:
         loop = asyncio.get_event_loop()
