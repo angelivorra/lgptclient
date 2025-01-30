@@ -40,10 +40,15 @@ async def handle_local_client(reader, writer):
         data = await reader.read(1024)
         if data:
             message = data.decode().strip()
-            logger.info(f"Received local message: {message}")
-            if message == "generate-data":
-                # Handle generate-data command
-                await send_data(count=500, channels=[3,4,5], persecond=10)
+            if message.startswith("generate-data"):
+                parts = message.split(',')
+                if len(parts) == 2 and parts[0] == "generate-data":
+                    try:
+                        count = int(parts[1])
+                        initialize_csv(CSV_FILENAME)
+                        await send_data(count=count, channels=[3, 4, 5], persecond=10)
+                    except ValueError:
+                        logger.error("Invalid count value for generate-data command")
     except Exception as e:
         logger.error(f"Error in local client handler: {e}")
     finally:
@@ -125,7 +130,7 @@ async def main():
     config = load_config()
     debug_mode = config.get("debug", False)
     if debug_mode:
-        initialize_csv(CSV_FILENAME)    
+        initialize_csv(CSV_FILENAME)
 
     # Remove socket if it already exists
     if os.path.exists(UNIX_SOCKET_PATH):

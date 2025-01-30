@@ -18,6 +18,7 @@
   file:
     path: /home/angel/venvflask/
     state: absent
+  when: install_python | bool
 
 - name: Ensure directory exists and is empty
   become: true
@@ -36,13 +37,22 @@
     group: angel
     mode: '0755'
 
+- name: Set file permissions for Python files
+  file:
+    path: /home/angel/panel
+    owner: angel
+    group: angel
+    mode: '0755'
+
 - name: Create a Python virtual environment
   command: python3 -m venv /home/angel/venvflask/
+  when: install_python | bool
 
 - name: Install requirements in the virtual environment
   pip:
     requirements: /home/angel/panel/requirements.txt
     virtualenv: /home/angel/venvflask/
+  when: install_python | bool
 
 - name: Install systemd service for the Python script
   become: True
@@ -50,7 +60,7 @@
     dest: /etc/systemd/system/panel.service
     content: |
         [Unit]
-        Description=Pandel de control
+        Description=Panel de control
         After=network.target
 
         [Service]

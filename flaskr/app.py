@@ -29,6 +29,7 @@ def create_app():
         app.logger.info('Main home')
         name = subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip()        
         is_active, logs = check_service_status("servidor")
+        lgpt_is_active, lgpt_logs = check_service_status("lgpt")
         devices = get_devices()
         config = read_config()
         with open('/home/angel/arecord.log', 'r') as file:
@@ -39,7 +40,26 @@ def create_app():
             with open(CSV_FILENAME, 'r') as file:
                 line_count = len(file.readlines()) - 1
                 
-        return render_template('home.html', name=name, is_active=is_active, logs=logs, devices = devices, config = config, audio = audio, line_count = line_count)
+        return render_template('home.html', 
+                               name=name, 
+                               is_active=is_active, 
+                               logs=logs, 
+                               devices = devices, 
+                               config = config, 
+                               audio = audio, 
+                               line_count = line_count,
+                               lgpt_is_active = lgpt_is_active, 
+                               lgpt_logs = lgpt_logs
+                               )
+
+    @app.route('/proceso', methods=(['GET']))
+    def proceso():
+        line_count = 0
+        if os.path.exists(CSV_FILENAME):
+            with open(CSV_FILENAME, 'r') as file:
+                line_count = len(file.readlines()) - 1
+        return jsonify({"data": line_count})
+
 
     @app.route('/resultados', methods=(['GET']))
     def resultados():
@@ -47,6 +67,20 @@ def create_app():
 
         return render_template('resultados.html', name=name)
 
+    
+    @app.route('/testvelocidad/<int:intvalue>', methods=(['GET']))
+    def test_velocidad(intvalue):
+        app.logger.info('Test Velocidad')
+        name = subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip()
+        
+        file_count = 0
+        if os.path.exists(CSV_FILENAME):
+            with open(CSV_FILENAME, 'r') as file:
+                file_count = len(file.readlines()) - 1
+        
+        return render_template('test.html', name=name, intvalue=intvalue * 3, file_count=file_count)
+    
+    
     @app.route('/generadatos', methods=(['POST']))
     def genera_datos():
         def send_message_to_socket(message):            
@@ -62,9 +96,8 @@ def create_app():
             finally:
                 sock.close()
             return {"status": "ok"}
-        
-        app.logger.info('Send message')
-        result = send_message_to_socket("generate-data")
+        data = request.form.get('data', type=int, default=50)
+        result = send_message_to_socket("generate-data," + str(data))
         return jsonify(result)
 
     @app.route('/', methods=(['POST']))
@@ -83,34 +116,37 @@ def create_app():
     def robot():
         app.logger.info('robot')
         name = subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip()        
+
+        total_notes = 0
+        max_difference = 0
+        min_difference = 0
+        weighted_avg_difference = 0
+        events_over_50ms = 0
         
         if os.path.exists(CSV_ROBOT_FILENAME):
-            df = pd.read_csv(CSV_ROBOT_FILENAME)
-            total_notes = len(df)
-            differences = (df.iloc[:, 2] - df.iloc[:, 0]).abs()
-            max_difference = differences.max()
-            min_difference = differences.min()
-            weighted_avg_difference = (differences * df.iloc[:, 1]).sum() / df.iloc[:, 1].sum()
-            events_over_50ms = (differences > 100).sum()
-        else:
-            total_notes = 0
-            max_difference = 0
-            min_difference = 0
-            weighted_avg_difference = 0
-            events_over_50ms = 0
-            
+            df = pd.read_csv(CSV_ROBOT_FILENAME)            
+            if len(df) > 1:
+                total_notes = len(df)
+                differences = (df.iloc[:, 2] - df.iloc[:, 0]).abs()
+                max_difference = differences.max()
+                min_difference = differences.min()
+                weighted_avg_difference = (differences * df.iloc[:, 1]).sum() / df.iloc[:, 1].sum()
+                events_over_50ms = (differences > 100).sum()
+        
+        max_timing_difference = 0
+        min_timing_difference = 0
+        weighted_avg_timing_difference = 0
+        timing_events_over_50ms = 0
+        timing_differences = 0
+        
         if os.path.exists(CSV_TIMIG_FILENAME):
             df_timing = pd.read_csv(CSV_TIMIG_FILENAME)
-            timing_differences = (df_timing.iloc[:, 2] - df_timing.iloc[:, 1]).abs()
-            max_timing_difference = timing_differences.max()
-            min_timing_difference = timing_differences.min()
-            weighted_avg_timing_difference = (timing_differences * df_timing.iloc[:, 0]).sum() / df_timing.iloc[:, 0].sum()
-            timing_events_over_50ms = (timing_differences > 10).sum()
-        else:
-            max_timing_difference = 0
-            min_timing_difference = 0
-            weighted_avg_timing_difference = 0
-            timing_events_over_50ms = 0
+            if len(df) > 1:
+                timing_differences = (df_timing.iloc[:, 2] - df_timing.iloc[:, 1]).abs()
+                max_timing_difference = timing_differences.max()
+                min_timing_difference = timing_differences.min()
+                weighted_avg_timing_difference = (timing_differences * df_timing.iloc[:, 0]).sum() / df_timing.iloc[:, 0].sum()
+                timing_events_over_50ms = (timing_differences > 10).sum()
 
         return render_template('robot.html', 
                                name=name, 

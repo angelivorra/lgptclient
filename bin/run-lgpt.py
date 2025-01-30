@@ -1,56 +1,93 @@
-#!/usr/bin/env /home/angel/lgptclient/venv/bin/python3
-from subprocess import run
+#!/usr/bin/env python3
 import subprocess
 import sys
+import time
+import signal
+import logging
+from pathlib import Path
 
+# Constants
 LGPT = '/home/angel/lgptclient/lgpt/bin/lgpt.rpi-exe'
-DATABASE = "/home/angel/lgpt.data"
 LOG_FILE = "/home/angel/lgpt.log"
 EXEC_LOG_FILE = "/home/angel/lgpt.exec.log"
+ARECORD_LOG = "/home/angel/arecord.log"
+
+# Configure logging
+logging.basicConfig(
+    format='%(asctime)s %(levelname)s: %(message)s',
+    level=logging.INFO,
+    handlers=[logging.FileHandler(LOG_FILE), logging.StreamHandler()]
+)
+
+def signal_handler(signum, frame):
+    """Handle graceful shutdown on SIGTERM/SIGINT"""
+    logging.info(f"Received signal {signum}, shutting down...")
+    cleanup()
+    sys.exit(0)
+
+def cleanup():
+    """Clean up processes before exit"""
+    try:
+        subprocess.run(["sudo", "killall", "aplay", "arecord"], check=False)
+        subprocess.run(["sudo", "/etc/init.d/alsa-utils", "stop"], check=False)
+    except Exception as e:
+        logging.error(f"Cleanup error: {e}")
+
+def restart_audio():
+    """Restart audio subsystem"""
+    try:
+        cleanup()
+        subprocess.run(["sudo", "/etc/init.d/alsa-utils", "start"], check=True)
+        
+        # Start audio pipeline
+        with open(ARECORD_LOG, "w") as arecord_log:
+            subprocess.Popen(
+                "sudo arecord -D hw:Loopback,1 -f cd | sudo aplay -D movida",
+                shell=True,
+                stdout=arecord_log,
+                stderr=arecord_log
+            )
+        
+        # Restart server service
+        subprocess.run(["sudo", "systemctl", "restart", "servidor"], check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to restart audio: {e}")
+        return False
+    return True
 
 def main():
+    # Set up signal handlers
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
     while True:
-        restart_server()
         try:
+            if not restart_audio():
+                time.sleep(5)
+                continue
+
+            logging.info("Starting LGPT process...")
             with open(EXEC_LOG_FILE, "w") as log_file:
-                data = run(LGPT, capture_output=True, shell=True)
+                process = subprocess.run(
+                    LGPT,
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
 
-                output = data.stdout.splitlines()
-                errors = data.stderr.splitlines()
+                log_file.write("=== OUTPUT ===\n")
+                log_file.write(process.stdout)
+                log_file.write("\n=== ERRORS ===\n") 
+                log_file.write(process.stderr)
+                log_file.write(f"\nEXIT CODE: {process.returncode}\n")
 
-                log_file.write("OUTPUT\n")
-                log_file.write("------\n")
-                log_file.write(data.stdout)
-                log_file.write('ERRORES\n')
-                log_file.write('-------\n')
-                log_file.write(data.stderr)
+                if process.returncode != 0:
+                    logging.error(f"LGPT process failed with code {process.returncode}")
+                    time.sleep(3)
 
-                log_file.write(f"ERROR CODE = {data.returncode}\n")
-
-        except KeyboardInterrupt:
-            sys.exit()
         except Exception as e:
-            print(f"Exception: {e}")
-
-def restart_server():
-    with open(LOG_FILE, "w") as log_file:
-        log_file.write("Inicio...\n")
-        result = run(["pgrep", "aplay"], capture_output=True, text=True)
-        if result.stdout:
-            print("Kill aplay")
-            log_file.write("Kill aplay\n")
-            run(["sudo", "killall", "aplay"])
-        result = run(["pgrep", "arecord"], capture_output=True, text=True)
-        if result.stdout:
-            log_file.write("Kill arecord\n")
-            print("Kill arecord")
-            run(["sudo", "killall", "arecord"])
-        
-    run(["sudo", "/etc/init.d/alsa-utils", "stop"])
-    run(["sudo", "/etc/init.d/alsa-utils", "start"])
-    with open("/home/angel/arecord.log", "w") as arecord_log:
-        subprocess.Popen("sudo arecord -D hw:Loopback,1 -f cd | sudo aplay -D movida", shell=True, stdout=arecord_log, stderr=arecord_log)
-    run(["sudo", "systemctl", "restart", "servidor"])
+            logging.error(f"Main loop error: {e}")
+            time.sleep(3)
 
 if __name__ == "__main__":
-  main()
+    main()

@@ -4,4 +4,6 @@
   gather_facts: yes
   roles:
     #- cliente-actualiza
-    - servicio-panel
+    - role: servicio-panel
+      vars:
+        install_python: false

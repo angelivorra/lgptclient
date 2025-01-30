@@ -15,11 +15,18 @@
   <title>{{name}}</title>
   <script>
     $(document).ready(function () {
+      const $form = $('#controlForm');
+      const $loadingIndicator = $('#loadingIndicator');
+      const $errorMessage = $('#error-message');
+      const $mainContent = $('main > section:not(#loadingIndicator)');
+
+      $loadingIndicator.hide();
+
       $('.velocidad-button').on('click', function () {
-        $('#loadingIndicator').show();
-        $.post('/generadatos', function () {
-          $('#loadingIndicator').hide();
-          alert('Prueba Iniciada');
+        $mainContent.hide();
+        $loadingIndicator.show();
+        $.post('/generadatos', { data: $('#envios').val() }, function () {
+          location.href = '/testvelocidad/' + $('#envios').val();
         });
       });
       $('.device-button').on('click', function () {
@@ -27,29 +34,31 @@
         //alert('Device IP: ' + deviceIp);
         location.href = 'http://' + deviceIp + ':8080/robot';
       });
-      $('#controlForm').on('submit', function (e) {
-        e.preventDefault();
 
-        $('#submitBtn').prop('disabled', true);
-        $('#loadingIndicator').show();
-        $('#error-message').hide();
+      $form.on('submit', function (e) {
+        e.preventDefault();
+        console.log('Form submitted'); // Debug log
+
+        // Hide all sections except loading
+        $('section:not(#loadingIndicator)').hide();
+        $loadingIndicator.show();
+        console.log('Loading shown'); // Debug log        
 
         $.ajax({
           url: $(this).attr('action'),
           method: 'POST',
           data: $(this).serialize(),
           success: function () {
-            $('#loadingIndicator').hide();
-            $('#submitBtn').prop('disabled', false);
             location.reload();
           },
-          error: function (xhr) {
-            $('#error-message').show().text('Error: ' + xhr.responseText);
-            $('#loadingIndicator').hide();
-            $('#submitBtn').prop('disabled', false);
+          error: function (xhr, status, error) {
+            $errorMessage.text(error).show();
+            $('section').show();
+            $loadingIndicator.hide();
           }
         });
       });
+
     });
   </script>
 </head>
@@ -66,6 +75,11 @@
     </hgroup>
   </header>
   <main class="container">
+
+    <section id="loadingIndicator">      
+      <article aria-busy="true">Procesando</article>
+    </section>
+
     {% if devices %}
     <section id="devices">
       <p class="grid">
@@ -81,22 +95,15 @@
     {% endif %}
 
     <section id="control">
-      <h2>Retraso</h2>
+      <h2>Configuración</h2>
 
       <div id="error-message" class="error-message" style="display: none; color: red;"></div>
 
-      <div class="hx-indicator" id="loadingIndicator" style="display: none;">
-        <article aria-busy="true"></article>
-      </div>
-
       <form id="controlForm" action="{{ url_for('home') }}" method="post">
-        <!-- Loading indicator -->
-
-        <label for="delay">Cuanto
-          <input type="text" id="delay" name="delay" value="{{ config.delay }}" />
-        </label>
-
         <fieldset>
+          <label for="delay">Delay (ms)
+            <input type="text" id="delay" name="delay" value="{{ config.delay }}" />
+          </label>
           <label for="debug">
             <input type="checkbox" role="switch" id="debug" name="debug" {% if config.debug %} checked {% endif %} />
             Debug
@@ -104,21 +111,32 @@
         </fieldset>
 
         <input type="submit" value="Aplicar" id="submitBtn">
-
       </form>
 
-      <button type="button" class="velocidad-button">Test de velocidad</button>
-      <button class="outline contrast">{{line_count}} enviados</button>
+      
+    </section>
+
+    <section id="test-velocidad">
+      <h2>Test de velocidad</h2>
+      <fieldset>
+        <label for="data">Envios
+          <input type="text" id="envios" name="envios" value="500" />
+        </label>
+      <button type="button" class="velocidad-button">Test de velocidad</button>      
     </section>
 
     <section id="audio">
       <h2>Audio</h2>
-      <article><pre>{{audio}}</pre></article>
+      <article>
+        <pre>{{audio}}</pre>
+      </article>
     </section>
 
     <section id="servicio">
       <h2>Servicio</h2>
-      <article ><pre>{{logs}}</pre></article>
+      <article>
+        <pre>{{logs}}</pre>
+      </article>
     </section>
 
   </main>
