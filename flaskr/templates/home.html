@@ -15,10 +15,17 @@
   <title>{{name}}</title>
   <script>
     $(document).ready(function () {
+      $('.velocidad-button').on('click', function () {
+        $('#loadingIndicator').show();
+        $.post('/generadatos', function () {
+          $('#loadingIndicator').hide();
+          alert('Prueba Iniciada');
+        });
+      });
       $('.device-button').on('click', function () {
         var deviceIp = $(this).data('ip');
         //alert('Device IP: ' + deviceIp);
-        location.href = 'http://' + deviceIp + ':8080/robot/';
+        location.href = 'http://' + deviceIp + ':8080/robot';
       });
       $('#controlForm').on('submit', function (e) {
         e.preventDefault();
@@ -63,7 +70,7 @@
     <section id="devices">
       <p class="grid">
         {% for device in devices %}
-        <button type="button" class="device-button" data-ip="{{ device.ip }}">{{ device.name }}</button></a>         
+        <button type="button" class="device-button" data-ip="{{ device.ip }}">{{ device.name }}</button>
         {% endfor %}
       </p>
     </section>
@@ -99,6 +106,9 @@
         <input type="submit" value="Aplicar" id="submitBtn">
 
       </form>
+
+      <button type="button" class="velocidad-button">Test de velocidad</button>
+      <button class="outline contrast">{{line_count}} enviados</button>
     </section>
 
     <section id="audio">

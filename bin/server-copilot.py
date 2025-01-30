@@ -13,7 +13,7 @@ import json
 MIDI_CLIENT_NAME = 'movida'
 MIDI_PORT = "inout"
 TCP_PORT = 8888  # Define the port to listen on
-CSV_FILENAME = '/home/angel/midi_notes_log.csv'
+CSV_FILENAME = '/home/angel/midi_notes_log_server.csv'
 UNIX_SOCKET_PATH = '/tmp/copilot.sock'
 
 # Logging configuration
@@ -37,19 +37,21 @@ def initialize_csv(filename):
 
 async def handle_local_client(reader, writer):
     try:
-        while True:
-            data = await reader.read(1024)
-            if not data:
-                break
-            # Process incoming command here
-            response = f"Received: {data.decode()}"
-            writer.write(response.encode())
-            await writer.drain()
-    except asyncio.CancelledError:
-        pass
+        data = await reader.read(1024)
+        if data:
+            message = data.decode().strip()
+            logger.info(f"Received local message: {message}")
+            if message == "generate-data":
+                # Handle generate-data command
+                await send_data(count=500, channels=[3,4,5], persecond=10)
+    except Exception as e:
+        logger.error(f"Error in local client handler: {e}")
     finally:
-        writer.close()
-        await writer.wait_closed()
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except:
+            pass
 
 async def handle_client(reader, writer):
     # Get client address info
@@ -101,6 +103,7 @@ async def send_data(count, channels, persecond):
             await log_event_to_csv(note, timestamp, channel, velocity)
             timestamp = timestamp + 1
         await asyncio.sleep(interval)  # Delay for persecond rate
+    logger.info(f"Send data completed")
 
 async def log_event_to_csv(note, timestamp, channel, velocity):
     """Log the note and timestamp to a CSV file."""    
@@ -135,6 +138,7 @@ async def main():
     
     # Start a UNIX domain socket server
     server_local = await asyncio.start_unix_server(handle_local_client, path=UNIX_SOCKET_PATH)
+    os.chmod(UNIX_SOCKET_PATH, 0o777)
     logger.info(f"Local UNIX socket server started on {UNIX_SOCKET_PATH}")
 
     # Start TCP server

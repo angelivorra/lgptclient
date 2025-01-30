@@ -25,9 +25,9 @@ def actualiza_sombrilla(generate_images=False, upload_images=False, restart_serv
         convert_all_png_to_bin("/home/angel/lgptclient/images/", "/home/angel/lgptclient/imagessombrilla/", 800, 480, invert=True)
     IP_SOMBRILLA = "192.168.0.4"        
     sftp = SftpCliente(IP_SOMBRILLA, "sombrilla")
-    sftp.connect()
+    sftp.connect()    
     sftp.update_sources()
-    if upload_images:
+    if upload_images:        
         sftp.upload_images()
     
     if pip:
@@ -41,6 +41,6 @@ def actualiza_sombrilla(generate_images=False, upload_images=False, restart_serv
         for line in status:
             output=output+line
     
-    sftp.disconnect()
+    
     if restart_service:
         print(output)

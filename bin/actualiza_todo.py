@@ -10,4 +10,4 @@ args = parser.parse_args()
 
 if __name__ == "__main__":
     #actualiza_maleta()
-    actualiza_sombrilla()
+    actualiza_sombrilla(restart_service=True)

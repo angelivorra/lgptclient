@@ -27,7 +27,43 @@
     </hgroup>
   </header>
   <main class="container">
-    <p>AA</p>
+    <section id="eventos">
+      <form>
+        <h2>Eventos</h2>
+        <label for="timing_events_over_50ms">Envios tardios</label>
+        <input type="text" id="timing_events_over_50ms" name="timing_events_over_50ms" value="{{ timing_events_over_50ms }}" disabled />
+
+        <label for="weighted_avg_timing_difference">Diferencia media</label>
+        <input type="text" id="weighted_avg_timing_difference" name="weighted_avg_timing_difference" value="{{'%.1f' % weighted_avg_timing_difference}} ms" disabled />
+
+        <label for="max_timing_difference">Máxima diferencia</label>
+        <input type="text" id="max_timing_difference" name="max_timing_difference" value="{{'%.1f' % max_timing_difference }} ms" disabled />
+
+        <label for="min_timing_difference">Mínima diferencia</label>
+        <input type="text" id="min_timing_difference" name="min_timing_difference" value="{{ '%.1f' % min_timing_difference }} ms" disabled />
+      </form>
+    </section>
+
+    <section id="control">
+      <form>
+        <h2>Calidad de Wifi</h2>
+        <label for="total">Total notas</label>
+        <input type="text" id="total" name="total" value="{{total_notes}}" disabled />
+        
+        <label for="events_over_50ms">Envios tardios</label>
+        <input type="text" id="events_over_50ms" name="events_over_50ms" value="{{ events_over_50ms}}" disabled />
+
+        <label for="weighted_avg_difference">Diferencia media</label>
+        <input type="text" id="weighted_avg_difference" name="weighted_avg_difference" value="{{'%.1f' % weighted_avg_difference}} ms" disabled />
+
+        <label for="max_difference">Máxima diferencia</label>
+        <input type="text" id="max_difference" name="max_difference" value="{{'%.1f' % max_difference }} ms" disabled />
+
+        <label for="min_difference">Mínima diferencia</label>
+        <input type="text" id="min_difference" name="min_difference" value="{{ '%.1f' % min_difference }} ms" disabled />
+      </form>
+    </section>
+
 
   </main>
   <footer></footer>

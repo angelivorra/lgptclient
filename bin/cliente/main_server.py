@@ -17,12 +17,19 @@ logging.basicConfig(
 )
 
 CSV_FILENAME = '/home/angel/midi_notes_log.csv'
+TIMING_CSV = '/home/angel/timing_analysis.csv'
+MECHANICAL_DELAY = 200
 
 with open('/home/angel/config.json') as f:
     config = json.load(f)
 
 instruments = config["instruments"]
 TIEMPO = config["tiempo"]
+
+def initialize_timing_csv():
+    with open(TIMING_CSV, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['sent_timestamp', 'received_timestamp', 'expected_timestamp', 'executed_timestamp'])
 
 def initialize_csv(filename):
     """Initialize CSV file with headers if it doesn't exist."""
@@ -57,6 +64,7 @@ async def handle_event(reader):
         return
     if debug_mode:
         initialize_csv(CSV_FILENAME)
+        initialize_timing_csv()
 
     while True:
         try:
@@ -78,9 +86,18 @@ async def handle_event(reader):
                     with open(CSV_FILENAME, mode='a', newline='') as file:
                         writer = csv.writer(file)
                         writer.writerow([sent_timestamp, note, current_timestamp])
+                        
+                expected_timestamp = sent_timestamp + delay  # delay is the network/processing delay
+                execution_timestamp = expected_timestamp - MECHANICAL_DELAY
+                
+                current_time = int(datetime.now().timestamp() * 1000)
+                wait_time = max(0, execution_timestamp - current_time)
                 
                 if debug_mode:
                     logger.debug(f"Processed data: timestamp={sent_timestamp}, note={note}, channel={channel}, velocity={velocity}")
+                
+                if wait_time > 0:
+                    await asyncio.sleep(wait_time / 1000)  # Convert to seconds
                 
             except ValueError:
                 logger.error("Received malformed data, skipping row")
@@ -94,6 +111,11 @@ async def handle_event(reader):
                 if debug_mode:
                     logger.debug(f"Activating image with note={note}, velocity={velocity}")
                 asyncio.ensure_future(activate_image(note, velocity))
+            
+            if debug_mode:
+                with open(TIMING_CSV, mode='a', newline='') as file:
+                    writer = csv.writer(file)
+                    writer.writerow([sent_timestamp, execution_timestamp, int(datetime.now().timestamp() * 1000)])
             
         except Exception as e:
             logger.error(f"Error handling event: {e}")
