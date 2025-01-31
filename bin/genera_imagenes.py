@@ -1,3 +1,4 @@
+from io import BytesIO
 import os
 from pathlib import Path
 from PIL import Image, ImageSequence
@@ -5,7 +6,8 @@ import struct
 import shutil
 
 import urllib
-import cv2
+import cairosvg
+from xml.etree import ElementTree as ET
 
 ANIMATED_PNG_OUTPUT_FOLDER = "/home/angel/lgptclient/animaciones"
 
@@ -174,35 +176,119 @@ def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=16,
         else:
             pass
         
-    
-    
-    # Search for all MP4 files in the folder
-    for mp4_file in Path("/home/angel/lgptclient/animated-png").glob("*.mp4"):
-        print(f"Processing animated MP4: {mp4_file}")
-        try:
-            vidcap = cv2.VideoCapture(str(mp4_file))
-            success, image = vidcap.read()
-            frame_number = 1
-            while success:
-                # Convert the frame to RGB
-                current_frame = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-                current_frame = current_frame.resize((width, height))
-                base_name = mp4_file.stem
-                pngd_file = Path(ANIMATED_PNG_OUTPUT_FOLDER) / f"imagenes_pi/{base_name}_{frame_number:03d}.png"
-
-                if invert:
-                    current_frame = current_frame.transpose(Image.FLIP_TOP_BOTTOM)
-                    current_frame = current_frame.transpose(Image.FLIP_LEFT_RIGHT)
+        
+    for animation_dir in Path("/home/angel/lgptclient/animated-png").iterdir():
+        if animation_dir.is_dir():
+            animation_name = animation_dir.name
+            print(f"Processing animation: {animation_name}")
+            for png_file in sorted(animation_dir.glob("*.png")):
+                try:
+                    img = Image.open(png_file)
                     
-                pngd_file.parent.mkdir(parents=True, exist_ok=True)
+                    if invert:
+                        img = img.transpose(Image.FLIP_TOP_BOTTOM)
+                        img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                    
+                    # Extract frame number from filename
+                    try:
+                        frame_str = png_file.stem.split('_')[-1]  # Get last part after underscore
+                        frame_number = int(frame_str)
+                    except (ValueError, IndexError):
+                        # If extraction fails, keep using sequential numbering
+                        pass
+                    pngd_file = Path(ANIMATED_PNG_OUTPUT_FOLDER) / f"imagenes_pi/{animation_name}_{frame_number:03d}.png"
+                    bin_file = Path(ANIMATED_PNG_OUTPUT_FOLDER) / f"{animation_name}_{frame_number:03d}.bin"
+                    
+                    pngd_file.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    img.save(pngd_file)
+                    png_to_bin(pngd_file, bin_file, width, height, bpp)
+                    resize_png(pngd_file, pngd_file)
+                    print(f"Saved frame {frame_number} to {pngd_file}")
+                except Exception as e:
+                    print(f"Error processing {png_file}: {str(e)}")
+    
+    
+    # for mp4_file in Path("/home/angel/lgptclient/animated-png").glob("*.svg"):
+    #     print(f"Processing animated MP4: {mp4_file}")
+    #     try:
+    #         tree = ET.parse(mp4_file)
+    #         root = tree.getroot()
+
+    #         frames = root.findall(".//{http://www.w3.org/2000/svg}animate")
+    #         if not frames:
+    #             frames = root.findall(".//{http://www.w3.org/2000/svg}set")
+
+    #         for i, frame in enumerate(frames):
+    #             # Convert the frame to RGB
+    #             png_bytes = cairosvg.svg2png()
                 
-                # Generate output filename for this frame
-                bin_file = Path(ANIMATED_PNG_OUTPUT_FOLDER) / f"{base_name}_{frame_number:03d}.bin"
-                current_frame.save(pngd_file)
-                png_to_bin(pngd_file, bin_file, width, height, bpp)
-                resize_png(pngd_file, pngd_file)
-                print(f"Saved frame {frame_number} to {pngd_file}")
-                frame_number += 1
-                success, image = vidcap.read()
+    #             # Convertir los bytes a una imagen de Pillow
+    #             current_frame = Image.open(BytesIO(png_bytes))
+
+    #             # Crear una nueva imagen con fondo negro
+    #             new_img = Image.new("RGBA", current_frame.size, (0, 0, 0, 255))  # Fondo negro
+
+    #             # Pegar el frame en el centro de la nueva imagen
+    #             new_img.paste(current_frame, (0, 0), current_frame)
+
+    #             # Invertir la imagen si es necesario
+    #             if invert:
+    #                 new_img = new_img.transpose(Image.FLIP_TOP_BOTTOM)
+    #                 new_img = new_img.transpose(Image.FLIP_LEFT_RIGHT)
+                    
+    #             base_name = mp4_file.stem
+    #             pngd_file = Path(ANIMATED_PNG_OUTPUT_FOLDER) / f"imagenes_pi/{base_name}_{i:03d}.png"
+                    
+    #             pngd_file.parent.mkdir(parents=True, exist_ok=True)
+                
+    #             # Generate output filename for this frame
+    #             bin_file = Path(ANIMATED_PNG_OUTPUT_FOLDER) / f"{base_name}_{i:03d}.bin"
+    #             current_frame.save(pngd_file)
+    #             png_to_bin(pngd_file, bin_file, width, height, bpp)
+    #             resize_png(pngd_file, pngd_file)
+    #             print(f"Saved frame {i} to {pngd_file}")
+
+    #     except Exception as e:
+    #         print(f"Error processing {mp4_file}: {str(e)}")
+
+
+    for webp_file in Path("/home/angel/lgptclient/animated-png").glob("*.webm"):
+        print(f"Processing animated WebP: {webp_file}")
+        try:
+            with Image.open(webp_file) as img:
+                # Verificar si el WebP es animado
+                if not img.is_animated:
+                    print(f"{webp_file} is not an animated WebP.")
+                    continue
+
+                # Iterar sobre cada frame del WebP animado
+                for i in range(img.n_frames):
+                    img.seek(i)
+                    current_frame = img.copy()
+
+                    # Crear una nueva imagen con fondo negro
+                    new_img = Image.new("RGBA", current_frame.size, (0, 0, 0, 255))  # Fondo negro
+
+                    # Pegar el frame en el centro de la nueva imagen
+                    new_img.paste(current_frame, (0, 0), current_frame)
+
+                    # Invertir la imagen si es necesario
+                    if invert:
+                        new_img = new_img.transpose(Image.FLIP_TOP_BOTTOM)
+                        new_img = new_img.transpose(Image.FLIP_LEFT_RIGHT)
+
+                    base_name = webp_file.stem
+                    pngd_file = Path(ANIMATED_PNG_OUTPUT_FOLDER) / f"imagenes_pi/{base_name}_{i:03d}.png"
+
+                    pngd_file.parent.mkdir(parents=True, exist_ok=True)
+
+                    # Generar el nombre del archivo de salida para este frame
+                    bin_file = Path(ANIMATED_PNG_OUTPUT_FOLDER) / f"{base_name}_{i:03d}.bin"
+                    new_img.save(pngd_file)
+                    png_to_bin(pngd_file, bin_file, width, height, bpp)
+                    resize_png(pngd_file, pngd_file)
+                    print(f"Saved frame {i} to {pngd_file}")
+
         except Exception as e:
-            print(f"Error processing {mp4_file}: {str(e)}")
+            print(f"Error processing {webp_file}: {str(e)}")

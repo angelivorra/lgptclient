@@ -1,10 +1,10 @@
 import asyncio
-import glob
 import os
 import mmap
 import getpass
 from pathlib import Path
 import random
+import glob
 from typing import Optional
 from contextlib import suppress
 
@@ -22,7 +22,6 @@ class ImageHandler:
         self.fbdev = os.open(self.fbpath, os.O_RDWR)
         self.fb = mmap.mmap(self.fbdev, self.screenx*self.screeny*self.bpp//8, mmap.MAP_SHARED, mmap.PROT_WRITE|mmap.PROT_READ, offset=0)
 
-
     def draw_image(self, image):
         self.fb.seek(0)
         self.fb.write(image)
@@ -38,10 +37,8 @@ class ImageHandler:
 
     async def handle_image(self, id: int, loop: int, delay: int) -> None:
         """Handle image display with proper task management."""
-        # Cancel any existing task
         await self._cancel_current_task()
         
-        # Create and store new task
         self._current_task = asyncio.create_task(
             self._display_image_loop(id, loop, delay)
         )
@@ -58,6 +55,29 @@ class ImageHandler:
             self._current_task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._current_task
+
+    async def _display_image_loop(self, id: int, loop: int, delay: int) -> None:
+        """Core image display loop."""
+        try:
+            while self._is_running:
+                img_data = self.load_image(id)
+                if img_data:
+                    self.draw_image(img_data)
+                await asyncio.sleep(delay / 1000)
+                
+                if loop > 0:
+                    for i in range(loop):
+                        img_data = self.load_image(id + i)
+                        if img_data:
+                            self.draw_image(img_data)
+                        await asyncio.sleep(delay / 1000)
+                    r1 = random.randint(1, 4)
+                    await asyncio.sleep(r1)
+                if loop <= 0:
+                    break
+                
+        except asyncio.CancelledError:
+            raise
 
     async def play_animation(self, name: str, fps: int, max_delay: float) -> None:
         """Play animation from files matching name pattern at specified fps."""
@@ -98,30 +118,6 @@ class ImageHandler:
                 await asyncio.sleep(delay)
                 
         except asyncio.CancelledError:
-            raise
-
-    async def _display_image_loop(self, id: int, loop: int, delay: int) -> None:
-        """Core image display loop."""
-        try:
-            while self._is_running:
-                img_data = self.load_image(id)
-                if img_data:
-                    self.draw_image(img_data)
-                await asyncio.sleep(delay / 1000)
-                
-                if loop > 0:
-                    for i in range(loop):
-                        img_data = self.load_image(id + i)
-                        if img_data:
-                            self.draw_image(img_data)
-                        await asyncio.sleep(delay / 1000)
-                    r1 = random.randint(1, 4)
-                    await asyncio.sleep(r1)
-                if loop <= 0:  # If no loop is requested, break after first display
-                    break
-                
-        except asyncio.CancelledError:
-            # Cleanup if needed
             raise
 
     async def cleanup(self) -> None:

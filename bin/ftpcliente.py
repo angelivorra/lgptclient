@@ -6,6 +6,7 @@ import pysftp
 
 
 REMOTE_FOLDER  = "/home/angel/images/"
+ANIM_REMOTE_FOLDER = "/home/angel/animaciones/"
 
 class SftpCliente:
     def __init__(self, ip, cliente):
@@ -69,9 +70,13 @@ class SftpCliente:
 
     def upload_images(self):
         IMG_FOLDER = Path(f"/home/angel/lgptclient/images{self.cliente}")
+        ANIMACIONES_FOLDER = Path(f"/home/angel/lgptclient/animaciones")
         print(f"Uploading images")
         # Upload all .bin files from /home/angel/images800480/ to /home/angel/images/            
         for bin_file in IMG_FOLDER.glob("*.bin"):
             print(f"Uploading {bin_file} to {REMOTE_FOLDER}")
             self.connection.put(bin_file, REMOTE_FOLDER + bin_file.name)
+        for bin_file in ANIMACIONES_FOLDER.glob("*.bin"):
+            print(f"Uploading {bin_file} to {ANIM_REMOTE_FOLDER}")
+            self.connection.put(bin_file, ANIM_REMOTE_FOLDER + bin_file.name)
         self.ejecuta('rm /home/angel/midi_notes_log.csv')

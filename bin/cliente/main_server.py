@@ -6,7 +6,7 @@ import json
 import signal
 import logging
 from gpio_events import init_gpio, activate_instrumento
-from image_events import activate_image, handle_image
+from image_events import activate_image, handle_image, play_animation
 
 # Logger setup
 logger = logging.getLogger(__name__)
@@ -65,6 +65,7 @@ async def handle_event(reader):
     if debug_mode:
         initialize_csv(CSV_FILENAME)
         initialize_timing_csv()
+    await play_animation("eyes", 10, 4)
 
     while True:
         try:
