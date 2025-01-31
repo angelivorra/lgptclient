@@ -1,23 +1,26 @@
 import os
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageSequence
 import struct
 import shutil
 
 import urllib
+import cv2
 
-def png_to_bin(png_path, bin_path, screenx, screeny, bpp=24):
-    """
-    Convert a PNG image to raw binary format for framebuffer.
+ANIMATED_PNG_OUTPUT_FOLDER = "/home/angel/lgptclient/animaciones"
 
-    :param png_path: Path to the PNG image.
-    :param bin_path: Path to save the raw binary image.
-    :param screenx: Width of the screen in pixels.
-    :param screeny: Height of the screen in pixels.
-    :param bpp: Bits per pixel (e.g., 16 for RGB565, 24 for RGB, 32 for RGBA).
+def png_to_bin(input_img, bin_path, screenx, screeny, bpp=24):
     """
+    Modified version that accepts both path and Image objects
+    """
+    # Handle both string paths and Image objects
+    if isinstance(input_img, str):
+        img = Image.open(input_img)
+    else:
+        img = input_img
+        
     # Open the PNG image using Pillow
-    img = Image.open(png_path)
+    img = Image.open(input_img)
     
     # Ensure the image matches the screen size (resize if necessary)
     img = img.resize((screenx, screeny))
@@ -140,12 +143,15 @@ def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=16,
     :param invert: Boolean flag to invert the image vertically (default is False).
     """
     # Ensure destiny folder exists
-    Path(destiny_folder).mkdir(parents=True, exist_ok=True)
+    
     
     # Empty the destiny folder before processing
     empty_folder(destiny_folder)
-    
-    for i in range(1, 1000):
+    Path(destiny_folder).mkdir(parents=True, exist_ok=True)
+    empty_folder(ANIMATED_PNG_OUTPUT_FOLDER)
+    Path(ANIMATED_PNG_OUTPUT_FOLDER).mkdir(parents=True, exist_ok=True)
+    #for i in range(1, 1000):
+    for i in range(1, 3):
         png_file = Path(origin_folder) / f"{i:03d}.png"
         bin_file = Path(destiny_folder) / f"{i:03d}.bin"
         pngd_file = Path(destiny_folder) / f"imagenes_pi/{i:05d}.{note_from_index(i)}.png"
@@ -167,3 +173,36 @@ def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=16,
             print(f"Saved {pngd_file}")
         else:
             pass
+        
+    
+    
+    # Search for all MP4 files in the folder
+    for mp4_file in Path("/home/angel/lgptclient/animated-png").glob("*.mp4"):
+        print(f"Processing animated MP4: {mp4_file}")
+        try:
+            vidcap = cv2.VideoCapture(str(mp4_file))
+            success, image = vidcap.read()
+            frame_number = 1
+            while success:
+                # Convert the frame to RGB
+                current_frame = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+                current_frame = current_frame.resize((width, height))
+                base_name = mp4_file.stem
+                pngd_file = Path(ANIMATED_PNG_OUTPUT_FOLDER) / f"imagenes_pi/{base_name}_{frame_number:03d}.png"
+
+                if invert:
+                    current_frame = current_frame.transpose(Image.FLIP_TOP_BOTTOM)
+                    current_frame = current_frame.transpose(Image.FLIP_LEFT_RIGHT)
+                    
+                pngd_file.parent.mkdir(parents=True, exist_ok=True)
+                
+                # Generate output filename for this frame
+                bin_file = Path(ANIMATED_PNG_OUTPUT_FOLDER) / f"{base_name}_{frame_number:03d}.bin"
+                current_frame.save(pngd_file)
+                png_to_bin(pngd_file, bin_file, width, height, bpp)
+                resize_png(pngd_file, pngd_file)
+                print(f"Saved frame {frame_number} to {pngd_file}")
+                frame_number += 1
+                success, image = vidcap.read()
+        except Exception as e:
+            print(f"Error processing {mp4_file}: {str(e)}")

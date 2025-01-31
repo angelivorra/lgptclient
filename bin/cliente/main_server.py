@@ -18,7 +18,7 @@ logging.basicConfig(
 
 CSV_FILENAME = '/home/angel/midi_notes_log.csv'
 TIMING_CSV = '/home/angel/timing_analysis.csv'
-MECHANICAL_DELAY = 200
+MECHANICAL_DELAY = 0
 
 with open('/home/angel/config.json') as f:
     config = json.load(f)
