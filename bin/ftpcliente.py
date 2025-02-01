@@ -79,7 +79,8 @@ class SftpCliente:
         start = time.time()
         files = {
             "main_server.py": ("/home/angel/lgptclient/bin/cliente/main_server.py", "/home/angel/bin/main_server.py"),
-            "image_events.py": ("/home/angel/lgptclient/bin/cliente/image_events.py", "/home/angel/bin/image_events.py"),
+            "display_manager.py": ("/home/angel/lgptclient/bin/cliente/display_manager.py", "/home/angel/bin/display_manager.py"),
+            "frame_buffer.py": ("/home/angel/lgptclient/bin/cliente/frame_buffer.py", "/home/angel/bin/frame_buffer.py"),
             "gpio_events.py": ("/home/angel/lgptclient/bin/cliente/gpio_events.py", "/home/angel/bin/gpio_events.py"),
             "config.json": (f"/home/angel/lgptclient/bin/cliente.{self.cliente}.json", "/home/angel/config.json"),
             "requirements.txt": (f"/home/angel/lgptclient/requirements_{self.cliente}.txt", "/home/angel/requirements.txt")

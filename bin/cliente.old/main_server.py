@@ -5,14 +5,14 @@ import os
 import json
 import signal
 import logging
-from gpio_events import init_gpio, activate_instrumento, cleanup_gpio
-from frame_buffer import Framebuffer
-from display_manager import DisplayManager
+from gpio_events import init_gpio, activate_instrumento
+from image_events import activate_image, handle_image, play_animation
 
+# Logger setup
 logger = logging.getLogger(__name__)
 logging.basicConfig(
     format='%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s',
-    level=logging.DEBUG,
+    level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
@@ -32,6 +32,7 @@ def initialize_timing_csv():
         writer.writerow(['sent_timestamp', 'received_timestamp', 'expected_timestamp', 'executed_timestamp'])
 
 def initialize_csv(filename):
+    """Initialize CSV file with headers if it doesn't exist."""
     if os.path.exists(filename):
         os.unlink(filename)
     with open(filename, mode='w', newline='') as file:
@@ -39,19 +40,23 @@ def initialize_csv(filename):
         writer.writerow(["timestamp_sent", "note", "timestamp_received", "timestamp_executed"])
 
 def parse_config(config_line):
+    """Parse the CONFIG line and set global parameters"""
     try:
         cmd, delay, debug = config_line.split(',')
         if cmd != 'CONFIG':
             raise ValueError("Invalid config format")        
+        
         delay = int(delay)
         debug_mode = debug.lower() == 'true'
+        
         logger.info(f"Configuration set: delay={delay}ms, debug={debug_mode}")
         return True, delay, debug_mode
     except Exception as e:
         logger.error(f"Error parsing config: {e}")
         return False, 0, False
 
-async def handle_event(reader, display_manager):
+
+async def handle_event(reader):
     config_line = (await reader.readline()).decode().strip()
     success, delay, debug_mode = parse_config(config_line)
     if not success:
@@ -60,13 +65,13 @@ async def handle_event(reader, display_manager):
     if debug_mode:
         initialize_csv(CSV_FILENAME)
         initialize_timing_csv()
-    
+    await play_animation("eyes", 10, 4)
+
     while True:
         try:
             data = await reader.readline()
             if not data:
                 logger.info("Connection closed by the server")
-                await display_manager.set_state("off")  # Mostrar "off" cuando se cierra la conexión
                 break
 
             data = data.strip()
@@ -83,7 +88,7 @@ async def handle_event(reader, display_manager):
                         writer = csv.writer(file)
                         writer.writerow([sent_timestamp, note, current_timestamp])
                         
-                expected_timestamp = sent_timestamp + delay
+                expected_timestamp = sent_timestamp + delay  # delay is the network/processing delay
                 execution_timestamp = expected_timestamp - MECHANICAL_DELAY
                 
                 current_time = int(datetime.now().timestamp() * 1000)
@@ -93,7 +98,7 @@ async def handle_event(reader, display_manager):
                     logger.debug(f"Processed data: timestamp={sent_timestamp}, note={note}, channel={channel}, velocity={velocity}")
                 
                 if wait_time > 0:
-                    await asyncio.sleep(wait_time / 1000)
+                    await asyncio.sleep(wait_time / 1000)  # Convert to seconds
                 
             except ValueError:
                 logger.error("Received malformed data, skipping row")
@@ -102,17 +107,11 @@ async def handle_event(reader, display_manager):
             strnote = str(note)
             if channel == 0 and strnote in instruments:
                 logger.debug(f"activate_instrumento{instruments[strnote]}")
-                asyncio.create_task(activate_instrumento(instruments[strnote]))
+                asyncio.ensure_future(activate_instrumento(instruments[strnote]))
             elif channel == 1:
                 if debug_mode:
                     logger.debug(f"Activating image with note={note}, velocity={velocity}")
-                # Handle image activation
-                await display_manager.set_state("image", image_id=note)
-            elif channel == 2:
-                if debug_mode:
-                    logger.debug(f"Timeout received, playing animation")
-                # Play animation when timeout is received
-                await display_manager.set_state("connected")
+                asyncio.ensure_future(activate_image(note, velocity))
             
             if debug_mode:
                 with open(TIMING_CSV, mode='a', newline='') as file:
@@ -121,84 +120,52 @@ async def handle_event(reader, display_manager):
             
         except Exception as e:
             logger.error(f"Error handling event: {e}")
-            await display_manager.set_state("off")  # Mostrar "off" en caso de error
             break
 
-async def tcp_client(addr, port, display_manager):
+async def tcp_client(addr, port):
     while True:
         try:
-            await display_manager.set_state("connecting")  # Mostrar "off" cuando la conexión falla
+            #await play_animation("connect", 10, 2)
             logger.info(f"Attempting to connect to {addr}:{port}")
             reader, writer = await asyncio.open_connection(addr, port)
             logger.info("Connected to server")
-            await display_manager.set_state("connected")  # Mostrar "connected" cuando la conexión es exitosa
-            await handle_event(reader, display_manager)            
+            #asyncio.ensure_future(handle_image(1, loop=6, delay=100))
+            await handle_event(reader)            
         except (ConnectionError, OSError) as e:
             logger.info(f"Connection failed: {e}. Retrying in 5 seconds...")
-            await display_manager.set_state("connecting")  # Mostrar "off" cuando la conexión falla
             await asyncio.sleep(5)
         except Exception as e:
             logger.info(f"An unexpected error occurred: {e}. Retrying in 5 seconds...")
-            await display_manager.set_state("connecting")  # Mostrar "off" en caso de error inesperado
             await asyncio.sleep(5)
 
-async def shutdown(loop, signal=None, display_manager=None):
+async def shutdown(loop, signal=None):
     if signal:
         logger.info(f"Received exit signal {signal.name}...")
-    
-    if display_manager:
-        await display_manager.set_state("off")  # Mostrar "off" durante el apagado
-    await asyncio.sleep(1)
-    
     tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-    logger.info(f"Canceling {len(tasks)} outstanding tasks")
-    
-    for task in tasks:
-        task.cancel()
-    
-    # Wait for tasks to be canceled
-    await asyncio.sleep(1)
-    
-    # Gather canceled tasks
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    for result in results:
-        if isinstance(result, Exception):
-            logger.error(f"Task raised an exception: {result}")
-    
+    [task.cancel() for task in tasks]
+    logger.info("Canceling outstanding tasks")
+    await asyncio.gather(*tasks, return_exceptions=True)
     logger.info("Tasks canceled, stopping loop")
-
     loop.stop()
 
-def setup_signal_handlers(loop, display_manager):
+def setup_signal_handlers(loop):
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: asyncio.create_task(shutdown(loop, sig, display_manager)))
+        loop.add_signal_handler(sig, lambda: asyncio.ensure_future(shutdown(loop, sig)))
 
-async def main():
+if __name__ == '__main__':
     server_addr = '192.168.0.2'
     server_port = 8888
     
     logger.info("Starting client application...")
     init_gpio()
 
-    # Initialize Framebuffer and DisplayManager
-    fb = Framebuffer()
-    fb.open()
-    display_manager = DisplayManager(fb)
-
-    loop = asyncio.get_event_loop()
-    setup_signal_handlers(loop, display_manager)
-    
     try:
-        await tcp_client(server_addr, server_port, display_manager)
-    except asyncio.CancelledError:
-        logger.info("Main task cancelled")
-    except Exception as e:
-        logger.error(f"Unexpected error in main: {e}")
+        loop = asyncio.get_event_loop()
+        setup_signal_handlers(loop)
+        loop.run_until_complete(tcp_client(server_addr, server_port))
+    except KeyboardInterrupt:
+        logger.error("Program interrupted")
     finally:
-        logger.info("Cleaning up before exit")
+        from gpio_events import cleanup_gpio
         cleanup_gpio()
-        fb.close()
-
-if __name__ == '__main__':
-    asyncio.run(main())
+        logger.info("Cleaning up before exit")

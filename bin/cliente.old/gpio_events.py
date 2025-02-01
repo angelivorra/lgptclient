@@ -34,4 +34,3 @@ async def activate_instrumento(ins):
 def cleanup_gpio():
     logger.info('Cleaning up GPIO')
     GPIO.cleanup()
-    logger.info('GPIO cleanup complete')
