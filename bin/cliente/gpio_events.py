@@ -13,6 +13,7 @@ instruments = config["instruments"]
 TIEMPO = config["tiempo"]
 
 def init_gpio():
+    GPIO.setwarnings(False)
     GPIO.setmode(GPIO.BCM)
     for pin in instruments.values():
         GPIO.setup(pin, GPIO.OUT)

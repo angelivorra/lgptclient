@@ -135,23 +135,26 @@ def generar_markdown_imagenes(folder):
 
 def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=16, invert=False):
     """
-    Convert all PNG files (001.png to 999.png) in the origin folder to raw binary format and save to the destiny folder.
-    
-    :param origin_folder: Path to the folder containing PNG images.
-    :param destiny_folder: Path to the folder to save the raw binary files.
-    :param width: Width of the screen in pixels (for resizing).
-    :param height: Height of the screen in pixels (for resizing).
-    :param bpp: Bits per pixel (default is 16 for RGB565, can be 24 for RGB or 32 for RGBA).
-    :param invert: Boolean flag to invert the image vertically (default is False).
+    Convert all PNG files (001.png to 999.png) in the origin folder to raw binary format.
     """
+    print("\n=== Image Conversion Process Started ===")
+    
     # Ensure destiny folder exists
-    
-    
-    # Empty the destiny folder before processing
-    empty_folder(destiny_folder)
     Path(destiny_folder).mkdir(parents=True, exist_ok=True)
-    empty_folder(ANIMATED_PNG_OUTPUT_FOLDER)
     Path(ANIMATED_PNG_OUTPUT_FOLDER).mkdir(parents=True, exist_ok=True)
+    
+    # Empty the destination folders
+    print("Cleaning destination folders...")
+    empty_folder(destiny_folder)
+    empty_folder(ANIMATED_PNG_OUTPUT_FOLDER)
+    
+    total_files = sum(1 for i in range(1, 1000) if Path(origin_folder, f"{i:03d}.png").exists())
+    print(f"\nFound {total_files} PNG files to process")
+    print("\nStarting conversion...")
+    
+    processed = 0
+    errors = 0
+    
     #for i in range(1, 1000):
     for i in range(1, 3):
         png_file = Path(origin_folder) / f"{i:03d}.png"
@@ -159,24 +162,37 @@ def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=16,
         pngd_file = Path(destiny_folder) / f"imagenes_pi/{i:05d}.{note_from_index(i)}.png"
         
         if png_file.exists():
-            img = Image.open(png_file)
-            
-            if invert:
-                img = img.transpose(Image.FLIP_TOP_BOTTOM)
-                img = img.transpose(Image.FLIP_LEFT_RIGHT)
-            
-            # Ensure the directory for the processed image exists
-            pngd_file.parent.mkdir(parents=True, exist_ok=True)
-            
-            img.save(pngd_file)
-            print(f"Processing {png_file}...")
-            png_to_bin(pngd_file, bin_file, width, height, bpp)
-            resize_png(pngd_file, pngd_file)
-            print(f"Saved {pngd_file}")
-        else:
-            pass
-        
-        
+            try:
+                print(f"\nProcessing [{i:03d}/{total_files}]: {png_file.name}")
+                img = Image.open(png_file)
+                
+                if invert:
+                    print("  - Applying image inversion")
+                    img = img.transpose(Image.FLIP_TOP_BOTTOM)
+                    img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                
+                # Ensure the directory exists
+                pngd_file.parent.mkdir(parents=True, exist_ok=True)
+                
+                print(f"  - Converting to {width}x{height} @ {bpp}bpp")
+                # ... rest of your conversion code ...
+                img.save(pngd_file)
+                print(f"Processing {png_file}...")
+                png_to_bin(pngd_file, bin_file, width, height, bpp)
+                resize_png(pngd_file, pngd_file)
+                print(f"Saved {pngd_file}")
+                processed += 1
+                print(f"  ✓ Saved: {bin_file.name}")
+                
+            except Exception as e:
+                errors += 1
+                print(f"  ✗ Error processing {png_file.name}: {str(e)}")
+    
+    print(f"\n=== Conversion Complete ===")
+    print(f"Total processed: {processed}")
+    print(f"Successful: {processed - errors}")
+    print(f"Errors: {errors}")
+
     for animation_dir in Path("/home/angel/lgptclient/animated-png").iterdir():
         if animation_dir.is_dir():
             animation_name = animation_dir.name
@@ -207,88 +223,3 @@ def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=16,
                     print(f"Saved frame {frame_number} to {pngd_file}")
                 except Exception as e:
                     print(f"Error processing {png_file}: {str(e)}")
-    
-    
-    # for mp4_file in Path("/home/angel/lgptclient/animated-png").glob("*.svg"):
-    #     print(f"Processing animated MP4: {mp4_file}")
-    #     try:
-    #         tree = ET.parse(mp4_file)
-    #         root = tree.getroot()
-
-    #         frames = root.findall(".//{http://www.w3.org/2000/svg}animate")
-    #         if not frames:
-    #             frames = root.findall(".//{http://www.w3.org/2000/svg}set")
-
-    #         for i, frame in enumerate(frames):
-    #             # Convert the frame to RGB
-    #             png_bytes = cairosvg.svg2png()
-                
-    #             # Convertir los bytes a una imagen de Pillow
-    #             current_frame = Image.open(BytesIO(png_bytes))
-
-    #             # Crear una nueva imagen con fondo negro
-    #             new_img = Image.new("RGBA", current_frame.size, (0, 0, 0, 255))  # Fondo negro
-
-    #             # Pegar el frame en el centro de la nueva imagen
-    #             new_img.paste(current_frame, (0, 0), current_frame)
-
-    #             # Invertir la imagen si es necesario
-    #             if invert:
-    #                 new_img = new_img.transpose(Image.FLIP_TOP_BOTTOM)
-    #                 new_img = new_img.transpose(Image.FLIP_LEFT_RIGHT)
-                    
-    #             base_name = mp4_file.stem
-    #             pngd_file = Path(ANIMATED_PNG_OUTPUT_FOLDER) / f"imagenes_pi/{base_name}_{i:03d}.png"
-                    
-    #             pngd_file.parent.mkdir(parents=True, exist_ok=True)
-                
-    #             # Generate output filename for this frame
-    #             bin_file = Path(ANIMATED_PNG_OUTPUT_FOLDER) / f"{base_name}_{i:03d}.bin"
-    #             current_frame.save(pngd_file)
-    #             png_to_bin(pngd_file, bin_file, width, height, bpp)
-    #             resize_png(pngd_file, pngd_file)
-    #             print(f"Saved frame {i} to {pngd_file}")
-
-    #     except Exception as e:
-    #         print(f"Error processing {mp4_file}: {str(e)}")
-
-
-    for webp_file in Path("/home/angel/lgptclient/animated-png").glob("*.webm"):
-        print(f"Processing animated WebP: {webp_file}")
-        try:
-            with Image.open(webp_file) as img:
-                # Verificar si el WebP es animado
-                if not img.is_animated:
-                    print(f"{webp_file} is not an animated WebP.")
-                    continue
-
-                # Iterar sobre cada frame del WebP animado
-                for i in range(img.n_frames):
-                    img.seek(i)
-                    current_frame = img.copy()
-
-                    # Crear una nueva imagen con fondo negro
-                    new_img = Image.new("RGBA", current_frame.size, (0, 0, 0, 255))  # Fondo negro
-
-                    # Pegar el frame en el centro de la nueva imagen
-                    new_img.paste(current_frame, (0, 0), current_frame)
-
-                    # Invertir la imagen si es necesario
-                    if invert:
-                        new_img = new_img.transpose(Image.FLIP_TOP_BOTTOM)
-                        new_img = new_img.transpose(Image.FLIP_LEFT_RIGHT)
-
-                    base_name = webp_file.stem
-                    pngd_file = Path(ANIMATED_PNG_OUTPUT_FOLDER) / f"imagenes_pi/{base_name}_{i:03d}.png"
-
-                    pngd_file.parent.mkdir(parents=True, exist_ok=True)
-
-                    # Generar el nombre del archivo de salida para este frame
-                    bin_file = Path(ANIMATED_PNG_OUTPUT_FOLDER) / f"{base_name}_{i:03d}.bin"
-                    new_img.save(pngd_file)
-                    png_to_bin(pngd_file, bin_file, width, height, bpp)
-                    resize_png(pngd_file, pngd_file)
-                    print(f"Saved frame {i} to {pngd_file}")
-
-        except Exception as e:
-            print(f"Error processing {webp_file}: {str(e)}")

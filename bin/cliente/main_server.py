@@ -125,6 +125,7 @@ async def handle_event(reader):
 async def tcp_client(addr, port):
     while True:
         try:
+            #await play_animation("connect", 10, 2)
             logger.info(f"Attempting to connect to {addr}:{port}")
             reader, writer = await asyncio.open_connection(addr, port)
             logger.info("Connected to server")
@@ -153,8 +154,9 @@ def setup_signal_handlers(loop):
 
 if __name__ == '__main__':
     server_addr = '192.168.0.2'
-    server_port = 8888  # Replace with the correct port
+    server_port = 8888
     
+    logger.info("Starting client application...")
     init_gpio()
 
     try:
@@ -164,4 +166,6 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         logger.error("Program interrupted")
     finally:
+        from gpio_events import cleanup_gpio
+        cleanup_gpio()
         logger.info("Cleaning up before exit")

@@ -59,12 +59,12 @@ class ImageHandler:
             with suppress(asyncio.CancelledError):
                 await self._current_task
 
-    async def play_animation(self, name: str, fps: int, max_delay: float) -> None:
+    async def play_animation(self, name: str, fps: int, max_delay: float, loop: bool = True) -> None:
         """Play animation from files matching name pattern at specified fps."""
         await self._cancel_current_task()
         
         self._current_task = asyncio.create_task(
-            self._animation_loop(name, fps, max_delay)
+            self._animation_loop(name, fps, max_delay, loop)
         )
         
         try:
@@ -73,7 +73,7 @@ class ImageHandler:
             with suppress(asyncio.CancelledError):
                 await self._current_task
 
-    async def _animation_loop(self, name: str, fps: int, max_delay: float) -> None:
+    async def _animation_loop(self, name: str, fps: int, max_delay: float, loop: bool) -> None:
         """Core animation loop logic."""
         try:
             while self._is_running:
@@ -96,6 +96,8 @@ class ImageHandler:
                 # Wait random time between max_delay/2 and max_delay
                 delay = random.uniform(max_delay/2, max_delay)
                 await asyncio.sleep(delay)
+                if not loop:
+                    break
                 
         except asyncio.CancelledError:
             raise
@@ -139,5 +141,5 @@ async def activate_image(id: int, velocity: int) -> None:
 async def handle_image(id: int, loop: int, delay: int) -> None:
     await image_handler.handle_image(id, loop, delay)
 
-async def play_animation(name: str, fps: int, max_delay: float) -> None:
+async def play_animation(name: str, fps: int, max_delay: float, loop: bool = True) -> None:
     await image_handler.play_animation(name, fps, max_delay)
