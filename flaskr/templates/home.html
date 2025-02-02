@@ -22,6 +22,12 @@
 
       $loadingIndicator.hide();
 
+      $("#ruido").change(function() {
+        $.post("/ruido", { ruido: $(this).is(":checked") }, function() {
+          //location.reload();
+        });            
+      });
+
       $('.velocidad-button').on('click', function () {
         $mainContent.hide();
         $loadingIndicator.show();
@@ -114,6 +120,17 @@
       </form>
 
       
+    </section>
+
+    <section id="test-ruido">
+      <h2>Motores</h2>
+      <fieldset>
+        <label for="ruido">Ruido
+          <input type="checkbox" role="switch" id="ruido" name="ruido" {% if config.ruido %} checked {% endif %} />
+        <script>
+          
+        </script>
+        </label>
     </section>
 
     <section id="test-velocidad">

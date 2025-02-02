@@ -75,7 +75,7 @@ async def handle_client(reader, writer):
     with open('/home/angel/lgptclient/bin/config.json') as f:
         config = json.load(f)
     
-    config_message = f"CONFIG,{config['delay']},{config['debug']}\n"
+    config_message = f"CONFIG,{config['delay']},{config['debug']},{config['ruido']}\n"
     writer.write(config_message.encode())
     await writer.drain()
     

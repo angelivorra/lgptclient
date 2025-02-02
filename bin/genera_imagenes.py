@@ -156,7 +156,7 @@ def convert_all_png_to_bin(origin_folder, destiny_folder, width, height, bpp=16,
     errors = 0
     
     #for i in range(1, 1000):
-    for i in range(1, 3):
+    for i in range(1, 1000):
         png_file = Path(origin_folder) / f"{i:03d}.png"
         bin_file = Path(destiny_folder) / f"{i:03d}.bin"
         pngd_file = Path(destiny_folder) / f"imagenes_pi/{i:05d}.{note_from_index(i)}.png"

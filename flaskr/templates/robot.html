@@ -14,7 +14,12 @@
   <meta name="mobile-web-app-capable" content="yes">
   <title>{{name}}</title>
   <script>
-    $(document).ready(function () {      
+    $(document).ready(function () {
+      $("#btn-limpia").click(function() {
+        $.post("/limpia", function() {
+          location.reload();
+        });
+      });      
     });
   </script>
 </head>
@@ -24,45 +29,68 @@
     <hgroup>
       <h1>{{ name|upper }}</h1>
       <p>Control remoto robots.</p>
-    <a href="javascript:history.back()">Volver</a>
     </hgroup>
   </header>
   <main class="container">
-    <section id="eventos">
-      <form>
-        <h2>Eventos</h2>
-        <label for="timing_events_over_50ms">Envios tardios</label>
-        <input type="text" id="timing_events_over_50ms" name="timing_events_over_50ms" value="{{ timing_events_over_50ms }}" disabled />
+    <section id="buttons">
+      <button id="btn-limpia">Borrar datos debug</button>
 
-        <label for="weighted_avg_timing_difference">Diferencia media</label>
-        <input type="text" id="weighted_avg_timing_difference" name="weighted_avg_timing_difference" value="{{'%.1f' % weighted_avg_timing_difference}} ms" disabled />
+      <button onclick="history.back()">Volver</button>
+    </section>
+    <section id="informacion">
+      <h2>Sistema</h2>
+      <form id="limpia" action="{{ url_for('limpia') }}" method="post">
+        <fieldset>
+          <label for="datos">Datos
+            <input type="text" id="datos" name="datos" value="{{ datos.total_registros }}" readonly />
+          </label>
+          <label for="disk_usage">Uso de disco
+            <input type="text" id="disk_usage" name="disk_usage" value="{{ disk_usage }}" readonly />
+          </label>
 
-        <label for="max_timing_difference">Máxima diferencia</label>
-        <input type="text" id="max_timing_difference" name="max_timing_difference" value="{{'%.1f' % max_timing_difference }} ms" disabled />
 
-        <label for="min_timing_difference">Mínima diferencia</label>
-        <input type="text" id="min_timing_difference" name="min_timing_difference" value="{{ '%.1f' % min_timing_difference }} ms" disabled />
+        </fieldset>
+
+        
       </form>
     </section>
 
-    <section id="control">
-      <form>
-        <h2>Calidad de Wifi</h2>
-        <label for="total">Total notas</label>
-        <input type="text" id="total" name="total" value="{{total_notes}}" disabled />
-        
-        <label for="events_over_50ms">Envios tardios</label>
-        <input type="text" id="events_over_50ms" name="events_over_50ms" value="{{ events_over_50ms}}" disabled />
+    <section id="salud">
+      <h2>Salud de la señal</h2>
+      <fieldset>
+        <label for="num_registros">Datos
+          <input type="text" id="num_registros" name="num_registros" value="{{ datos.num_registros }}" readonly />
+        </label>
+        <label for="media_diff">Media
+          <input type="text" id="media_diff" name="media_diff" value="{{ datos.media_diff }}" readonly />
+        </label>
+        <label for="max_diff">Máxima
+          <input type="text" id="max_diff" name="max_diff" value="{{ datos.max_diff }}" readonly />
+        </label>
+        <label for="min_diff">Mínima
+          <input type="text" id="min_diff" name="min_diff" value="{{ datos.min_diff }}" readonly />
+        </label>
+      </fieldset>
+      
+    </section>
 
-        <label for="weighted_avg_difference">Diferencia media</label>
-        <input type="text" id="weighted_avg_difference" name="weighted_avg_difference" value="{{'%.1f' % weighted_avg_difference}} ms" disabled />
-
-        <label for="max_difference">Máxima diferencia</label>
-        <input type="text" id="max_difference" name="max_difference" value="{{'%.1f' % max_difference }} ms" disabled />
-
-        <label for="min_difference">Mínima diferencia</label>
-        <input type="text" id="min_difference" name="min_difference" value="{{ '%.1f' % min_difference }} ms" disabled />
-      </form>
+    <section id="ritmo">
+      <h2>Ritmo</h2>
+      <fieldset>
+        <label for="tnum_registros">Datos
+          <input type="text" id="tnum_registros" name="tnum_registros" value="{{ datos.tnum_registros }}" readonly />
+        </label>
+        <label for="media_diff">Media
+          <input type="text" id="tmedia_diff" name="tmedia_diff" value="{{ datos.tmedia_diff }}" readonly />
+        </label>
+        <label for="max_diff">Máxima
+          <input type="text" id="tmax_diff" name="tmax_diff" value="{{ datos.tmax_diff }}" readonly />
+        </label>
+        <label for="min_diff">Mínima
+          <input type="text" id="tmin_diff" name="tmin_diff" value="{{ datos.tmin_diff }}" readonly />
+        </label>
+      </fieldset>
+      
     </section>
 
 

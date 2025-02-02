@@ -1,13 +1,15 @@
+import csv
 import os
 import subprocess
 import time
 
 from flask import Flask, redirect, render_template
-from helpers import check_service_status, get_devices, restart_service, save_config, read_config
+from helpers import check_service_status, get_devices, restart_service, save_config, read_config, save_config_value
 from flask import request
 from flask import jsonify
 import socket
 import pandas as pd
+import shutil
 
 
 CSV_FILENAME = '/home/angel/midi_notes_log_server.csv'
@@ -80,6 +82,14 @@ def create_app():
         
         return render_template('test.html', name=name, intvalue=intvalue * 3, file_count=file_count)
     
+    @app.route('/ruido', methods=(['POST']))
+    def ruido():
+        ruido = request.form.get('ruido', type=str, default='false')
+        print(f"Ruido({ruido})")
+        ruido = ruido.lower() == 'true'
+        save_config_value("ruido", ruido)
+        return jsonify({})
+    
     
     @app.route('/generadatos', methods=(['POST']))
     def genera_datos():
@@ -105,10 +115,23 @@ def create_app():
         app.logger.info('Restart')
         delay = request.form.get('delay', type=int, default=0)
         debug = request.form.get('debug', type=bool, default=False)
-        save_config({"delay": delay, "debug": debug})
-        subprocess.run(['sudo', 'pkill', '-f', 'lgpt.rpi-exe'])        
-        #restart_service("servidor")
+        save_config_value("delay", delay)
+        save_config_value("debug", debug)
+        #subprocess.run(['sudo', 'pkill', '-f', 'lgpt.rpi-exe'])        
+        restart_service("lgpt")
         time.sleep(2)
+        return jsonify({"status": "ok"})
+
+    @app.route('/limpia', methods=(['POST']))
+    def limpia():
+        app.logger.info('Limpia')
+        with open(CSV_TIMIG_FILENAME, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(['expected_timestamp', 'executed_timestamp'])
+        with open(CSV_ROBOT_FILENAME, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(["timestamp_sent", "note", "timestamp_received"])
+        
         return jsonify({"status": "ok"})
 
 
@@ -117,48 +140,57 @@ def create_app():
         app.logger.info('robot')
         name = subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip()        
 
-        total_notes = 0
-        max_difference = 0
-        min_difference = 0
-        weighted_avg_difference = 0
-        events_over_50ms = 0
+        stats = shutil.disk_usage("/")
+        used_gb = stats.used / 1024**3
+        total_gb = stats.total / 1024**3
+        disk_usage = f"{used_gb:.2f} GB used of {total_gb:.2f} GB total"
         
-        if os.path.exists(CSV_ROBOT_FILENAME):
-            df = pd.read_csv(CSV_ROBOT_FILENAME)            
-            if len(df) > 1:
-                total_notes = len(df)
-                differences = (df.iloc[:, 2] - df.iloc[:, 0]).abs()
-                max_difference = differences.max()
-                min_difference = differences.min()
-                weighted_avg_difference = (differences * df.iloc[:, 1]).sum() / df.iloc[:, 1].sum()
-                events_over_50ms = (differences > 100).sum()
+        #Estadisticas
         
-        max_timing_difference = 0
-        min_timing_difference = 0
-        weighted_avg_timing_difference = 0
-        timing_events_over_50ms = 0
-        timing_differences = 0
+        total_registros = 0
+        tnum_registros = 0
+        num_registros = 0
+        media_diff = 0
+        max_diff = 0
+        min_diff = 0
+        tmedia_diff = 0
+        tmax_diff = 0
+        tmin_diff = 0
         
         if os.path.exists(CSV_TIMIG_FILENAME):
-            df_timing = pd.read_csv(CSV_TIMIG_FILENAME)
-            if len(df) > 1:
-                timing_differences = (df_timing.iloc[:, 2] - df_timing.iloc[:, 1]).abs()
-                max_timing_difference = timing_differences.max()
-                min_timing_difference = timing_differences.min()
-                weighted_avg_timing_difference = (timing_differences * df_timing.iloc[:, 0]).sum() / df_timing.iloc[:, 0].sum()
-                timing_events_over_50ms = (timing_differences > 10).sum()
-
-        return render_template('robot.html', 
-                               name=name, 
-                               total_notes=total_notes, 
-                               max_difference=max_difference, 
-                               min_difference=min_difference, 
-                               weighted_avg_difference=weighted_avg_difference, 
-                               events_over_50ms=events_over_50ms,
-                               max_timing_difference=max_timing_difference,
-                               min_timing_difference=min_timing_difference,
-                               weighted_avg_timing_difference=weighted_avg_timing_difference,
-                               timing_events_over_50ms=timing_events_over_50ms)
+            df = pd.read_csv(CSV_TIMIG_FILENAME)
+            df = df[(df['expected_timestamp'] != 0) & (df['executed_timestamp'] != 0)]
+            df['diff'] = abs(df['expected_timestamp'] - df['executed_timestamp'])
+            tnum_registros = len(df)
+            if tnum_registros:
+                tmedia_diff = df['diff'].mean()
+                tmax_diff = df['diff'].max()
+                tmin_diff = df['diff'].min()
+                total_registros = tnum_registros
+            
+        if os.path.exists(CSV_ROBOT_FILENAME):
+            df = pd.read_csv(CSV_ROBOT_FILENAME)
+            df = df[(df['timestamp_sent'] != 0) & (df['timestamp_received'] != 0)]
+            df['diff'] = abs(df['timestamp_sent'] - df['timestamp_received'])
+            num_registros = len(df)
+            if num_registros:
+                media_diff = df['diff'].mean()
+                max_diff = df['diff'].max()
+                min_diff = df['diff'].min()
+                total_registros += num_registros
+        
+            
+        return render_template('robot.html', name=name, disk_usage=disk_usage, datos = {
+            "total_registros": total_registros,
+            "num_registros": num_registros,
+            "media_diff": media_diff,
+            "max_diff": max_diff,
+            "min_diff": min_diff,
+            "tnum_registros": tnum_registros,
+            "tmedia_diff": tmedia_diff,
+            "tmax_diff": tmax_diff,
+            "tmin_diff": tmin_diff
+        })
 
     
     return app

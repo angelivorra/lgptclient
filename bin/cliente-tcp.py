@@ -18,7 +18,6 @@ with open('/home/angel/config.json') as f:
 
 # Extract instruments and TIEMPO from the configuration
 instruments = config["instruments"]
-TIEMPO = config["tiempo"]
 
 # Set up GPIO
 GPIO.setmode(GPIO.BCM)

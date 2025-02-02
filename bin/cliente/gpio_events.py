@@ -1,7 +1,11 @@
+import csv
+from datetime import datetime
 import RPi.GPIO as GPIO
 import asyncio
 import logging
 import json
+
+TIMING_CSV = '/home/angel/timing_analysis.csv'
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +14,7 @@ with open('/home/angel/config.json') as f:
     config = json.load(f)
 
 instruments = config["instruments"]
-TIEMPO = config["tiempo"]
+PINES = config["pines"]
 
 def init_gpio():
     GPIO.setwarnings(False)
@@ -19,18 +23,24 @@ def init_gpio():
         GPIO.setup(pin, GPIO.OUT)
         GPIO.output(pin, GPIO.LOW)
 
-async def activate_instrumento(ins):
-    if isinstance(ins, int):
-        ins = [ins]
+async def activate_instrumento(pin, scheduled_time, debug=False, ruido=False):
+    if scheduled_time:
+        # Calculate wait time
+        now = datetime.now().timestamp() * 1000
+        wait_ms = max(0, scheduled_time - now)
+        if wait_ms > 0:
+            await asyncio.sleep(wait_ms / 1000)
     
-    for pin in ins:
+    if debug:
+        with open(TIMING_CSV, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([scheduled_time, int(datetime.now().timestamp() * 1000)])
+              
+    if ruido:
         GPIO.output(pin, GPIO.HIGH)
-    
-    await asyncio.sleep(TIEMPO)
-    
-    for pin in ins:
+        await asyncio.sleep(PINES[str(pin)].get('tiempo', 0))
         GPIO.output(pin, GPIO.LOW)
-        
+
 def cleanup_gpio():
     logger.info('Cleaning up GPIO')
     GPIO.cleanup()

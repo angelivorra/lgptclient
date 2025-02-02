@@ -24,42 +24,43 @@ with open('/home/angel/config.json') as f:
     config = json.load(f)
 
 instruments = config["instruments"]
-TIEMPO = config["tiempo"]
+PINES = config["pines"]
 
 def initialize_timing_csv():
     with open(TIMING_CSV, mode='w', newline='') as file:
         writer = csv.writer(file)
-        writer.writerow(['sent_timestamp', 'received_timestamp', 'expected_timestamp', 'executed_timestamp'])
+        writer.writerow(['expected_timestamp', 'executed_timestamp'])
 
 def initialize_csv(filename):
     if os.path.exists(filename):
         os.unlink(filename)
     with open(filename, mode='w', newline='') as file:
         writer = csv.writer(file)
-        writer.writerow(["timestamp_sent", "note", "timestamp_received", "timestamp_executed"])
+        writer.writerow(["timestamp_sent", "note", "timestamp_received"])
 
 def parse_config(config_line):
     try:
-        cmd, delay, debug = config_line.split(',')
+        cmd, delay, debug, ruido = config_line.split(',')
         if cmd != 'CONFIG':
             raise ValueError("Invalid config format")        
         delay = int(delay)
         debug_mode = debug.lower() == 'true'
-        logger.info(f"Configuration set: delay={delay}ms, debug={debug_mode}")
-        return True, delay, debug_mode
+        ruido = ruido.lower() == 'true'
+        logger.info(f"Configuration set: delay={delay}ms, debug={debug_mode}, ruido={ruido}")
+        return True, delay, debug_mode, ruido
     except Exception as e:
         logger.error(f"Error parsing config: {e}")
-        return False, 0, False
+        return False, 0, False, False
 
 async def handle_event(reader, display_manager):
     config_line = (await reader.readline()).decode().strip()
-    success, delay, debug_mode = parse_config(config_line)
+    success, delay, debug_mode, ruido = parse_config(config_line)
     if not success:
         logger.error("Failed to parse initial configuration")
         return
-    if debug_mode:
-        initialize_csv(CSV_FILENAME)
-        initialize_timing_csv()
+    # if debug_mode:
+    #     initialize_csv(CSV_FILENAME)
+    #     initialize_timing_csv()
     
     while True:
         try:
@@ -70,54 +71,40 @@ async def handle_event(reader, display_manager):
                 break
 
             data = data.strip()
-            if debug_mode:
-                logger.debug(f"Raw data received: {data}")
-            
+                       
             cleaned_data = data.decode('utf-8').strip().split(',')
 
             try:
                 sent_timestamp, note, channel, velocity = map(int, cleaned_data)
                 current_timestamp = int(datetime.now().timestamp() * 1000)
+                expected_timestamp = sent_timestamp + delay  # delay is the network/processing delay            
+                
                 if debug_mode:
                     with open(CSV_FILENAME, mode='a', newline='') as file:
                         writer = csv.writer(file)
                         writer.writerow([sent_timestamp, note, current_timestamp])
-                        
-                expected_timestamp = sent_timestamp + delay
-                execution_timestamp = expected_timestamp - MECHANICAL_DELAY
                 
-                current_time = int(datetime.now().timestamp() * 1000)
-                wait_time = max(0, execution_timestamp - current_time)
-                
-                if debug_mode:
-                    logger.debug(f"Processed data: timestamp={sent_timestamp}, note={note}, channel={channel}, velocity={velocity}")
-                
-                if wait_time > 0:
-                    await asyncio.sleep(wait_time / 1000)
-                
+                strnote = str(note)
+                if channel == 0 and strnote in instruments:
+                    ins = instruments[strnote]
+                    if isinstance(ins, int):
+                        ins = [ins]
+                    for pin in ins:
+                        expected_timestamp = expected_timestamp - PINES[str(pin)].get('delay', 0)
+                        asyncio.create_task(
+                            activate_instrumento(
+                                pin,
+                                scheduled_time=expected_timestamp,
+                                debug=debug_mode,
+                                ruido=ruido
+                            )
+                        )
+                elif channel == 1:
+                    await display_manager.set_state("image", image_id=note)
+
             except ValueError:
                 logger.error("Received malformed data, skipping row")
-                continue            
-            
-            strnote = str(note)
-            if channel == 0 and strnote in instruments:
-                logger.debug(f"activate_instrumento{instruments[strnote]}")
-                asyncio.create_task(activate_instrumento(instruments[strnote]))
-            elif channel == 1:
-                if debug_mode:
-                    logger.debug(f"Activating image with note={note}, velocity={velocity}")
-                # Handle image activation
-                await display_manager.set_state("image", image_id=note)
-            elif channel == 2:
-                if debug_mode:
-                    logger.debug(f"Timeout received, playing animation")
-                # Play animation when timeout is received
-                await display_manager.set_state("connected")
-            
-            if debug_mode:
-                with open(TIMING_CSV, mode='a', newline='') as file:
-                    writer = csv.writer(file)
-                    writer.writerow([sent_timestamp, execution_timestamp, int(datetime.now().timestamp() * 1000)])
+                continue
             
         except Exception as e:
             logger.error(f"Error handling event: {e}")

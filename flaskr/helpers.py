@@ -59,6 +59,13 @@ def save_config(config, file_path='/home/angel/lgptclient/bin/config.json'):
     except Exception as e:
         return {"error": str(e)}
     
+def save_config_value(key, value):
+        config = read_config()
+        if "error" not in config:
+            config[key] = value
+            return save_config(config)
+        return {"error": "Unable to read config"}
+    
 def restart_service(service_name):
     try:
         # Restart the service
