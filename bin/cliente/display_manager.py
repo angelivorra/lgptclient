@@ -34,7 +34,6 @@ class DisplayManager:
             await asyncio.sleep(delay)  # Espera entre animaciones
             
     async def show_image(self, image_id, scheduled_timestamp):
-        return
         if self.animation_task:
             logger.debug("Cancelling current animation task")
             self.animation_task.cancel()

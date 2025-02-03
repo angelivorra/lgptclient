@@ -8,6 +8,7 @@ import logging
 from gpio_events import init_gpio, activate_instrumento, cleanup_gpio
 from frame_buffer import Framebuffer
 from display_manager import DisplayManager
+import concurrent.futures
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -121,7 +122,7 @@ async def handle_event(reader, display_manager):
                     img_id = int(img_id)
                     timestamp = int(timestamp)
                     current_timestamp = int(datetime.now().timestamp() * 1000)
-                    expected_timestamp = sent_timestamp + delay
+                    expected_timestamp = timestamp + delay
                     await display_manager.show_image(img_id, expected_timestamp)
                     if debug_mode:
                         logger.info(f"Received IMG message with ID: {img_id}")
@@ -186,6 +187,11 @@ def setup_signal_handlers(loop, display_manager):
 async def main():
     server_addr = '192.168.0.2'
     server_port = 8888
+    
+    loop = asyncio.get_running_loop()
+    loop.set_default_executor(
+        concurrent.futures.ThreadPoolExecutor(max_workers=3)
+    )
     
     logger.info("Starting client application...")
     init_gpio()
