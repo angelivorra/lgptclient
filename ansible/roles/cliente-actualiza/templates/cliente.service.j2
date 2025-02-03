@@ -1,0 +1,12 @@
+[Unit]
+Description=Cliente
+After=network.target
+
+[Service]
+User=angel
+WorkingDirectory=/home/angel/
+ExecStart=/home/angel/venv/bin/python /home/angel/bin/main_server.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

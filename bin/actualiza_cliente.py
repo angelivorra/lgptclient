@@ -8,7 +8,7 @@ from ftpcliente import SftpCliente
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def actualiza_maleta(generate_images=True, upload_images=True, restart_service=True, pip=False):
+def actualiza_cliente(generate_images=True, upload_images=True, restart_service=True, pip=False):
     """
     Update Sombrilla device with new images and code.
     

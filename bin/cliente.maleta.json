@@ -8,5 +8,21 @@
         "42": 17,
         "43": 23
     },
-    "tiempo": 0.05
+    "pines": {
+        "17": {
+            "nombre": "Bombo",
+            "tiempo": 0.15,
+            "delay": 10
+        },
+        "22": {
+            "nombre": "Caja1",
+            "tiempo": 0.15,
+            "delay": 100
+        },
+        "23": {
+            "nombre": "Caja2",
+            "tiempo": 0.05,
+            "delay": 100
+        }
+    }
 }

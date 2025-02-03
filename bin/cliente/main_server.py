@@ -26,17 +26,21 @@ with open('/home/angel/config.json') as f:
 instruments = config["instruments"]
 PINES = config["pines"]
 
+
+def sinchronize_time():
+    os.system('sudo ntpdate 192.168.0.2')
+
 def initialize_timing_csv():
-    with open(TIMING_CSV, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(['expected_timestamp', 'executed_timestamp'])
+    if os.path.exists(TIMING_CSV) == False:
+        with open(TIMING_CSV, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(['expected_timestamp', 'executed_timestamp'])
 
 def initialize_csv(filename):
-    if os.path.exists(filename):
-        os.unlink(filename)
-    with open(filename, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(["timestamp_sent", "note", "timestamp_received"])
+    if os.path.exists(filename) == False:
+        with open(filename, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(["timestamp_sent", "note", "timestamp_received"])
 
 def parse_config(config_line):
     try:
@@ -58,9 +62,10 @@ async def handle_event(reader, display_manager):
     if not success:
         logger.error("Failed to parse initial configuration")
         return
-    # if debug_mode:
-    #     initialize_csv(CSV_FILENAME)
-    #     initialize_timing_csv()
+    if debug_mode:
+        initialize_csv(CSV_FILENAME)
+        initialize_timing_csv()
+    sinchronize_time()
     
     while True:
         try:
@@ -76,6 +81,8 @@ async def handle_event(reader, display_manager):
 
             try:
                 sent_timestamp, note, channel, velocity = map(int, cleaned_data)
+                if debug_mode:
+                    logger.info(f"Received event: {channel} => {note}")
                 current_timestamp = int(datetime.now().timestamp() * 1000)
                 expected_timestamp = sent_timestamp + delay  # delay is the network/processing delay            
                 

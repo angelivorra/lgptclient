@@ -1,55 +1,143 @@
 ---
-- name: Copy Python Script to target
-  template:
-    src: /home/angel/lgptclient/bin/cliente/*
-    dest: /home/angel/
+- name: Stop the service panel if it exists
+  become: true
+  service:
+    name: cliente
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+
+- name: Empty venv directory (if entorno_python is true)
+  file:
+    path: /home/angel/venv
+    state: absent
+    owner: angel
+    group: angel
+  when: entorno_python | default(false) | bool
+
+- name: Ensure Python virtual environment is created (if entorno_python is true)
+  become: true
+  command: /usr/bin/python3 -m venv /home/angel/venv
+  when: entorno_python | default(false) | bool
+
+- name: Install Python dependencies (if entorno_python is true)
+  become: true
+  pip:
+    requirements: /home/angel/requirements.txt
+    virtualenv: /home/angel/venv
+  when: entorno_python | default(false) | bool
+
+- name: Ensure destination directory exists
+  file:
+    path: /home/angel/bin/
+    state: directory
+    owner: angel
+    group: angel
+    mode: '0755'
+
+- name: Copiamos
+  ansible.builtin.copy:
+    src: /home/angel/lgptclient/bin/cliente/
+    dest: /home/angel/bin/
     owner: angel
     group: angel
 
 - name: Copy requirements.txt to target
-  template:
-    src: "/home/angel/lgptclient/requirements_{{{{ansible_hostname}}}}.txt"
+  ansible.builtin.copy:
+    src: "/home/angel/lgptclient/requirements_{{ inventory_hostname  }}.txt"
     dest: /home/angel/requirements.txt
     owner: angel
     group: angel
 
 - name: Copy Python Script to target
-  template:
-    src: "/home/angel/lgptclient/bin/cliente.{{ansible_hostname}}.json"
+  ansible.builtin.copy:
+    src: "/home/angel/lgptclient/bin/cliente.{{ inventory_hostname  }}.json"
     dest: /home/angel/config.json
     owner: angel
     group: angel
 
-- name: Create image dir
+- name: Empty Image directory (if imagenes is true)
+  file:
+    path: /home/angel/images/
+    state: absent
+    owner: angel
+    group: angel
+  when: imagenes | default(false) | bool
+
+
+- name: Empty Animaciones directory (if imagenes is true)
+  file:
+    path: /home/angel/animaciones/
+    state: absent
+    owner: angel
+    group: angel
+  when: imagenes | default(false) | bool
+
+- name: Create image dir (if imagenes is true)
   ansible.builtin.file:
     state: directory
     path: /home/angel/images/
     owner: angel
     group: angel
+  when: imagenes | default(false) | bool
 
-- name: Copy file and set permissions with Ansible
+- name: Create animaciones dir (if imagenes is true)
+  ansible.builtin.file:
+    state: directory
+    path: /home/angel/animaciones/
+    owner: angel
+    group: angel
+  when: imagenes | default(false) | bool
+
+- name: Generate binary files locally (if imagenes is true)
+  local_action:
+    module: command
+    cmd: "/home/angel/lgptclient/venv/bin/python /home/angel/lgptclient/bin/genera.py {{ inventory_hostname }}"
+  when: imagenes | default(false) | bool
+
+- name: Copy generated binary files to target (if imagenes is true)
   copy:
-    src: /home/angel/lgptclient/images/
+    src: "/home/angel/lgptclient/images{{inventory_hostname}}/imagenes/"
     dest: /home/angel/images/
     owner: angel
     group: angel
+  when: imagenes | default(false) | bool
 
-- name: Ensure  directory exists and is empty
+- name: Copy generated binary files to target (if imagenes is true)
+  copy:
+    src: "/home/angel/lgptclient/images{{inventory_hostname}}/animaciones/"
+    dest: /home/angel/animaciones/
+    owner: angel
+    group: angel
+  when: imagenes | default(false) | bool
+
+- name: Empty Image directory (if imagenes is true)
   file:
-    path: /home/angel/log
+    path: "/home/angel/lgptclient/images{{inventory_hostname}}/animaciones/imagenes_pi"
     state: absent
     owner: angel
     group: angel
+  when: imagenes | default(false) | bool
 
-- name: Ensure directory exists and is empty
+- name: Empty Image directory (if imagenes is true)
   file:
-    path: /home/angel/log
-    state: directory
+    path: "/home/angel/lgptclient/images{{inventory_hostname}}/imagenes/imagenes_pi"
+    state: absent
     owner: angel
     group: angel
+  when: imagenes | default(false) | bool
+
+- name: Configure the service on the remote machine
+  become: true
+  template:
+    src: cliente.service.j2
+    dest: /etc/systemd/system/cliente.service
+    owner: root
+    group: root
+    mode: '0644'
 
 - name: Enable and start the service
-  become: True
+  become: true
   systemd:
     name: cliente.service
     enabled: yes

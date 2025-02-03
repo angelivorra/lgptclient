@@ -156,7 +156,13 @@ async def main():
             event = await client.event_input()
             if isinstance(event, NoteOnEvent):
                 timestamp = int(datetime.now().timestamp() * 1000)
+                if debug_mode:
+                    logger.info(f"Evento {event.note} en canal {event.channel} con velocidad {event.velocity}")
                 await broadcast_event(event, timestamp, debug_mode)
+            else:
+                xx = type(event).__name__
+                logger.info(f"Received event: {xx}")
+                
 
 def load_config(config_path='/home/angel/lgptclient/bin/config.json'):
     """Load configuration from JSON file"""

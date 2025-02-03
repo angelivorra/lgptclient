@@ -1,12 +1,7 @@
 [all:vars]
 ansible_user=angel
 
-[maleta]
-192.168.0.3 screenx=800 screeny=480
-
-[sombrilla]
-192.168.0.4 screenx=800 screeny=480
-
-[robot]
-192.168.0.4 screenx=800 screeny=480
+[clientes]
+maleta ansible_host=192.168.0.3 screenx=800 screeny=480 invert=false
+sombrilla ansible_host=192.168.0.4 screenx=800 screeny=480 invert=true
 
