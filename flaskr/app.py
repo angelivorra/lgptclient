@@ -29,6 +29,7 @@ def create_app():
     @app.route('/', methods=(['GET']))
     def home():
         app.logger.info('Main home')
+        current_time = time.strftime('%Y-%m-%d %H:%M:%S')
         name = subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip()        
         is_active, logs = check_service_status("servidor")
         lgpt_is_active, lgpt_logs = check_service_status("lgpt")
@@ -51,7 +52,8 @@ def create_app():
                                audio = audio, 
                                line_count = line_count,
                                lgpt_is_active = lgpt_is_active, 
-                               lgpt_logs = lgpt_logs
+                               lgpt_logs = lgpt_logs,
+                               current_time=current_time
                                )
 
     @app.route('/proceso', methods=(['GET']))
@@ -144,7 +146,7 @@ def create_app():
         used_gb = stats.used / 1024**3
         total_gb = stats.total / 1024**3
         disk_usage = f"{used_gb:.2f} GB used of {total_gb:.2f} GB total"
-        
+        current_time = time.strftime('%Y-%m-%d %H:%M:%S')
         #Estadisticas
         
         total_registros = 0
@@ -189,7 +191,8 @@ def create_app():
             "tnum_registros": tnum_registros,
             "tmedia_diff": tmedia_diff,
             "tmax_diff": tmax_diff,
-            "tmin_diff": tmin_diff
+            "tmin_diff": tmin_diff,
+            "current_time": current_time
         })
 
     

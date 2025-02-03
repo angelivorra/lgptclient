@@ -1,3 +1,4 @@
+from datetime import datetime
 import glob
 import logging
 import asyncio
@@ -31,6 +32,27 @@ class DisplayManager:
             #calculate delay, minimo max_delay/2, maximo max_delay
             delay = random.uniform(max_delay / 2, max_delay)
             await asyncio.sleep(delay)  # Espera entre animaciones
+            
+    async def show_image(self, image_id, scheduled_timestamp):
+        return
+        if self.animation_task:
+            logger.debug("Cancelling current animation task")
+            self.animation_task.cancel()
+            try:
+                await self.animation_task
+            except asyncio.CancelledError:
+                pass
+
+        image_path = f"/home/angel/images/{image_id:03d}.bin"
+        if os.path.exists(image_path):   
+            now = datetime.now().timestamp() * 1000
+            wait_ms = max(0, scheduled_timestamp - now)
+            if wait_ms > 0:
+                await asyncio.sleep(wait_ms / 1000)
+
+            self.fb.display_image(image_path)
+        else:
+            logger.error(f"Image file not found: {image_path}")
 
     async def set_state(self, state, image_id=None):
         if self.animation_task:

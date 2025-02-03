@@ -75,12 +75,12 @@ async def handle_event(reader, display_manager):
                 await display_manager.set_state("off")  # Mostrar "off" cuando se cierra la conexión
                 break
 
-            data = data.strip()
-                       
-            cleaned_data = data.decode('utf-8').strip().split(',')
+            data = data.strip().decode('utf-8')
 
-            try:
-                sent_timestamp, note, channel, velocity = map(int, cleaned_data)
+            if data.startswith("NOTA,"):
+                cleaned_data = data.split(',')
+                _, timestamp, note, channel, velocity = cleaned_data
+                sent_timestamp, note, channel, velocity = map(int, [timestamp, note, channel, velocity])                
                 if debug_mode:
                     logger.info(f"Received event: {channel} => {note}")
                 current_timestamp = int(datetime.now().timestamp() * 1000)
@@ -106,12 +106,27 @@ async def handle_event(reader, display_manager):
                                 ruido=ruido
                             )
                         )
-                elif channel == 1:
-                    await display_manager.set_state("image", image_id=note)
+            
+            elif data.startswith("START"):
+                if debug_mode:
+                    logger.info("Received START message")
+            elif data.startswith("END"):                
+                if debug_mode:
+                    logger.info("Received END message")                    
+            elif data.startswith("IMG,"):
+                # Handle IMG message
+                parts = data.split(',')
+                if len(parts) == 3:
+                    _, timestamp, img_id = parts
+                    img_id = int(img_id)
+                    timestamp = int(timestamp)
+                    current_timestamp = int(datetime.now().timestamp() * 1000)
+                    expected_timestamp = sent_timestamp + delay
+                    await display_manager.show_image(img_id, expected_timestamp)
+                    if debug_mode:
+                        logger.info(f"Received IMG message with ID: {img_id}")
 
-            except ValueError:
-                logger.error("Received malformed data, skipping row")
-                continue
+
             
         except Exception as e:
             logger.error(f"Error handling event: {e}")

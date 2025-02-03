@@ -5,8 +5,8 @@
   roles:
     - role: cliente-actualiza
       vars:
-        entorno_python: false
+        entorno_python: true
         imagenes: true
-    # - role: servicio-panel
-    #   vars:
-    #     install_python: true
+    - role: servicio-panel
+      vars:
+        install_python: true

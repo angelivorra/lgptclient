@@ -16,12 +16,10 @@
   when: entorno_python | default(false) | bool
 
 - name: Ensure Python virtual environment is created (if entorno_python is true)
-  become: true
   command: /usr/bin/python3 -m venv /home/angel/venv
   when: entorno_python | default(false) | bool
 
 - name: Install Python dependencies (if entorno_python is true)
-  become: true
   pip:
     requirements: /home/angel/requirements.txt
     virtualenv: /home/angel/venv

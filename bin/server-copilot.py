@@ -4,7 +4,7 @@ import csv
 import os
 import socket
 import random
-from alsa_midi import AsyncSequencerClient, WRITE_PORT, NoteOnEvent
+from alsa_midi import AsyncSequencerClient, WRITE_PORT, NoteOnEvent, StopEvent, StartEvent, ProgramChangeEvent
 import logging
 from datetime import datetime
 import json
@@ -117,12 +117,24 @@ async def log_event_to_csv(note, timestamp, channel, velocity):
         writer.writerow([timestamp, note, channel, velocity])
 
 async def broadcast_event(event, timestamp, debug_mode):
-    message = f"{timestamp},{event.note},{event.channel},{event.velocity}\n"
-    for client in clients:
-        client.write(message.encode())
-        await client.drain()
-    if debug_mode:
-        await log_event_to_csv(event.note, timestamp, event.channel, event.velocity)
+    message = None
+    if isinstance(event, NoteOnEvent):
+        message = f"NOTA,{timestamp},{event.note},{event.channel},{event.velocity}\n"
+        if debug_mode:
+            await log_event_to_csv(event.note, timestamp, event.channel, event.velocity)    
+    elif  isinstance(event, StartEvent):
+        message = f"START\n"
+    elif isinstance(event, StopEvent):
+        message = f"END\n"
+    elif isinstance(event, ProgramChangeEvent):
+        message = f"IMG,{timestamp},{event.value}\n"
+    
+    logger.info(f"Broadcasting event: {event}")
+
+    if message:
+        for client in clients:
+            client.write(message.encode())
+            await client.drain()    
         
 
 async def main():
@@ -154,14 +166,9 @@ async def main():
         # Listen for MIDI events
         while True:
             event = await client.event_input()
-            if isinstance(event, NoteOnEvent):
+            if isinstance(event, (NoteOnEvent, StartEvent, StopEvent, ProgramChangeEvent)):
                 timestamp = int(datetime.now().timestamp() * 1000)
-                if debug_mode:
-                    logger.info(f"Evento {event.note} en canal {event.channel} con velocidad {event.velocity}")
                 await broadcast_event(event, timestamp, debug_mode)
-            else:
-                xx = type(event).__name__
-                logger.info(f"Received event: {xx}")
                 
 
 def load_config(config_path='/home/angel/lgptclient/bin/config.json'):
