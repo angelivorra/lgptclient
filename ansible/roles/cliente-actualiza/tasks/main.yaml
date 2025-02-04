@@ -7,6 +7,14 @@
     enabled: no
   ignore_errors: yes
 
+- name: Stop the service panel if it exists
+  become: true
+  service:
+    name: display
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+
 - name: Empty venv directory (if entorno_python is true)
   file:
     path: /home/angel/venv
@@ -134,10 +142,10 @@
     group: root
     mode: '0644'
 
-- name: Enable and start the service
-  become: true
-  systemd:
-    name: cliente.service
-    enabled: yes
-    state: started
-    daemon_reload: yes
+# - name: Enable and start the service
+#   become: true
+#   systemd:
+#     name: cliente.service
+#     enabled: yes
+#     state: started
+#     daemon_reload: yes

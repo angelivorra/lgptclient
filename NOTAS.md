@@ -1,7 +1,14 @@
+# Imagenes
+
+Para enviar imagenes, hay que primero ver el canal.
+  - **Canal 0**: Imagenes estaticas
+  - **Canal 1**: Animaciones
+
+
+
 # Notas de C1 a C5
 
-Notas en el canal 00 midi se convierten en eventos de robot
-Notas en el canal 01 del midi son imagenes
+Notas en el canal  midi se convierten en eventos de robot
 
 | Nota   | Valor | Accion |
 |--------|-------|--------|

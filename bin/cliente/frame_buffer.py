@@ -30,6 +30,7 @@ class Framebuffer:
         logger.debug("Framebuffer closed")
 
     def display_image(self, image_path):
+        logger.debug(f"Displaying image: {image_path}")
         with open(image_path, 'rb') as f:
             image_data = f.read()
         self.mapped_fb.seek(0)

@@ -7,7 +7,6 @@ import signal
 import logging
 from gpio_events import init_gpio, activate_instrumento, cleanup_gpio
 from frame_buffer import Framebuffer
-from display_manager import DisplayManager
 import concurrent.futures
 
 logger = logging.getLogger(__name__)
@@ -57,7 +56,7 @@ def parse_config(config_line):
         logger.error(f"Error parsing config: {e}")
         return False, 0, False, False
 
-async def handle_event(reader, display_manager):
+async def handle_event(reader):
     config_line = (await reader.readline()).decode().strip()
     success, delay, debug_mode, ruido = parse_config(config_line)
     if not success:
@@ -73,7 +72,7 @@ async def handle_event(reader, display_manager):
             data = await reader.readline()
             if not data:
                 logger.info("Connection closed by the server")
-                await display_manager.set_state("off")  # Mostrar "off" cuando se cierra la conexión
+                #await display_manager.set_state("off")  # Mostrar "off" cuando se cierra la conexión
                 break
 
             data = data.strip().decode('utf-8')
@@ -123,41 +122,39 @@ async def handle_event(reader, display_manager):
                     timestamp = int(timestamp)
                     current_timestamp = int(datetime.now().timestamp() * 1000)
                     expected_timestamp = timestamp + delay
-                    await display_manager.show_image(img_id, expected_timestamp)
+                    #await display_manager.show_image(img_id, expected_timestamp)
                     if debug_mode:
                         logger.info(f"Received IMG message with ID: {img_id}")
-
-
             
         except Exception as e:
             logger.error(f"Error handling event: {e}")
-            await display_manager.set_state("off")  # Mostrar "off" en caso de error
+            #await display_manager.set_state("off")  # Mostrar "off" en caso de error
             break
 
-async def tcp_client(addr, port, display_manager):
+async def tcp_client(addr, port):
     while True:
         try:
-            await display_manager.set_state("connecting")  # Mostrar "off" cuando la conexión falla
+            #await display_manager.set_state("connecting")  # Mostrar "off" cuando la conexión falla
             logger.info(f"Attempting to connect to {addr}:{port}")
             reader, writer = await asyncio.open_connection(addr, port)
             logger.info("Connected to server")
-            await display_manager.set_state("connected")  # Mostrar "connected" cuando la conexión es exitosa
-            await handle_event(reader, display_manager)            
+            #await display_manager.set_state("connected")  # Mostrar "connected" cuando la conexión es exitosa
+            await handle_event(reader)            
         except (ConnectionError, OSError) as e:
             logger.info(f"Connection failed: {e}. Retrying in 5 seconds...")
-            await display_manager.set_state("connecting")  # Mostrar "off" cuando la conexión falla
+            #await display_manager.set_state("connecting")  # Mostrar "off" cuando la conexión falla
             await asyncio.sleep(5)
         except Exception as e:
             logger.info(f"An unexpected error occurred: {e}. Retrying in 5 seconds...")
-            await display_manager.set_state("connecting")  # Mostrar "off" en caso de error inesperado
+            #await display_manager.set_state("connecting")  # Mostrar "off" en caso de error inesperado
             await asyncio.sleep(5)
 
-async def shutdown(loop, signal=None, display_manager=None):
+async def shutdown(loop, signal=None):
     if signal:
         logger.info(f"Received exit signal {signal.name}...")
     
-    if display_manager:
-        await display_manager.set_state("off")  # Mostrar "off" durante el apagado
+    #if display_manager:
+    #    await display_manager.set_state("off")  # Mostrar "off" durante el apagado
     await asyncio.sleep(1)
     
     tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
@@ -181,8 +178,9 @@ async def shutdown(loop, signal=None, display_manager=None):
     loop.stop()
 
 def setup_signal_handlers(loop, display_manager):
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: asyncio.create_task(shutdown(loop, sig, display_manager)))
+    #for sig in (signal.SIGINT, signal.SIGTERM):
+    #    loop.add_signal_handler(sig, lambda: asyncio.create_task(shutdown(loop, sig, display_manager)))
+    pass
 
 async def main():
     server_addr = '192.168.0.2'
@@ -197,15 +195,10 @@ async def main():
     init_gpio()
 
     # Initialize Framebuffer and DisplayManager
-    fb = Framebuffer()
-    fb.open()
-    display_manager = DisplayManager(fb)
-
     loop = asyncio.get_event_loop()
-    setup_signal_handlers(loop, display_manager)
     
     try:
-        await tcp_client(server_addr, server_port, display_manager)
+        await tcp_client(server_addr, server_port)
     except asyncio.CancelledError:
         logger.info("Main task cancelled")
     except Exception as e:
@@ -213,7 +206,6 @@ async def main():
     finally:
         logger.info("Cleaning up before exit")
         cleanup_gpio()
-        fb.close()
 
 if __name__ == '__main__':
     asyncio.run(main())

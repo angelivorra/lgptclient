@@ -119,17 +119,18 @@ async def log_event_to_csv(note, timestamp, channel, velocity):
 async def broadcast_event(event, timestamp, debug_mode):
     message = None
     if isinstance(event, NoteOnEvent):
-        message = f"NOTA,{timestamp},{event.note},{event.channel},{event.velocity}\n"
+        message = f"NOTA,{timestamp},{event.note}\n"
         if debug_mode:
             await log_event_to_csv(event.note, timestamp, event.channel, event.velocity)    
     elif  isinstance(event, StartEvent):
-        message = f"START\n"
+        message = f"START,{timestamp}\n"
     elif isinstance(event, StopEvent):
-        message = f"END\n"
+        message = f"END,{timestamp}\n"
     elif isinstance(event, ProgramChangeEvent):
-        message = f"IMG,{timestamp},{event.value}\n"
+        message = f"IMG,{timestamp},{event.channel},{event.value}\n"
     
-    logger.info(f"Broadcasting event: {event}")
+    # if debug_mode:
+    #     logger.info(f"Broadcasting event: {message}")
 
     if message:
         for client in clients:
