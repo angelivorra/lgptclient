@@ -167,7 +167,6 @@ class DisplayService:
                 for file in files:
                     self.fb.display_image(str(file))
                     await asyncio.sleep(frame_delay)
-
                 if not loop:
                     break
                 
