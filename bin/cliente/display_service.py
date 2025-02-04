@@ -13,7 +13,7 @@ ANIMACIONES_DIR = "/home/angel/animaciones"
 IMG_DIR = "/home/angel/images"
 
 ANIMACIONES = {
-    "connect" : {
+    "connect": {
         "fps": 30,
         "loop": True,
         "max_delay": 2.0
@@ -27,23 +27,23 @@ ANIMACIONES = {
         "fps": 30,
         "loop": False,
         "max_delay": 2.0
-        },
-    "tres":  {
+    },
+    "tres": {
         "fps": 30,
         "loop": True,
         "max_delay": 0.2
     },
-    "dos" :  {
+    "dos": {
         "fps": 30,
         "loop": True,
         "max_delay": 0.2
     },
-    "uno" :  {
+    "uno": {
         "fps": 30,
         "loop": True,
         "max_delay": 0.2
     },
-    "zero" :  {
+    "zero": {
         "fps": 30,
         "loop": True,
         "max_delay": 0.2
@@ -59,7 +59,7 @@ class DisplayService:
         self.socket_path = socket_path
         self.fb = Framebuffer()
         self.current_animation = None
-        self.scheduled_task = None
+        self.task_queue = asyncio.Queue()
         self.animaciones = list(ANIMACIONES.items())
         
         # Asegurar que el socket no existe previamente
@@ -80,10 +80,8 @@ class DisplayService:
                 data = await reader.read(1024)
                 if not data:
                     break
-                
                 try:
                     message = data.decode()
-                    #logger.info(f"Mensaje recibido: {message}")
                     await self.process_message(message)
                 except Exception as e:
                     logger.error(f"Error procesando mensaje: {e}")
@@ -97,19 +95,16 @@ class DisplayService:
         cleaned_data = message.split(',')
         current_timestamp = int(datetime.now().timestamp() * 1000)
         
-        # Cancelar tarea programada anterior si existe
-        if self.scheduled_task:
-            self.scheduled_task.cancel()
-            self.scheduled_task = None
-
-        tipo  = cleaned_data[0].upper()
+        logger.info("Procesando mensaje: %s", cleaned_data)
+        
+        tipo = cleaned_data[0].upper()
         timestamp = int(cleaned_data[1])
         
         data = None
         
         if tipo == "IMG":
             canal = int(cleaned_data[2])
-            id_image = int(cleaned_data[2])
+            id_image = int(cleaned_data[3])
             data = {
                 'tipo': tipo,
                 'id_image': id_image,
@@ -118,21 +113,20 @@ class DisplayService:
             }
 
         if data:
-            # Programar o ejecutar inmediatamente
-            if timestamp > current_timestamp:
-                delay = timestamp - current_timestamp
-                self.scheduled_task = asyncio.create_task(
-                    self.scheduled_action(data, delay)
-                )
-            else:
-                await self.execute_action(data)
+            logger.info("Enviamos evento a display: %s", data)
+            await self.task_queue.put((timestamp, data))
 
-    async def scheduled_action(self, message, delay):
-        try:
-            await asyncio.sleep(delay)
-            await self.execute_action(message)
-        except asyncio.CancelledError:
-            logger.info("Tarea programada cancelada")
+    async def task_processor(self):
+        while True:
+            timestamp, data = await self.task_queue.get()
+            current_timestamp = int(datetime.now().timestamp() * 1000)
+            
+            if timestamp > current_timestamp:
+                delay = (timestamp - current_timestamp) / 1000.0
+                await asyncio.sleep(delay)
+            
+            await self.execute_action(data)
+            self.task_queue.task_done()
 
     async def execute_action(self, message):
         # Detener animación actual
@@ -140,27 +134,26 @@ class DisplayService:
             self.current_animation.cancel()
             self.current_animation = None
 
+        canal = message["canal"]
         logger.info(f"Procesando mensaje: {message}")
         if message["canal"] == 0:
-            nota = int(message["nota"])
+            logger.info(f"Imagen: {message['id_image']}")
+            nota = int(message["id_image"])
             if nota == 0:
                 self.fb.clear()
             else:
-                self.fb.display_image(f"/{IMG_DIR}/{nota:03d}.bin")            
+                self.fb.display_image(f"{IMG_DIR}/{nota:03d}.bin")            
         
-        if message["canal"] == 1:            
+        if message["canal"] == 1:
+            logger.info(f"Animación: {message['data'][0]}")
             self.current_animation = asyncio.create_task(
-                data = message['data'][0],
-                fps = message['data'][1]['fps'],
-                loop = message['data'][1]['loop'],
-                max_delay = message['data'][1]['max_delay']
+                self.show_animation(
+                    name=message['data'][0],
+                    fps=message['data'][1]['fps'],
+                    loop=message['data'][1]['loop'],
+                    max_delay=message['data'][1]['max_delay']
+                )
             )
-        
-        # if 'image_id' in message:
-        #     image_path = f"/{IMG_DIR}/{message['image_id']}.bin"
-        #     self.fb.display_image(image_path)
-        # elif 'animation' in message:
-        #     
 
     async def show_animation(self, name, fps=30, loop=True, max_delay=2.0):
         try:
@@ -194,14 +187,15 @@ class DisplayService:
         )
         logger.info(f"Servidor iniciado en {self.socket_path}")
         
+        # Iniciar el procesador de tareas
+        asyncio.create_task(self.task_processor())
+        
         async with server:
             await server.serve_forever()
 
     def stop(self):
         if self.current_animation:
             self.current_animation.cancel()
-        if self.scheduled_task:
-            self.scheduled_task.cancel()
         self.fb.close()
 
 if __name__ == "__main__":

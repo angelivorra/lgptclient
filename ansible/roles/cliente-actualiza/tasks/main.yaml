@@ -41,7 +41,7 @@
     group: angel
     mode: '0755'
 
-- name: Copiamos
+- name: Copiamos los ficheros de cliente
   ansible.builtin.copy:
     src: /home/angel/lgptclient/bin/cliente/
     dest: /home/angel/bin/
@@ -55,7 +55,7 @@
     owner: angel
     group: angel
 
-- name: Copy Python Script to target
+- name: Copy configuration to target
   ansible.builtin.copy:
     src: "/home/angel/lgptclient/bin/cliente.{{ inventory_hostname  }}.json"
     dest: /home/angel/config.json
@@ -101,7 +101,7 @@
     cmd: "/home/angel/lgptclient/venv/bin/python /home/angel/lgptclient/bin/genera.py {{ inventory_hostname }}"
   when: imagenes | default(false) | bool
 
-- name: Copy generated binary files to target (if imagenes is true)
+- name: Copy img binary files to target (if imagenes is true)
   copy:
     src: "/home/angel/lgptclient/images{{inventory_hostname}}/imagenes/"
     dest: /home/angel/images/
@@ -109,7 +109,7 @@
     group: angel
   when: imagenes | default(false) | bool
 
-- name: Copy generated binary files to target (if imagenes is true)
+- name: Copy animation binary files to target (if imagenes is true)
   copy:
     src: "/home/angel/lgptclient/images{{inventory_hostname}}/animaciones/"
     dest: /home/angel/animaciones/
@@ -117,7 +117,7 @@
     group: angel
   when: imagenes | default(false) | bool
 
-- name: Empty Image directory (if imagenes is true)
+- name: Empty Imagepi directory (if imagenes is true)
   file:
     path: "/home/angel/lgptclient/images{{inventory_hostname}}/animaciones/imagenes_pi"
     state: absent
@@ -125,7 +125,7 @@
     group: angel
   when: imagenes | default(false) | bool
 
-- name: Empty Image directory (if imagenes is true)
+- name: Empty Imagepi animations directory (if imagenes is true)
   file:
     path: "/home/angel/lgptclient/images{{inventory_hostname}}/imagenes/imagenes_pi"
     state: absent
@@ -133,7 +133,7 @@
     group: angel
   when: imagenes | default(false) | bool
 
-- name: Configure the service on the remote machine
+- name: Configure the display service on the remote machine
   become: true
   template:
     src: cliente.service.j2
@@ -142,10 +142,27 @@
     group: root
     mode: '0644'
 
-# - name: Enable and start the service
-#   become: true
-#   systemd:
-#     name: cliente.service
-#     enabled: yes
-#     state: started
-#     daemon_reload: yes
+- name: Configure the display service on the remote machine
+  become: true
+  template:
+    src: display.service.j2
+    dest: /etc/systemd/system/display.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Enable and start the cliente service
+  become: true
+  systemd:
+    name: cliente.service
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+- name: Enable and start the display service
+  become: true
+  systemd:
+    name: display.service
+    enabled: yes
+    state: started
+    daemon_reload: yes

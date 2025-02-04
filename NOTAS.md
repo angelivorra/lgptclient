@@ -4,6 +4,15 @@ Para enviar imagenes, hay que primero ver el canal.
   - **Canal 0**: Imagenes estaticas
   - **Canal 1**: Animaciones
 
+  Animaciones:
+    - 0 : connect
+    - 1 : eyes
+    - 2 : off
+    - 3 : tres
+    - 4 : dos
+    - 5 : uno
+    - 6 : zero
+
 
 
 # Notas de C1 a C5

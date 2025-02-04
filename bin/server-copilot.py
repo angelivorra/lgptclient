@@ -135,8 +135,7 @@ async def broadcast_event(event, timestamp, debug_mode):
     if message:
         for client in clients:
             client.write(message.encode())
-            await client.drain()    
-        
+            await client.drain()
 
 async def main():
     # Initialize CSV logging

@@ -1,12 +1,14 @@
 import asyncio
 import csv
+import traceback
 from datetime import datetime
 import os
 import json
 import signal
 import logging
+import socket
+import time
 from gpio_events import init_gpio, activate_instrumento, cleanup_gpio
-from frame_buffer import Framebuffer
 import concurrent.futures
 
 logger = logging.getLogger(__name__)
@@ -50,7 +52,8 @@ def parse_config(config_line):
         delay = int(delay)
         debug_mode = debug.lower() == 'true'
         ruido = ruido.lower() == 'true'
-        logger.info(f"Configuration set: delay={delay}ms, debug={debug_mode}, ruido={ruido}")
+        logger.info(f"Configuration set: delay={delay}ms, debug={debug_mode}, ruido={ruido}")        
+        
         return True, delay, debug_mode, ruido
     except Exception as e:
         logger.error(f"Error parsing config: {e}")
@@ -66,23 +69,25 @@ async def handle_event(reader):
         initialize_csv(CSV_FILENAME)
         initialize_timing_csv()
     sinchronize_time()
-    
+    send_message_to_socket("IMG,0,1,1")
     while True:
         try:
             data = await reader.readline()
             if not data:
                 logger.info("Connection closed by the server")
-                #await display_manager.set_state("off")  # Mostrar "off" cuando se cierra la conexión
+                #await display_manager.set_state("off")  # Mostrar "off" cuando se cierra la conexión                
+                send_message_to_socket("IMG,0,1,0")
+                
                 break
 
             data = data.strip().decode('utf-8')
-
+            logger.info(f"Received line: {data}")
             if data.startswith("NOTA,"):
                 cleaned_data = data.split(',')
-                _, timestamp, note, channel, velocity = cleaned_data
-                sent_timestamp, note, channel, velocity = map(int, [timestamp, note, channel, velocity])                
+                _, timestamp, note = cleaned_data
+                sent_timestamp, note  = map(int, [timestamp, note])                
                 if debug_mode:
-                    logger.info(f"Received event: {channel} => {note}")
+                    logger.info(f"Received event: {note}")
                 current_timestamp = int(datetime.now().timestamp() * 1000)
                 expected_timestamp = sent_timestamp + delay  # delay is the network/processing delay            
                 
@@ -92,7 +97,7 @@ async def handle_event(reader):
                         writer.writerow([sent_timestamp, note, current_timestamp])
                 
                 strnote = str(note)
-                if channel == 0 and strnote in instruments:
+                if strnote in instruments:
                     ins = instruments[strnote]
                     if isinstance(ins, int):
                         ins = [ins]
@@ -105,8 +110,7 @@ async def handle_event(reader):
                                 debug=debug_mode,
                                 ruido=ruido
                             )
-                        )
-            
+                        )            
             elif data.startswith("START"):
                 if debug_mode:
                     logger.info("Received START message")
@@ -114,45 +118,49 @@ async def handle_event(reader):
                 if debug_mode:
                     logger.info("Received END message")                    
             elif data.startswith("IMG,"):
+                logger.info(f"Received IMG message: {data}")
                 # Handle IMG message
                 parts = data.split(',')
-                if len(parts) == 3:
-                    _, timestamp, img_id = parts
+                if len(parts) == 4:
+                    _, timestamp, channel, img_id = parts
                     img_id = int(img_id)
                     timestamp = int(timestamp)
+                    channel = int(channel)
                     current_timestamp = int(datetime.now().timestamp() * 1000)
-                    expected_timestamp = timestamp + delay
-                    #await display_manager.show_image(img_id, expected_timestamp)
-                    if debug_mode:
-                        logger.info(f"Received IMG message with ID: {img_id}")
+                    expected_timestamp = timestamp + delay                    
+                    send_message_to_socket(f"IMG,{expected_timestamp},{channel},{img_id}")
+                    logger.info(f"Received IMG message with ID: {img_id}")
             
         except Exception as e:
             logger.error(f"Error handling event: {e}")
+            logger.error("Full traceback:\n" + traceback.format_exc())
             #await display_manager.set_state("off")  # Mostrar "off" en caso de error
+            send_message_to_socket("IMG,0,0,1")
             break
 
 async def tcp_client(addr, port):
     while True:
         try:
-            #await display_manager.set_state("connecting")  # Mostrar "off" cuando la conexión falla
+            #await display_manager.set_state("connecting")  # Mostrar "off" cuando la conexión falla            
             logger.info(f"Attempting to connect to {addr}:{port}")
             reader, writer = await asyncio.open_connection(addr, port)
-            logger.info("Connected to server")
-            #await display_manager.set_state("connected")  # Mostrar "connected" cuando la conexión es exitosa
+            logger.info("ConnectedXX to server")
+            send_message_to_socket("IMG,0,1,1")
             await handle_event(reader)            
         except (ConnectionError, OSError) as e:
             logger.info(f"Connection failed: {e}. Retrying in 5 seconds...")
             #await display_manager.set_state("connecting")  # Mostrar "off" cuando la conexión falla
+            send_message_to_socket("IMG,0,0,1")
             await asyncio.sleep(5)
         except Exception as e:
             logger.info(f"An unexpected error occurred: {e}. Retrying in 5 seconds...")
-            #await display_manager.set_state("connecting")  # Mostrar "off" en caso de error inesperado
+            send_message_to_socket("IMG,0,0,1")
             await asyncio.sleep(5)
 
 async def shutdown(loop, signal=None):
     if signal:
         logger.info(f"Received exit signal {signal.name}...")
-    
+    send_message_to_socket("IMG,0,1,2")
     #if display_manager:
     #    await display_manager.set_state("off")  # Mostrar "off" durante el apagado
     await asyncio.sleep(1)
@@ -182,6 +190,48 @@ def setup_signal_handlers(loop, display_manager):
     #    loop.add_signal_handler(sig, lambda: asyncio.create_task(shutdown(loop, sig, display_manager)))
     pass
 
+async def send_to_unix_socket(message):
+    server_address = '/tmp/display.sock'
+    
+    try:
+        # Connect to the UNIX socket
+        reader, writer = await asyncio.open_unix_connection(server_address)
+        logger.info(f"Connected to {server_address}")
+
+        # Send the message
+        writer.write(message.encode('utf-8'))
+        await writer.drain()  # Ensure the data is sent
+        logger.info(f"Message sent: {message}")
+
+        # Optionally, wait for a response from the server
+        response = await reader.read(100)  # Adjust buffer size as needed
+        logger.info(f"Server response: {response.decode()}")
+
+        # Close the connection
+        writer.close()
+        await writer.wait_closed()
+        logger.info("Connection closed")
+
+        return {"status": "ok", "response": response.decode()}
+    except Exception as e:
+        return {"error": str(e)}
+
+def send_message_to_socket(message): 
+    logger.info(f"Sending message to socket: {message}")
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)            
+    server_address = '/tmp/display.sock'
+    try:
+        sock.connect(server_address)
+        sock.sendall(message.encode('utf-8'))
+        # Wait briefly to ensure message is sent
+        time.sleep(0.1)
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        sock.close()
+    return {"status": "ok"}
+
+
 async def main():
     server_addr = '192.168.0.2'
     server_port = 8888
@@ -190,7 +240,7 @@ async def main():
     loop.set_default_executor(
         concurrent.futures.ThreadPoolExecutor(max_workers=3)
     )
-    
+
     logger.info("Starting client application...")
     init_gpio()
 
