@@ -4,8 +4,11 @@
 
         <AUDIOAPI value='Linux ALSA'/>
         
-	<AUDIODEVICE value="hw:Loopback,0"/>
 	
+	<AUDIODEVICE value="hw:Loopback,0"/>
+	<!--
+	<AUDIODEVICE value="hw:IQaudIODAC,0" />
+	-->
         <AUDIOBUFFERSIZE value='512'/>
         <AUDIOPREBUFFERCOUNT value='3'/>
 
