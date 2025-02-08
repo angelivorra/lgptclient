@@ -19,31 +19,46 @@ logging.basicConfig(
     handlers=[logging.FileHandler(LOG_FILE), logging.StreamHandler()]
 )
 
+class LGPTRunner:
+    def __init__(self):
+        self.audio_bridge = AudioBridge()
+        self.lgpt_process = None
+        self.running = True
+
+    def cleanup(self):
+        """Clean up all processes"""
+        self.running = False
+        logging.info("Cleaning up processes...")
+        
+        # Stop audio bridge
+        if self.audio_bridge:
+            self.audio_bridge.stop()
+        
+        # Kill LGPT process if running
+        if self.lgpt_process and self.lgpt_process.poll() is None:
+            try:
+                self.lgpt_process.terminate()
+                self.lgpt_process.wait(timeout=3)
+            except:
+                if self.lgpt_process.poll() is None:
+                    self.lgpt_process.kill()
+
 def signal_handler(signum, frame):
     """Handle graceful shutdown on SIGTERM/SIGINT"""
     logging.info(f"Received signal {signum}, shutting down...")
-    if hasattr(signal_handler, 'audio_bridge'):
-        signal_handler.audio_bridge.stop()
+    if hasattr(signal_handler, 'runner'):
+        signal_handler.runner.cleanup()
     sys.exit(0)
 
-def cleanup():
-    """Clean up processes before exit"""
-    try:
-        # Remove sleep as it's not necessary
-        pass
-    except Exception as e:
-        logging.error(f"Cleanup error: {e}")
-
-def restart_audio(audio_bridge):
+def restart_audio(runner):
     """Restart audio subsystem"""
     start_time = time.time()
     try:
         # First restart system service
         subprocess.run(["sudo", "systemctl", "restart", "servidor"], check=True)
-        time.sleep(2)  # Wait for system service to stabilize
+        time.sleep(2)
         
-        # Then start audio bridge
-        if not audio_bridge.start():
+        if not runner.audio_bridge.start():
             logging.error("Failed to start audio bridge")
             return False
             
@@ -56,42 +71,44 @@ def restart_audio(audio_bridge):
     return True
 
 def main():
-    # Set up signal handlers first
-    audio_bridge = AudioBridge()
-    signal_handler.audio_bridge = audio_bridge
+    runner = LGPTRunner()
+    signal_handler.runner = runner
     
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
     
-    while True:
+    while runner.running:
         try:
-            if not restart_audio(audio_bridge):
-                audio_bridge.cleanup()  # Ensure cleanup on failure
+            if not restart_audio(runner):
+                runner.audio_bridge.cleanup()
                 time.sleep(5)
                 continue
 
             logging.info("Starting LGPT process...")
+            runner.lgpt_process = subprocess.Popen(
+                LGPT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+
+            # Wait for LGPT process to finish
+            stdout, stderr = runner.lgpt_process.communicate()
+            
             with open(EXEC_LOG_FILE, "w") as log_file:
-                process = subprocess.run(
-                    LGPT,
-                    capture_output=True,
-                    text=True,
-                    check=False
-                )
-
                 log_file.write("=== OUTPUT ===\n")
-                log_file.write(process.stdout)
+                log_file.write(stdout)
                 log_file.write("\n=== ERRORS ===\n") 
-                log_file.write(process.stderr)
-                log_file.write(f"\nEXIT CODE: {process.returncode}\n")
+                log_file.write(stderr)
+                log_file.write(f"\nEXIT CODE: {runner.lgpt_process.returncode}\n")
 
-                if process.returncode != 0:
-                    logging.error(f"LGPT process failed with code {process.returncode}")
-                    time.sleep(3)
+            if runner.lgpt_process.returncode != 0:
+                logging.error(f"LGPT process failed with code {runner.lgpt_process.returncode}")
+                time.sleep(3)
 
         except Exception as e:
             logging.error(f"Main loop error: {e}")
-            audio_bridge.stop()
+            runner.cleanup()
             time.sleep(3)
 
 if __name__ == "__main__":
