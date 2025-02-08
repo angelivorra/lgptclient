@@ -51,7 +51,7 @@ ANIMACIONES = {
 }
 
 # Configuración básica de logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("DisplayService")
 
 class DisplayService:
@@ -93,7 +93,6 @@ class DisplayService:
 
     async def process_message(self, message):
         cleaned_data = message.split(',')
-        current_timestamp = int(datetime.now().timestamp() * 1000)
         
         logger.info("Procesando mensaje: %s", cleaned_data)
         
@@ -105,43 +104,31 @@ class DisplayService:
         if tipo == "IMG":
             canal = int(cleaned_data[2])
             id_image = int(cleaned_data[3])
-            data = {
+            await self.execute_action({
                 'tipo': tipo,
                 'id_image': id_image,
                 'canal': canal,
                 'data': self.get_animation_by_id(id_image)
-            }
-
-        if data:
-            logger.info("Enviamos evento a display: %s", data)
-            await self.task_queue.put((timestamp, data))
-
-    async def task_processor(self):
-        while True:
-            timestamp, data = await self.task_queue.get()
-            current_timestamp = int(datetime.now().timestamp() * 1000)
+            })
             
-            if timestamp > current_timestamp:
-                delay = (timestamp - current_timestamp) / 1000.0
-                await asyncio.sleep(delay)
-            
-            await self.execute_action(data)
-            self.task_queue.task_done()
 
     async def execute_action(self, message):
         # Detener animación actual
         if self.current_animation:
+            logger.info(f"Hay una animacion. Intentamos detener")
             self.current_animation.cancel()
             self.current_animation = None
+            await asyncio.sleep(0.1)
+            logger.info(f"Animacion detenida")
 
-        canal = message["canal"]
-        logger.info(f"Procesando mensaje: {message}")
+        canal = message["canal"]        
         if message["canal"] == 0:
             logger.info(f"Imagen: {message['id_image']}")
             nota = int(message["id_image"])
             if nota == 0:
                 self.fb.clear()
             else:
+                logger.info(f"Mostramos imagen: {nota}")
                 self.fb.display_image(f"{IMG_DIR}/{nota:03d}.bin")            
         
         if message["canal"] == 1:
@@ -158,6 +145,7 @@ class DisplayService:
     async def show_animation(self, name, fps=30, loop=True, max_delay=2.0):
         try:
             frame_delay = 1.0 / fps
+            logger.info(f"Comenzamos animacion: {name}")
             while True:
                 files = sorted(Path(ANIMACIONES_DIR).glob(f"{name}*.bin"))
                 if not files:
@@ -167,6 +155,7 @@ class DisplayService:
                 for file in files:
                     self.fb.display_image(str(file))
                     await asyncio.sleep(frame_delay)
+
                 if not loop:
                     break
                 
@@ -185,10 +174,7 @@ class DisplayService:
             self.socket_path
         )
         logger.info(f"Servidor iniciado en {self.socket_path}")
-        
-        # Iniciar el procesador de tareas
-        asyncio.create_task(self.task_processor())
-        
+       
         async with server:
             await server.serve_forever()
 

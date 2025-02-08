@@ -1,6 +1,6 @@
 ---
 - name: Instalamos cliente
-  hosts: maleta
+  hosts: clientes
   gather_facts: yes
   roles:
     - role: cliente-actualiza

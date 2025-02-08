@@ -140,7 +140,7 @@
     dest: /etc/systemd/system/cliente.service
     owner: root
     group: root
-    mode: '0644'
+    mode: '0644' 
 
 - name: Configure the display service on the remote machine
   become: true
@@ -151,6 +151,14 @@
     group: root
     mode: '0644'
 
+- name: Enable and start the display service
+  become: true
+  systemd:
+    name: display.service
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
 - name: Enable and start the cliente service
   become: true
   systemd:
@@ -159,10 +167,3 @@
     state: started
     daemon_reload: yes
 
-- name: Enable and start the display service
-  become: true
-  systemd:
-    name: display.service
-    enabled: yes
-    state: started
-    daemon_reload: yes

@@ -14,7 +14,7 @@ import concurrent.futures
 logger = logging.getLogger(__name__)
 logging.basicConfig(
     format='%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s',
-    level=logging.DEBUG,
+    level=logging.WARNING,
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
@@ -52,8 +52,7 @@ def parse_config(config_line):
         delay = int(delay)
         debug_mode = debug.lower() == 'true'
         ruido = ruido.lower() == 'true'
-        logger.info(f"Configuration set: delay={delay}ms, debug={debug_mode}, ruido={ruido}")        
-        
+        logger.info(f"Configuration set: delay={delay}ms, debug={debug_mode}, ruido={ruido}")                
         return True, delay, debug_mode, ruido
     except Exception as e:
         logger.error(f"Error parsing config: {e}")
@@ -69,15 +68,13 @@ async def handle_event(reader):
         initialize_csv(CSV_FILENAME)
         initialize_timing_csv()
     sinchronize_time()
-    send_message_to_socket("IMG,0,1,1")
+    #await send_message_to_socket("IMG,0,1,1", 0)
     while True:
         try:
             data = await reader.readline()
             if not data:
                 logger.info("Connection closed by the server")
-                #await display_manager.set_state("off")  # Mostrar "off" cuando se cierra la conexión                
-                send_message_to_socket("IMG,0,1,0")
-                
+                #await send_message_to_socket("IMG,0,1,0", 0)
                 break
 
             data = data.strip().decode('utf-8')
@@ -127,15 +124,17 @@ async def handle_event(reader):
                     timestamp = int(timestamp)
                     channel = int(channel)
                     current_timestamp = int(datetime.now().timestamp() * 1000)
-                    expected_timestamp = timestamp + delay                    
-                    send_message_to_socket(f"IMG,{expected_timestamp},{channel},{img_id}")
+                    expected_timestamp = timestamp + delay
+                    asyncio.create_task(
+                        send_message_to_socket(f"IMG,{expected_timestamp},{channel},{img_id}", delay)
+                    ) 
                     logger.info(f"Received IMG message with ID: {img_id}")
             
         except Exception as e:
             logger.error(f"Error handling event: {e}")
             logger.error("Full traceback:\n" + traceback.format_exc())
             #await display_manager.set_state("off")  # Mostrar "off" en caso de error
-            send_message_to_socket("IMG,0,0,1")
+            #await send_message_to_socket("IMG,0,0,1")
             break
 
 async def tcp_client(addr, port):
@@ -145,22 +144,22 @@ async def tcp_client(addr, port):
             logger.info(f"Attempting to connect to {addr}:{port}")
             reader, writer = await asyncio.open_connection(addr, port)
             logger.info("ConnectedXX to server")
-            send_message_to_socket("IMG,0,1,1")
+            #await send_message_to_socket("IMG,0,1,1")
             await handle_event(reader)            
         except (ConnectionError, OSError) as e:
             logger.info(f"Connection failed: {e}. Retrying in 5 seconds...")
             #await display_manager.set_state("connecting")  # Mostrar "off" cuando la conexión falla
-            send_message_to_socket("IMG,0,0,1")
+            #await send_message_to_socket("IMG,0,0,1")
             await asyncio.sleep(5)
         except Exception as e:
             logger.info(f"An unexpected error occurred: {e}. Retrying in 5 seconds...")
-            send_message_to_socket("IMG,0,0,1")
+            #await send_message_to_socket("IMG,0,0,1")
             await asyncio.sleep(5)
 
 async def shutdown(loop, signal=None):
     if signal:
         logger.info(f"Received exit signal {signal.name}...")
-    send_message_to_socket("IMG,0,1,2")
+    #await send_message_to_socket("IMG,0,1,2")
     #if display_manager:
     #    await display_manager.set_state("off")  # Mostrar "off" durante el apagado
     await asyncio.sleep(1)
@@ -216,20 +215,21 @@ async def send_to_unix_socket(message):
     except Exception as e:
         return {"error": str(e)}
 
-def send_message_to_socket(message): 
+async def send_message_to_socket(message, delay = 0): 
     logger.info(f"Sending message to socket: {message}")
+    if delay > 0:
+            await asyncio.sleep(delay / 1000)
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)            
     server_address = '/tmp/display.sock'
     try:
         sock.connect(server_address)
         sock.sendall(message.encode('utf-8'))
         # Wait briefly to ensure message is sent
-        time.sleep(0.1)
+        await asyncio.sleep(0.1)
     except Exception as e:
-        return {"error": str(e)}
+        logger.error(f"Error sending message to socket: {e}")
     finally:
         sock.close()
-    return {"status": "ok"}
 
 
 async def main():
@@ -238,7 +238,7 @@ async def main():
     
     loop = asyncio.get_running_loop()
     loop.set_default_executor(
-        concurrent.futures.ThreadPoolExecutor(max_workers=3)
+        concurrent.futures.ThreadPoolExecutor(max_workers=4)
     )
 
     logger.info("Starting client application...")

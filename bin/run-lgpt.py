@@ -5,6 +5,9 @@ import time
 import signal
 import logging
 from pathlib import Path
+import sounddevice as sd
+import numpy as np
+import queue
 
 # Constants
 LGPT = '/home/angel/lgptclient/lgpt/bin/lgpt.rpi-exe'
@@ -28,48 +31,23 @@ def signal_handler(signum, frame):
 def cleanup():
     """Clean up processes before exit"""
     try:
-        subprocess.run(["sudo", "pkill", "arecord"], check=False)
-        subprocess.run(["sudo", "pkill", "aplay"], check=False)
-        subprocess.run(["sudo", "/etc/init.d/alsa-utils", "stop"], check=False)
+        time.sleep(1)  # Esperar 1 segundo para asegurar que los procesos se detengan
     except Exception as e:
         logging.error(f"Cleanup error: {e}")
 
-def is_process_running(process_name):
-    """Check if a process is already running"""
-    try:
-        output = subprocess.run(["pgrep", process_name], capture_output=True, text=True)
-        return output.returncode == 0
-    except Exception as e:
-        logging.error(f"Error checking process {process_name}: {e}")
-        return False
-
 def restart_audio():
     """Restart audio subsystem"""
+    start_time = time.time()
     try:
         cleanup()
-        subprocess.run(["sudo", "/etc/init.d/alsa-utils", "start"], check=True)
-        
-        # Check if arecord and aplay are already running
-        if not is_process_running("arecord") and not is_process_running("aplay"):
-            # Start arecord and aplay as separate processes
-            arecord_process = subprocess.Popen(
-                ["sudo", "arecord", "-D", "hw:Loopback,1", "-f", "cd"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            
-            aplay_process = subprocess.Popen(
-                ["sudo", "aplay", "-D", "movida"],
-                stdin=arecord_process.stdout,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-        
-        # Restart server service
+
         subprocess.run(["sudo", "systemctl", "restart", "servidor"], check=True)
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         logging.error(f"Failed to restart audio: {e}")
         return False
+    
+    elapsed_time = time.time() - start_time
+    logging.info(f"Audio restart took {elapsed_time:.2f} seconds")
     return True
 
 def main():
