@@ -4,10 +4,6 @@ import sys
 import time
 import signal
 import logging
-from pathlib import Path
-import sounddevice as sd
-import numpy as np
-import queue
 
 # Constants
 LGPT = '/home/angel/lgptclient/lgpt/bin/lgpt.rpi-exe'

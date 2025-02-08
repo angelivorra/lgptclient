@@ -153,6 +153,8 @@ async def main():
     port = client.create_port(MIDI_PORT, WRITE_PORT)
     logger.info("MIDI client and port created")
     
+    
+    
     # Start a UNIX domain socket server
     server_local = await asyncio.start_unix_server(handle_local_client, path=UNIX_SOCKET_PATH)
     os.chmod(UNIX_SOCKET_PATH, 0o777)
