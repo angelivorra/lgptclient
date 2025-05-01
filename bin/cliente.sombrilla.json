@@ -24,7 +24,7 @@
         "23": {
             "nombre": "Bombo",
             "tiempo": 0.15,
-            "delay": 200
+            "delay": 150
         },
         "22": {
             "nombre": "Caja1",
