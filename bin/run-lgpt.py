@@ -4,6 +4,7 @@ import sys
 import time
 import signal
 import logging
+import os
 from audio_setup import AudioBridge
 
 # Constants
@@ -39,9 +40,13 @@ class LGPTRunner:
             try:
                 self.lgpt_process.terminate()
                 self.lgpt_process.wait(timeout=3)
-            except:
-                if self.lgpt_process.poll() is None:
-                    self.lgpt_process.kill()
+            except Exception:
+                pass
+            if self.lgpt_process.poll() is None:
+                try:
+                    os.killpg(os.getpgid(self.lgpt_process.pid), signal.SIGKILL)
+                except Exception as e:
+                    logging.error(f"Failed to kill LGPT process group: {e}")
 
 def signal_handler(signum, frame):
     """Handle graceful shutdown on SIGTERM/SIGINT"""
@@ -86,10 +91,11 @@ def main():
 
             logging.info("Starting LGPT process...")
             runner.lgpt_process = subprocess.Popen(
-                LGPT,
+                ["sudo", LGPT],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                preexec_fn=os.setsid  # <-- importante para grupos de procesos
             )
 
             # Wait for LGPT process to finish

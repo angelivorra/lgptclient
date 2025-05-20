@@ -1,0 +1,11 @@
+[Unit]
+Description=Simple LGPT Runner Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/angel/lgptclient/bin/simple-lgpt-runner.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

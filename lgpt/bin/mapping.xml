@@ -11,7 +11,6 @@
 	<MAP src="joy:0:0-" dst="/event/left" />
 	<MAP src="joy:0:0+" dst="/event/right" />
 
-
 	<MAP src="but:0:1" dst="/event/a" />
 	<MAP src="but:0:2" dst="/event/b" />
 	<MAP src="but:0:0" dst="/event/a" />

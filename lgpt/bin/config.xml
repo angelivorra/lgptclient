@@ -4,11 +4,12 @@
 
         <AUDIOAPI value='Linux ALSA'/>
         
-	
-	<AUDIODEVICE value="hw:Loopback,0"/>
 	<!--
+	<AUDIODEVICE value="hw:Loopback,0"/>
+        -->
+	
 	<AUDIODEVICE value="hw:IQaudIODAC,0" />
-	-->
+	
         <AUDIOBUFFERSIZE value='512'/>
         <AUDIOPREBUFFERCOUNT value='3'/>
 
@@ -16,17 +17,20 @@
           <MIDIDELAY value="10"/>
         -->
 	
-        <!--
-        <BACKGROUND value="000000" /> 
-        <FOREGROUND value="FFFFFF" /> 
-        <HICOLOR1 value="F41B38" /> 
-        <HICOLOR2 value="FF0000" /> 
-        <SONGVIEW_FE value="A55B8F" /> 
-        <SONGVIEW_00 value="853B6F" /> 
-        <CURSORCOLOR value = "FF00DD"/> 
-        <ROWCOLOR1 value = "BA28F9"/> 
-        <ROWCOLOR2 value = "FF00FF"/>
-        <ALTROWNUMBER value = "4"/>
-        -->	
+            <DUMPEVENT value='YES' />
+
+        
+        <BACKGROUND   value = "191E34"/> <!--Background color-->
+        <FOREGROUND   value = "BFD8E6"/> <!--Text color-->
+        <HICOLOR1     value = "F11C2C"/> <!--Highlight color 1-->
+        <HICOLOR2     value = "E9A9B3"/> <!--Highlight color 2-->
+        <CURSORCOLOR  value = "F11C2C"/> <!--Cursor color-->
+        <SONGVIEW_FE  value = "F11C2C" /> <!--Alt chain color1-->
+        <SONGVIEW_00  value = "F11C2C" /> <!--Alt chain color2-->
+        <ROWCOLOR1    value = "D4D4D4"/> <!--Row count color 1 -->
+        <ROWCOLOR2    value = "8A8A8A"/> <!--Row count color 2-->
+        <MAJORBEAT    value = "FFE1E1"/> <!--Major beat color-->
+        <ALTROWNUMBER value = "4"/>      <!--How many rows before alternating-->
+        
 
 </CONFIG>
