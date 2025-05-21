@@ -151,9 +151,7 @@ async def main():
     # Initialize MIDI client and port
     client = AsyncSequencerClient(MIDI_CLIENT_NAME)
     port = client.create_port(MIDI_PORT, WRITE_PORT)
-    logger.info("MIDI client and port created")
-    
-    
+    logger.info("MIDI client and port created")    
     
     # Start a UNIX domain socket server
     server_local = await asyncio.start_unix_server(handle_local_client, path=UNIX_SOCKET_PATH)
