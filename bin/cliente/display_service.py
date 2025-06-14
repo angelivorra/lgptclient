@@ -175,6 +175,18 @@ class DisplayService:
         )
         logger.info(f"Servidor iniciado en {self.socket_path}")
        
+        # Iniciar animación por defecto "eyes"
+
+        anim_config = ANIMACIONES["eyes"]
+        self.current_animation = asyncio.create_task(
+            self.show_animation(
+                name="eyes",
+                fps=anim_config["fps"],
+                loop=anim_config["loop"],
+                max_delay=anim_config["max_delay"]
+            )
+        )
+       
         async with server:
             await server.serve_forever()
 

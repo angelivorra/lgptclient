@@ -5,7 +5,7 @@
         
         <AUDIOAPI value='Linux ALSA'/>
         <!-- <AUDIODEVICE value="hw:IQaudIODAC,0" /> -->
-        <AUDIODEVICE value="movida" />
+        <AUDIODEVICE value="hw:Loopback,0"/>
 	
 
         <!-- <AUDIOAPI value='Jack Client'/>

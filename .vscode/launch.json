@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "Ansible Playbook: actualiza",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/venv/bin/ansible-playbook", // Assumes ansible-playbook is in your PATH
+            "args": [
+                "${workspaceFolder}/ansible/actualiza.yaml",
+                "-i",
+                "${workspaceFolder}/ansible/inventario"
+            ],
+            "cwd": "${workspaceFolder}/ansible",
+            "console": "integratedTerminal"
+        }
+    ]
+}
