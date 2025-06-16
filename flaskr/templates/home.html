@@ -90,7 +90,9 @@
     <section id="devices">
       <p class="grid">
         {% for device in devices %}
-        <button type="button" class="device-button" data-ip="{{ device.ip }}">{{ device.name }}</button>
+        <button type="button" class="device-button" data-ip="{{ device.ip }}" title="{{ device.name }}" style="padding: 0.5rem;">
+          <img src="{{ url_for('static', filename=device.name + '.png') }}" alt="{{ device.name }}" style="width: 180px; height: 180px; object-fit: contain; display: block; margin: auto;">
+        </button>
         {% endfor %}
       </p>
     </section>

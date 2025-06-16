@@ -4,8 +4,8 @@ import socket
 import json
 
 IPS = [
-    {'ip': '192.168.0.3', 'name': 'Obdulia'},
-    {'ip': '192.168.0.4', 'name': 'Carmen'},
+    {'ip': '192.168.0.3', 'name': 'obdulia'},
+    {'ip': '192.168.0.4', 'name': 'carmen'},
 ]
 
 def check_service_status(service_name):
