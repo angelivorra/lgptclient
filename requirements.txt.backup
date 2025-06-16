@@ -1,0 +1,9 @@
+alsa_midi
+numpy
+pysftp
+RPi.GPIO
+ansible
+tabulate
+pandas
+pillow
+pydub

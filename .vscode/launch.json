@@ -14,6 +14,19 @@
             ],
             "cwd": "${workspaceFolder}/ansible",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Ansible Playbook: actualiza todo",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/venv/bin/ansible-playbook", // Assumes ansible-playbook is in your PATH
+            "args": [
+                "${workspaceFolder}/ansible/actualiza_todo.yaml",
+                "-i",
+                "${workspaceFolder}/ansible/inventario"
+            ],
+            "cwd": "${workspaceFolder}/ansible",
+            "console": "integratedTerminal"
         }
     ]
 }

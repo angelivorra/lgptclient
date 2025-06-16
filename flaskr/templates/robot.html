@@ -15,51 +15,67 @@
   <title>{{name}} - Estado Robot</title>
   <style>
     .header-icon {
-      position: fixed; /* Changed from absolute to fixed */
+      position: fixed;
+      /* Changed from absolute to fixed */
       top: 5px;
       right: 5px;
       cursor: pointer;
-      width: 180px; 
-      height: 180px; 
-      z-index: 1000; /* Ensure it's on top */
+      width: 180px;
+      height: 180px;
+      z-index: 1000;
+      /* Ensure it's on top */
     }
+
     header.container {
-        position: relative; 
-        padding-bottom: 10px; /* Espacio para info debajo del título */
+      position: relative;
+      padding-bottom: 10px;
+      /* Espacio para info debajo del título */
     }
+
     .info-header span {
-        margin-right: 15px;
-        font-size: 0.9em;
+      margin-right: 15px;
+      font-size: 0.9em;
     }
+
     progress {
-        margin-bottom: 5px; /* Pequeño margen debajo de la barra */
+      margin-bottom: 5px;
+      /* Pequeño margen debajo de la barra */
     }
+
     .progress-label {
-        font-size: 0.9em;
-        margin-bottom: 15px;
+      font-size: 0.9em;
+      margin-bottom: 15px;
     }
+
     /* Estilos para fieldset y labels como en PicoCSS docs */
     fieldset {
-        padding: 1rem;
-        margin-bottom: 1rem;
-        border: 1px solid var(--card-border-color, #ddd);
-        border-radius: var(--border-radius, 5px);
+      padding: 1rem;
+      margin-bottom: 1rem;
+      border: 1px solid var(--card-border-color, #ddd);
+      border-radius: var(--border-radius, 5px);
     }
+
     label {
-        display: block;
-        margin-bottom: 0.5rem;
-        font-weight: bold;
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: bold;
     }
+
     input[type="text"][readonly] {
-        background-color: var(--form-element-background-color);
-        cursor: default;
+      background-color: var(--form-element-background-color);
+      cursor: default;
+    }
+
+    .usage-bars-container {
+      margin-top: 1.5rem;
+      /* Space above the new bars */
     }
   </style>
   <script>
     $(document).ready(function () {
-      $("#btn-limpia").click(function() {
-        $.post("/limpia", function() {
-          fetchRobotData(); 
+      $("#btn-limpia").click(function () {
+        $.post("/limpia", function () {
+          fetchRobotData();
         });
       });
 
@@ -71,21 +87,31 @@
       }
 
       function fetchRobotData() {
-        $.getJSON("/robot_data", function(data) {
+        $.getJSON("/robot_data", function (data) {
           $("#current_time").text(data.current_time);
-          $("#disk_usage").text(data.disk_usage);
 
-          // Barra de progreso general
+          // Barra de progreso general de señal
           let totalSignals = data.total_registros_procesados || 0;
           let signalsOk = data.total_signals_ok || 0;
           $("#signal-progress").attr('value', signalsOk);
           $("#signal-progress").attr('max', totalSignals);
           if (totalSignals > 0) {
             let percentageOk = (signalsOk / totalSignals) * 100;
-            $("#progress-label-text").text(signalsOk + " / " + totalSignals + " señales (<25ms) - " + formatNumber(percentageOk, 1) + "%");
+            $("#signal-progress-label-text").text(signalsOk + " / " + totalSignals + " señales (<25ms) - " + formatNumber(percentageOk, 1) + "%");
           } else {
-            $("#progress-label-text").text("No hay datos de señales procesadas.");
+            $("#signal-progress-label-text").text("No hay datos de señales procesadas.");
           }
+
+          // Barra de progreso CPU
+          let cpuUsage = data.cpu_usage_percent || 0;
+          $("#cpu-progress").attr('value', cpuUsage);
+          $("#cpu-progress-label-text").text("Uso de CPU: " + formatNumber(cpuUsage, 1) + "%");
+
+          // Barra de progreso Disco
+          let diskUsage = data.disk_usage_percent || 0;
+          $("#disk-progress").attr('value', diskUsage);
+          $("#disk-progress-label-text").text("Uso de Disco: " + formatNumber(diskUsage, 1) + "% (" + data.disk_usage_string + ")");
+
 
           // Detalles de Pantalla
           $("#num_registros_pantalla").val(data.num_registros_pantalla !== null ? data.num_registros_pantalla : 'N/A');
@@ -101,10 +127,11 @@
           $("#max_diff_bateria").val(formatNumber(data.max_diff_bateria));
           $("#min_diff_bateria").val(formatNumber(data.min_diff_bateria));
 
-        }).fail(function(jqXHR, textStatus, errorThrown) {
-            console.error("Error fetching robot data:", textStatus, errorThrown);
-            $("#progress-label-text").text("Error al cargar datos.");
-            // Podrías limpiar los campos o mostrar un error más general
+        }).fail(function (jqXHR, textStatus, errorThrown) {
+          console.error("Error fetching robot data:", textStatus, errorThrown);
+          $("#signal-progress-label-text").text("Error al cargar datos de señal.");
+          $("#cpu-progress-label-text").text("Error al cargar datos de CPU.");
+          $("#disk-progress-label-text").text("Error al cargar datos de Disco.");
         });
       }
 
@@ -116,17 +143,30 @@
 
 <body>
   <header class="container">
-    <img src="{{ url_for('static', filename='/' + name + '.png') }}" alt="Volver" class="header-icon" onclick="history.back()">
+    <img src="{{ url_for('static', filename='/' + name + '.png') }}" alt="Volver" class="header-icon"
+      onclick="history.back()">
     <hgroup>
       <h1>{{ name|upper }} - Robot</h1>
-      <p>Estado y control del robot.</p>
+      <p>Estado y control del {{ name|lower }}.</p>
     </hgroup>
   </header>
   <main class="container">
     <section id="overall-signal-quality">
-      <h2>Calidad de Señal</h2>
-      <progress id="signal-progress" value="0" max="100"></progress>
-      <small id="progress-label-text" class="progress-label">Cargando datos de progreso...</small>
+      <h2>Calidad Señal</h2>
+          <progress id="signal-progress" value="0" max="100"></progress>
+          <small id="signal-progress-label-text" class="progress-label">Cargando datos de progreso...</small>
+    </section>
+
+    <section id="system-usage-bars" class="usage-bars-container">
+      <h2>Uso del Sistema</h2>
+      <div>
+        <progress id="cpu-progress" value="0" max="100"></progress>
+        <small id="cpu-progress-label-text" class="progress-label">Cargando uso de CPU...</small>
+      </div>
+      <div style="margin-top: 0.5rem;">
+        <progress id="disk-progress" value="0" max="100"></progress>
+        <small id="disk-progress-label-text" class="progress-label">Cargando uso de disco...</small>
+      </div>
     </section>
 
     <section id="data-details" style="margin-top: 2rem;">
@@ -142,17 +182,17 @@
               <label for="num_registros_pantalla">Total Registros (Pantalla)
                 <input type="text" id="num_registros_pantalla" name="num_registros_pantalla" readonly />
               </label>
-              <label for="signals_ok_pantalla">Señales <25ms (Pantalla)
-                <input type="text" id="signals_ok_pantalla" name="signals_ok_pantalla" readonly />
+              <label for="signals_ok_pantalla">Señales
+                <25ms (Pantalla) <input type="text" id="signals_ok_pantalla" name="signals_ok_pantalla" readonly />
               </label>
               <label for="media_diff_pantalla">Latencia Media (Pantalla)
-                <input type="text" id="media_diff_pantalla" name="media_diff_pantalla" readonly placeholder="ms"/>
+                <input type="text" id="media_diff_pantalla" name="media_diff_pantalla" readonly placeholder="ms" />
               </label>
               <label for="max_diff_pantalla">Latencia Máxima (Pantalla)
-                <input type="text" id="max_diff_pantalla" name="max_diff_pantalla" readonly placeholder="ms"/>
+                <input type="text" id="max_diff_pantalla" name="max_diff_pantalla" readonly placeholder="ms" />
               </label>
               <label for="min_diff_pantalla">Latencia Mínima (Pantalla)
-                <input type="text" id="min_diff_pantalla" name="min_diff_pantalla" readonly placeholder="ms"/>
+                <input type="text" id="min_diff_pantalla" name="min_diff_pantalla" readonly placeholder="ms" />
               </label>
             </fieldset>
           </article>
@@ -167,17 +207,17 @@
               <label for="num_registros_bateria">Total Registros (Batería)
                 <input type="text" id="num_registros_bateria" name="num_registros_bateria" readonly />
               </label>
-              <label for="signals_ok_bateria">Señales <25ms (Batería)
-                <input type="text" id="signals_ok_bateria" name="signals_ok_bateria" readonly />
+              <label for="signals_ok_bateria">Señales
+                <25ms (Batería) <input type="text" id="signals_ok_bateria" name="signals_ok_bateria" readonly />
               </label>
               <label for="media_diff_bateria">Latencia Media (Batería)
-                <input type="text" id="media_diff_bateria" name="media_diff_bateria" readonly placeholder="ms"/>
+                <input type="text" id="media_diff_bateria" name="media_diff_bateria" readonly placeholder="ms" />
               </label>
               <label for="max_diff_bateria">Latencia Máxima (Batería)
-                <input type="text" id="max_diff_bateria" name="max_diff_bateria" readonly placeholder="ms"/>
+                <input type="text" id="max_diff_bateria" name="max_diff_bateria" readonly placeholder="ms" />
               </label>
               <label for="min_diff_bateria">Latencia Mínima (Batería)
-                <input type="text" id="min_diff_bateria" name="min_diff_bateria" readonly placeholder="ms"/>
+                <input type="text" id="min_diff_bateria" name="min_diff_bateria" readonly placeholder="ms" />
               </label>
             </fieldset>
           </article>
@@ -185,19 +225,13 @@
       </div>
     </section>
 
-    <div class="info-header">
-      <span title="Hora actual del servidor"><strong>Hora:</strong> <span id="current_time">Cargando...</span></span>
-      <span title="Uso de disco en el servidor"><strong>Disco:</strong> <span id="disk_usage">Cargando...</span></span>
-    </div>
-
     <section id="actions" style="margin-bottom: 1rem;">
       <button id="btn-limpia" class="secondary">Borrar datos debug</button>
-    </section>
-
-
-
+    </section>    
   </main>
   <footer class="container" style="margin-top: 2rem; text-align: center;">
+    <span title="Hora actual del servidor"><strong>Hora:</strong> <span id="current_time">Cargando...</span>
+    </span>
     <small>Actualización automática cada segundo. Icono por.</small>
   </footer>
 </body>

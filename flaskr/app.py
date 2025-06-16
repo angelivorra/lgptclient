@@ -10,6 +10,7 @@ from flask import jsonify
 import socket
 import pandas as pd
 import shutil
+import psutil # Import psutil
 
 
 CSV_FILENAME = '/home/angel/midi_notes_log_server.csv'
@@ -19,10 +20,20 @@ CSV_TIMIG_FILENAME = '/home/angel/timing_analysis.csv'
 def get_robot_stats():
     logger = current_app.logger
     logger.info("Executing get_robot_stats")
-    stats = shutil.disk_usage("/")
-    used_gb = stats.used / 1024**3
-    total_gb = stats.total / 1024**3
-    disk_usage = f"{used_gb:.2f} GB used of {total_gb:.2f} GB total"
+    
+    # Disk Usage
+    disk_stats = shutil.disk_usage("/")
+    disk_used_gb = disk_stats.used / (1024**3)
+    disk_total_gb = disk_stats.total / (1024**3)
+    disk_usage_string = f"{disk_used_gb:.2f} GB / {disk_total_gb:.2f} GB"
+    disk_usage_percent = (disk_stats.used / disk_stats.total) * 100
+    
+    # CPU Usage
+    # cpu_usage_percent = psutil.cpu_percent(interval=0.1) # Non-blocking, short interval
+    # Using interval=None for potentially faster, non-blocking call if acceptable for your use case.
+    # interval=0.1 can be a good compromise. Test what works best for responsiveness.
+    cpu_usage_percent = psutil.cpu_percent(interval=0.1) 
+
     current_time = time.strftime('%Y-%m-%d %H:%M:%S')
     
     num_registros = 0
@@ -90,7 +101,9 @@ def get_robot_stats():
 
     # Prepare data for JSON, ensuring native Python types
     data_to_return = {
-        "disk_usage": disk_usage,
+        "disk_usage_string": disk_usage_string, # Changed from disk_usage
+        "disk_usage_percent": round(disk_usage_percent, 2),
+        "cpu_usage_percent": round(cpu_usage_percent, 2),
         "current_time": current_time,
         "total_registros_procesados": int(total_registros_procesados),
         "total_signals_ok": int(total_signals_ok),
@@ -108,8 +121,8 @@ def get_robot_stats():
         "signals_ok_bateria": int(signals_ok_bateria),
     }
     logger.info(f"Data from get_robot_stats: {data_to_return}")
-    for key, value in data_to_return.items():
-        logger.info(f"Key: {key}, Value: {value}, Type: {type(value)}")
+    # for key, value in data_to_return.items():
+    #     logger.info(f"Key: {key}, Value: {value}, Type: {type(value)}")
 
     return data_to_return
 
