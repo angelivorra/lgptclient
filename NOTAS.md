@@ -1,8 +1,8 @@
 # Imagenes
 
 Para enviar imagenes, hay que primero ver el canal.
-  - **Canal 0**: Imagenes estaticas
-  - **Canal 1**: Animaciones
+  - **Instrumento 80**: Imagenes estaticas
+  - **Instrumento 81**: Animaciones
 
   Animaciones:
     - 0 : connect

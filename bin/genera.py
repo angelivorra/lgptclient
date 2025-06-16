@@ -57,31 +57,10 @@ def png_to_bin(input_img, bin_path, screenx, screeny, bpp=24):
 
 def note_from_index(index):
     """
-    Convierte un índice numérico a una nota musical con octava.
-    
-    :param index: Índice del archivo (001-999).
-    :return: Nombre de la nota correspondiente en formato CDEFGAB y octava.
+    Convierte un índice numérico a una cadena hexadecimal de dos dígitos.
+    Por ejemplo: 1 -> '01', 10 -> '0A', 15 -> '0F', 16 -> '10', etc.
     """
-    # Definir las notas musicales en formato CDEFGAB con sostenidos
-    notas = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-    
-    # Calcular la posición de la nota en la lista
-    base_index = (index - 1) % 12
-    
-    # Calcular la octava correspondiente
-    octava = (index - 1) // 12 - 2  # Empieza en menos2 para ajustar las octavas
-    
-    # Convertir la octava negativa al formato "menosX"
-    if octava < 0:
-        octava_str = f"menos{abs(octava)}"
-    else:
-        octava_str = str(octava)
-    
-    # Determinar la nota
-    nota = notas[base_index]
-    
-    # Formar el nombre con la octava
-    return f"{octava_str}.{nota}"
+    return f"{index:02X}"
 
 
 def resize_png(source_png, dest_png, width=800, height=480):
@@ -140,7 +119,7 @@ def convierte_imagenes(terminal, width = 800, height = 480, bpp=16, invert=False
     for i in range(1, 1000):
         png_file = Path(origin_folder) / f"{i:03d}.png"
         bin_file = Path(destiny_folder) / f"imagenes/{i:03d}.bin"
-        pngd_file = Path(destiny_folder) / f"imagenes/imagenes_pi/{i:05d}.{note_from_index(i)}.png"
+        pngd_file = Path(destiny_folder) / f"imagenes/imagenes_pi/{note_from_index(i)}.png"
         
         if png_file.exists():
             img = Image.open(png_file)
@@ -208,4 +187,3 @@ if __name__ == "__main__":
     
     convierte_imagenes(args.prima, invert=DATOS[args.prima]["invert"])
     convierte_animaciones(args.prima, invert=DATOS[args.prima]["invert"])
-    
