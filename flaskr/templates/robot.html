@@ -12,93 +12,194 @@
   <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='static.css') }}">
   <meta name="mobile-web-app-capable" content="yes">
-  <title>{{name}}</title>
+  <title>{{name}} - Estado Robot</title>
+  <style>
+    .header-icon {
+      position: fixed; /* Changed from absolute to fixed */
+      top: 5px;
+      right: 5px;
+      cursor: pointer;
+      width: 180px; 
+      height: 180px; 
+      z-index: 1000; /* Ensure it's on top */
+    }
+    header.container {
+        position: relative; 
+        padding-bottom: 10px; /* Espacio para info debajo del título */
+    }
+    .info-header span {
+        margin-right: 15px;
+        font-size: 0.9em;
+    }
+    progress {
+        margin-bottom: 5px; /* Pequeño margen debajo de la barra */
+    }
+    .progress-label {
+        font-size: 0.9em;
+        margin-bottom: 15px;
+    }
+    /* Estilos para fieldset y labels como en PicoCSS docs */
+    fieldset {
+        padding: 1rem;
+        margin-bottom: 1rem;
+        border: 1px solid var(--card-border-color, #ddd);
+        border-radius: var(--border-radius, 5px);
+    }
+    label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: bold;
+    }
+    input[type="text"][readonly] {
+        background-color: var(--form-element-background-color);
+        cursor: default;
+    }
+  </style>
   <script>
     $(document).ready(function () {
       $("#btn-limpia").click(function() {
         $.post("/limpia", function() {
-          location.reload();
+          fetchRobotData(); 
         });
-      });      
+      });
+
+      function formatNumber(num, decimals = 2) {
+        if (typeof num === 'number' && !isNaN(num)) {
+          return num.toFixed(decimals);
+        }
+        return 'N/A'; // Retorna N/A si no es un número válido
+      }
+
+      function fetchRobotData() {
+        $.getJSON("/robot_data", function(data) {
+          $("#current_time").text(data.current_time);
+          $("#disk_usage").text(data.disk_usage);
+
+          // Barra de progreso general
+          let totalSignals = data.total_registros_procesados || 0;
+          let signalsOk = data.total_signals_ok || 0;
+          $("#signal-progress").attr('value', signalsOk);
+          $("#signal-progress").attr('max', totalSignals);
+          if (totalSignals > 0) {
+            let percentageOk = (signalsOk / totalSignals) * 100;
+            $("#progress-label-text").text(signalsOk + " / " + totalSignals + " señales (<25ms) - " + formatNumber(percentageOk, 1) + "%");
+          } else {
+            $("#progress-label-text").text("No hay datos de señales procesadas.");
+          }
+
+          // Detalles de Pantalla
+          $("#num_registros_pantalla").val(data.num_registros_pantalla !== null ? data.num_registros_pantalla : 'N/A');
+          $("#signals_ok_pantalla").val(data.signals_ok_pantalla !== null ? data.signals_ok_pantalla : 'N/A');
+          $("#media_diff_pantalla").val(formatNumber(data.media_diff_pantalla));
+          $("#max_diff_pantalla").val(formatNumber(data.max_diff_pantalla));
+          $("#min_diff_pantalla").val(formatNumber(data.min_diff_pantalla));
+
+          // Detalles de Batería
+          $("#num_registros_bateria").val(data.num_registros_bateria !== null ? data.num_registros_bateria : 'N/A');
+          $("#signals_ok_bateria").val(data.signals_ok_bateria !== null ? data.signals_ok_bateria : 'N/A');
+          $("#media_diff_bateria").val(formatNumber(data.media_diff_bateria));
+          $("#max_diff_bateria").val(formatNumber(data.max_diff_bateria));
+          $("#min_diff_bateria").val(formatNumber(data.min_diff_bateria));
+
+        }).fail(function(jqXHR, textStatus, errorThrown) {
+            console.error("Error fetching robot data:", textStatus, errorThrown);
+            $("#progress-label-text").text("Error al cargar datos.");
+            // Podrías limpiar los campos o mostrar un error más general
+        });
+      }
+
+      fetchRobotData();
+      setInterval(fetchRobotData, 1000);
     });
   </script>
 </head>
 
 <body>
   <header class="container">
+    <img src="{{ url_for('static', filename='/' + name + '.png') }}" alt="Volver" class="header-icon" onclick="history.back()">
     <hgroup>
-      <h1>{{ name|upper }}</h1>
-      <p>Control remoto robots.</p>
+      <h1>{{ name|upper }} - Robot</h1>
+      <p>Estado y control del robot.</p>
     </hgroup>
   </header>
   <main class="container">
-    <section id="buttons">
-      <button id="btn-limpia">Borrar datos debug</button>
-
-      <button onclick="history.back()">Volver</button>
-    </section>
-    <section id="informacion">
-      <h2>Sistema</h2>
-      <form id="limpia" action="{{ url_for('limpia') }}" method="post">
-        <fieldset>
-          <label for="datos">Datos
-            <input type="text" id="datos" name="datos" value="{{ datos.total_registros }}" readonly />
-          </label>
-          <label for="fecha">Fecha/Hora
-            <input type="text" id="fecha" name="fecha" value="{{ datos.current_time }}" readonly />
-          </label>
-          <label for="disk_usage">Uso de disco
-            <input type="text" id="disk_usage" name="disk_usage" value="{{ disk_usage }}" readonly />
-          </label>
-
-
-        </fieldset>
-
-        
-      </form>
+    <section id="overall-signal-quality">
+      <h2>Calidad de Señal</h2>
+      <progress id="signal-progress" value="0" max="100"></progress>
+      <small id="progress-label-text" class="progress-label">Cargando datos de progreso...</small>
     </section>
 
-    <section id="salud">
-      <h2>Salud de la señal</h2>
-      <fieldset>
-        <label for="num_registros">Datos
-          <input type="text" id="num_registros" name="num_registros" value="{{ datos.num_registros }}" readonly />
-        </label>
-        <label for="media_diff">Media
-          <input type="text" id="media_diff" name="media_diff" value="{{ datos.media_diff }}" readonly />
-        </label>
-        <label for="max_diff">Máxima
-          <input type="text" id="max_diff" name="max_diff" value="{{ datos.max_diff }}" readonly />
-        </label>
-        <label for="min_diff">Mínima
-          <input type="text" id="min_diff" name="min_diff" value="{{ datos.min_diff }}" readonly />
-        </label>
-      </fieldset>
-      
+    <section id="data-details" style="margin-top: 2rem;">
+      <h2>Detalles por Tipo de Evento</h2>
+      <div class="grid">
+        <div>
+          <article>
+            <hgroup>
+              <h3>Eventos de Pantalla</h3>
+              <p>Latencia de las señales de interacción visual.</p>
+            </hgroup>
+            <fieldset>
+              <label for="num_registros_pantalla">Total Registros (Pantalla)
+                <input type="text" id="num_registros_pantalla" name="num_registros_pantalla" readonly />
+              </label>
+              <label for="signals_ok_pantalla">Señales <25ms (Pantalla)
+                <input type="text" id="signals_ok_pantalla" name="signals_ok_pantalla" readonly />
+              </label>
+              <label for="media_diff_pantalla">Latencia Media (Pantalla)
+                <input type="text" id="media_diff_pantalla" name="media_diff_pantalla" readonly placeholder="ms"/>
+              </label>
+              <label for="max_diff_pantalla">Latencia Máxima (Pantalla)
+                <input type="text" id="max_diff_pantalla" name="max_diff_pantalla" readonly placeholder="ms"/>
+              </label>
+              <label for="min_diff_pantalla">Latencia Mínima (Pantalla)
+                <input type="text" id="min_diff_pantalla" name="min_diff_pantalla" readonly placeholder="ms"/>
+              </label>
+            </fieldset>
+          </article>
+        </div>
+        <div>
+          <article>
+            <hgroup>
+              <h3>Eventos de Batería</h3>
+              <p>Latencia de las señales de temporización/ritmo.</p>
+            </hgroup>
+            <fieldset>
+              <label for="num_registros_bateria">Total Registros (Batería)
+                <input type="text" id="num_registros_bateria" name="num_registros_bateria" readonly />
+              </label>
+              <label for="signals_ok_bateria">Señales <25ms (Batería)
+                <input type="text" id="signals_ok_bateria" name="signals_ok_bateria" readonly />
+              </label>
+              <label for="media_diff_bateria">Latencia Media (Batería)
+                <input type="text" id="media_diff_bateria" name="media_diff_bateria" readonly placeholder="ms"/>
+              </label>
+              <label for="max_diff_bateria">Latencia Máxima (Batería)
+                <input type="text" id="max_diff_bateria" name="max_diff_bateria" readonly placeholder="ms"/>
+              </label>
+              <label for="min_diff_bateria">Latencia Mínima (Batería)
+                <input type="text" id="min_diff_bateria" name="min_diff_bateria" readonly placeholder="ms"/>
+              </label>
+            </fieldset>
+          </article>
+        </div>
+      </div>
     </section>
 
-    <section id="ritmo">
-      <h2>Ritmo</h2>
-      <fieldset>
-        <label for="tnum_registros">Datos
-          <input type="text" id="tnum_registros" name="tnum_registros" value="{{ datos.tnum_registros }}" readonly />
-        </label>
-        <label for="media_diff">Media
-          <input type="text" id="tmedia_diff" name="tmedia_diff" value="{{ datos.tmedia_diff }}" readonly />
-        </label>
-        <label for="max_diff">Máxima
-          <input type="text" id="tmax_diff" name="tmax_diff" value="{{ datos.tmax_diff }}" readonly />
-        </label>
-        <label for="min_diff">Mínima
-          <input type="text" id="tmin_diff" name="tmin_diff" value="{{ datos.tmin_diff }}" readonly />
-        </label>
-      </fieldset>
-      
+    <div class="info-header">
+      <span title="Hora actual del servidor"><strong>Hora:</strong> <span id="current_time">Cargando...</span></span>
+      <span title="Uso de disco en el servidor"><strong>Disco:</strong> <span id="disk_usage">Cargando...</span></span>
+    </div>
+
+    <section id="actions" style="margin-bottom: 1rem;">
+      <button id="btn-limpia" class="secondary">Borrar datos debug</button>
     </section>
+
 
 
   </main>
-  <footer></footer>
+  <footer class="container" style="margin-top: 2rem; text-align: center;">
+    <small>Actualización automática cada segundo. Icono por.</small>
+  </footer>
 </body>
 
 </html>
