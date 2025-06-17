@@ -5,66 +5,152 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark" />
-  <link rel="stylesheet" href="{{ url_for('static', filename='pico.indigo.min.css') }}">
-  <script src="{{ url_for('static', filename='jquery-3.7.1.min.js') }}"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <script type="importmap">
+    {
+      "imports": {
+        "@material/web/": "https://esm.run/@material/web/"
+      }
+    }
+  </script>
+  <script type="module">
+    import '@material/web/all.js';
+    import {styles as typescaleStyles} from '@material/web/typography/md-typescale-styles.js';
+
+    document.adoptedStyleSheets.push(typescaleStyles.styleSheet);
+  </script>
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32x32.png') }}">
   <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon-16x16.png') }}">
   <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='static.css') }}">
   <meta name="mobile-web-app-capable" content="yes">
   <title>{{name}}</title>
+  <style>
+    body {
+      font-family: 'Roboto', sans-serif;
+      padding: 1rem;
+    }
+
+    main {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    #loadingIndicator {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 1000;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+    }
+
+    md-outlined-button {
+      width: 100%;
+    }
+
+    md-filled-text-field,
+    md-filled-button {
+      width: 100%;
+    }
+
+    section {
+        border: 1px solid var(--md-sys-color-outline-variant);
+        border-radius: 12px;
+        padding: 1rem;
+    }
+
+    h1, h2 {
+        margin-top: 0;
+    }
+  </style>
   <script>
-    $(document).ready(function () {
-      const $form = $('#controlForm');
-      const $loadingIndicator = $('#loadingIndicator');
-      const $errorMessage = $('#error-message');
-      const $mainContent = $('main > section:not(#loadingIndicator)');
+    document.addEventListener('DOMContentLoaded', function () {
+      const controlForm = document.getElementById('controlForm');
+      const loadingIndicator = document.getElementById('loadingIndicator');
+      const errorMessage = document.getElementById('error-message');
+      const mainContent = document.querySelector('main');
+      const ruidoSwitch = document.getElementById('ruido');
 
-      $loadingIndicator.hide();
+      function showLoading() {
+        mainContent.style.opacity = '0.5';
+        mainContent.style.pointerEvents = 'none';
+        loadingIndicator.style.display = 'block';
+      }
 
-      $("#ruido").change(function() {
-        $.post("/ruido", { ruido: $(this).is(":checked") }, function() {
-          //location.reload();
-        });            
-      });
+      function hideLoading() {
+        mainContent.style.opacity = '1';
+        mainContent.style.pointerEvents = 'auto';
+        loadingIndicator.style.display = 'none';
+      }
 
-      $('.velocidad-button').on('click', function () {
-        $mainContent.hide();
-        $loadingIndicator.show();
-        $.post('/generadatos', { data: $('#envios').val() }, function () {
-          location.href = '/testvelocidad/' + $('#envios').val();
-        });
-      });
-      $('.device-button').on('click', function () {
-        var deviceIp = $(this).data('ip');
-        //alert('Device IP: ' + deviceIp);
-        location.href = 'http://' + deviceIp + ':8080/robot';
-      });
-
-      $form.on('submit', function (e) {
-        e.preventDefault();
-        console.log('Form submitted'); // Debug log
-
-        // Hide all sections except loading
-        $('section:not(#loadingIndicator)').hide();
-        $loadingIndicator.show();
-        console.log('Loading shown'); // Debug log        
-
-        $.ajax({
-          url: $(this).attr('action'),
+      ruidoSwitch.addEventListener('change', function () {
+        fetch('/ruido', {
           method: 'POST',
-          data: $(this).serialize(),
-          success: function () {
-            location.reload();
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
           },
-          error: function (xhr, status, error) {
-            $errorMessage.text(error).show();
-            $('section').show();
-            $loadingIndicator.hide();
-          }
+          body: 'ruido=' + this.selected
         });
       });
 
+      document.querySelectorAll('.velocidad-button').forEach(button => {
+        button.addEventListener('click', function () {
+          showLoading();
+          const envios = document.getElementById('envios').value;
+          fetch('/generadatos', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: 'data=' + envios
+          }).then(() => {
+            location.href = '/testvelocidad/' + envios;
+          });
+        });
+      });
+
+      document.querySelectorAll('.device-button').forEach(button => {
+        button.addEventListener('click', function () {
+          const deviceIp = this.dataset.ip;
+          location.href = 'http://' + deviceIp + ':8080/robot';
+        });
+      });
+
+      if (controlForm) {
+        controlForm.addEventListener('submit', function (e) {
+          e.preventDefault();
+          showLoading();
+
+          fetch(this.action, {
+            method: 'POST',
+            body: new FormData(this)
+          }).then(response => {
+            if (response.ok) {
+              location.reload();
+            } else {
+              response.text().then(error => {
+                errorMessage.textContent = error;
+                errorMessage.style.display = 'block';
+                hideLoading();
+              });
+            }
+          }).catch(error => {
+            errorMessage.textContent = error;
+            errorMessage.style.display = 'block';
+            hideLoading();
+          });
+        });
+      }
     });
   </script>
 </head>
@@ -73,28 +159,29 @@
   <header class="container">
     <hgroup>
       {% if is_active %}
-      <h1>Movida</h1>
+      <h1 class="md-typescale-display-medium">Movida</h1>
       {% else %}
-      <h1>Error</h1>
+      <h1 class="md-typescale-display-medium">Error</h1>
       {% endif %}
-      <p>Control remoto robots.</p>
+      <p class="md-typescale-body-medium">Control remoto robots.</p>
     </hgroup>
   </header>
-  <main class="container">
+  <main>
 
-    <section id="loadingIndicator">      
-      <article aria-busy="true">Procesando</article>
-    </section>
+    <div id="loadingIndicator">
+      <md-circular-progress indeterminate></md-circular-progress>
+    </div>
 
     {% if devices %}
     <section id="devices">
-      <p class="grid">
+      <div class="grid">
         {% for device in devices %}
-        <button type="button" class="device-button" data-ip="{{ device.ip }}" title="{{ device.name }}" style="padding: 0.5rem;">
-          <img src="{{ url_for('static', filename=device.name + '.png') }}" alt="{{ device.name }}" style="width: 180px; height: 180px; object-fit: contain; display: block; margin: auto;">
-        </button>
+        <md-outlined-button class="device-button" data-ip="{{ device.ip }}" title="{{ device.name }}">
+          <img src="{{ url_for('static', filename=device.name + '.png') }}" alt="{{ device.name }}"
+            style="width: 180px; height: 180px; object-fit: contain; display: block; margin: auto;">
+        </md-outlined-button>
         {% endfor %}
-      </p>
+      </div>
     </section>
     {% else %}
     <section id="vacio">
@@ -103,54 +190,44 @@
     {% endif %}
 
     <section id="control">
-      <h2>Configuración</h2>
+      <h2 class="md-typescale-title-large">Configuración</h2>
 
       <div id="error-message" class="error-message" style="display: none; color: red;"></div>
 
-      <form id="controlForm" action="{{ url_for('home') }}" method="post">
-        <fieldset>
-          <label for="delay">Delay (ms)
-            <input type="text" id="delay" name="delay" value="{{ config.delay }}" />
-          </label>
-          <label for="debug">
-            <input type="checkbox" role="switch" id="debug" name="debug" {% if config.debug %} checked {% endif %} />
-            Debug
-          </label>
-        </fieldset>
+      <form id="controlForm" action="{{ url_for('home') }}" method="post" style="display: flex; flex-direction: column; gap: 1rem;">
+        <md-outlined-text-field label="Delay (ms)" id="delay" name="delay" value="{{ config.delay }}"></md-outlined-text-field>
+        <label style="display: flex; align-items: center; gap: 1rem;">
+          Debug
+          <md-switch id="debug" name="debug" {% if config.debug %}selected{% endif %}></md-switch>
+        </label>
 
-        <input type="submit" value="Aplicar" id="submitBtn">
+        <md-filled-button type="submit">Aplicar</md-filled-button>
       </form>
 
-      
+
     </section>
 
     <section id="test-ruido">
-      <h2>Motores</h2>
-      <fieldset>
-        <label for="ruido">Ruido
-          <input type="checkbox" role="switch" id="ruido" name="ruido" {% if config.ruido %} checked {% endif %} />
-        <script>
-          
-        </script>
+      <h2 class="md-typescale-title-large">Motores</h2>
+        <label style="display: flex; align-items: center; gap: 1rem;">
+            Ruido
+          <md-switch id="ruido" name="ruido" {% if config.ruido %}selected{% endif %}></md-switch>
         </label>
     </section>
 
     <section id="fecha">
-      <fieldset>
-        <label for="fecha">Fecha
-          <input type="text" id="fecha" name="fecha" value="{{current_time}}" readonly/>
-        </label>
+        <md-outlined-text-field label="Fecha" id="fecha" name="fecha" value="{{current_time}}" readonly></md-outlined-text-field>
     </section>
 
     <section id="audio">
-      <h2>Audio</h2>
+      <h2 class="md-typescale-title-large">Audio</h2>
       <article>
         <pre>{{audio}}</pre>
       </article>
     </section>
 
     <section id="servicio">
-      <h2>Servicio</h2>
+      <h2 class="md-typescale-title-large">Servicio</h2>
       <article>
         <pre>{{logs}}</pre>
       </article>
