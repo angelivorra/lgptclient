@@ -71,7 +71,7 @@ class AudioBridge:
                 "-c", "2",          # Canales
                 "-e", "signed",     # Codificación
                 "-",                # Salida a stdout
-                "delay", "0.5", "0.5",   # Efecto de delay de 0.5 segundos
+                "delay", "1", "1",   # Efecto de delay de 0.5 segundos
                 "equalizer", "60", "10q", "6",      # Realce graves
                 "equalizer", "1000", "5q", "-6",    # Atenúa medios (1kHz)
                 "equalizer", "12000", "10q", "6"    # Realce agudos

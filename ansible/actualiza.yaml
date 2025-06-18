@@ -3,10 +3,10 @@
   hosts: sombrilla
   gather_facts: yes
   roles:
-    # - role: cliente-actualiza
-    #   vars:
-    #     entorno_python: false
-    #     imagenes: false
-    - role: servicio-panel
+    - role: cliente-actualiza
       vars:
-        install_python: false
+        entorno_python: false
+        imagenes: false
+    # - role: servicio-panel
+    #   vars:
+    #     install_python: false
