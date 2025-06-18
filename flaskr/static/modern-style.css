@@ -1,0 +1,156 @@
+/* Custom styles for the modernized Flask app */
+
+/* Custom animations */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+/* Vue transitions */
+.fade-enter-active, .fade-leave-active {
+    transition: opacity 0.3s;
+}
+
+.fade-enter-from, .fade-leave-to {
+    opacity: 0;
+}
+
+/* Card hover effects */
+.card {
+    transition: all 0.3s ease;
+    animation: fadeIn 0.5s ease-out;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+}
+
+/* Custom gradients */
+.gradient-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.gradient-secondary {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.gradient-success {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+/* Status indicators */
+.status-indicator {
+    animation: pulse 2s infinite;
+}
+
+/* Loading states */
+.loading-overlay {
+    backdrop-filter: blur(5px);
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+    .stat-card {
+        margin-bottom: 1rem;
+    }
+    
+    .metric-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .hero-body {
+        padding: 1.5rem;
+    }
+}
+
+/* Progress bar improvements */
+.progress {
+    transition: all 0.3s ease;
+}
+
+.progress:hover {
+    transform: scaleY(1.1);
+}
+
+/* Button improvements */
+.button {
+    transition: all 0.2s ease;
+}
+
+.button:hover {
+    transform: translateY(-2px);
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .metric-item {
+        background: #2b2b2b;
+        color: #ffffff;
+    }
+    
+    .progress-container {
+        background: #363636;
+    }
+    
+    .box {
+        background: #363636;
+        color: #ffffff;
+    }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Animation delays for staggered effect */
+.column:nth-child(1) .card { animation-delay: 0.1s; }
+.column:nth-child(2) .card { animation-delay: 0.2s; }
+.column:nth-child(3) .card { animation-delay: 0.3s; }
+.column:nth-child(4) .card { animation-delay: 0.4s; }
+
+/* Custom notification styles */
+.notification.is-custom {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+}
+
+/* Improved form controls */
+.field:not(:last-child) {
+    margin-bottom: 1.5rem;
+}
+
+.control .input:focus,
+.control .select select:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 0.125em rgba(102, 126, 234, 0.25);
+}
+
+/* Enhanced mobile experience */
+@media (max-width: 1023px) {
+    .container {
+        padding: 0 1rem;
+    }
+}

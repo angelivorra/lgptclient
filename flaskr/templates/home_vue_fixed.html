@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{name}} - Control Panel</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='libs/bulma.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-style.css') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32x32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon-16x16.png') }}">
+</head>
+<body>
+    <div id="app">
+        <!-- Loading Overlay -->
+        <div v-if="loading" class="modal is-active">
+            <div class="modal-background"></div>
+            <div class="modal-content">
+                <div class="box has-text-centered">
+                    <div class="is-size-4 mb-4">🔄 Procesando...</div>
+                    <progress class="progress is-primary" max="100">Loading</progress>
+                </div>
+            </div>
+        </div>
+
+        <!-- Header -->
+        <section class="hero is-primary">
+            <div class="hero-body">
+                <div class="container">
+                    <h1 class="title is-2">{{name}}</h1>
+                    <h2 class="subtitle">Panel de Control del Sistema</h2>
+                    <p class="is-size-6">Último update: {{ current_time }}</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Content -->
+        <section class="section">
+            <div class="container">
+                <div class="columns is-multiline">
+                    
+                    <!-- Devices Card -->
+                    <div class="column is-full" v-if="devices && devices.length > 0">
+                        <div class="card">
+                            <header class="card-header">
+                                <p class="card-header-title">🖥️ Dispositivos Disponibles</p>
+                            </header>
+                            <div class="card-content">
+                                <div class="columns is-multiline">
+                                    <div class="column is-one-quarter" v-for="device in devices" :key="device.ip">
+                                        <div class="card is-clickable device-card" @click="goToDevice(device.ip)">
+                                            <div class="card-content has-text-centered">
+                                                <div class="content">
+                                                    <div class="mb-3">
+                                                        <img :src="getDeviceIcon(device.name)" 
+                                                             :alt="device.name" 
+                                                             style="width: 64px; height: 64px; object-fit: contain;">
+                                                    </div>
+                                                    <p class="title is-6" v-text="device.name"></p>
+                                                    <p class="subtitle is-7" v-text="device.ip"></p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Status Card -->
+                    <div class="column is-one-half">
+                        <div class="card">
+                            <header class="card-header">
+                                <p class="card-header-title">📊 Estado del Sistema</p>
+                            </header>
+                            <div class="card-content">
+                                <div class="content">
+                                    <div class="field">
+                                        <label class="label">⚙️ Servidor</label>
+                                        <div class="control">
+                                            <span class="status-indicator" :class="serverStatus ? 'status-active' : 'status-inactive'"></span>
+                                            <span v-text="serverStatus ? 'Activo' : 'Inactivo'"></span>
+                                        </div>
+                                    </div>
+                                    <div class="field">
+                                        <label class="label">🎵 LGPT</label>
+                                        <div class="control">
+                                            <span class="status-indicator" :class="lgptStatus ? 'status-active' : 'status-inactive'"></span>
+                                            <span v-text="lgptStatus ? 'Activo' : 'Inactivo'"></span>
+                                        </div>
+                                    </div>
+                                    <div class="field">
+                                        <label class="label">📈 Registros procesados</label>
+                                        <div class="control">
+                                            <span class="tag is-info is-large" v-text="lineCount"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Configuration Card -->
+                    <div class="column is-one-half">
+                        <div class="card">
+                            <header class="card-header">
+                                <p class="card-header-title">⚙️ Configuración</p>
+                            </header>
+                            <div class="card-content">
+                                <form @submit.prevent="updateConfig">
+                                    <div class="field">
+                                        <label class="label">⏱️ Delay (ms)</label>
+                                        <div class="control">
+                                            <input class="input" type="number" v-model="config.delay" min="0">
+                                        </div>
+                                    </div>
+                                    <div class="field">
+                                        <div class="control">
+                                            <label class="checkbox">
+                                                <input type="checkbox" v-model="config.debug">
+                                                🐛 Debug Mode
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="field">
+                                        <div class="control">
+                                            <label class="checkbox">
+                                                <input type="checkbox" v-model="config.ruido" @change="updateRuido">
+                                                🔊 Ruido
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="field">
+                                        <div class="control">
+                                            <button class="button is-primary" type="submit" :disabled="loading">
+                                                🔄 Aplicar Configuración
+                                            </button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Actions Card -->
+                    <div class="column is-full">
+                        <div class="card">
+                            <header class="card-header">
+                                <p class="card-header-title">🎛️ Acciones</p>
+                            </header>
+                            <div class="card-content">
+                                <div class="buttons">
+                                    <button class="button is-warning" @click="clearData" :disabled="loading">
+                                        🗑️ Limpiar Datos
+                                    </button>
+                                    <a class="button is-link" href="/robot">
+                                        🤖 Ver Estado del Robot
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{{ url_for('static', filename='libs/vue.js') }}"></script>
+    <script src="{{ url_for('static', filename='libs/axios.js') }}"></script>
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    loading: false,
+                    serverStatus: {{ is_active|tojson }},
+                    lgptStatus: {{ lgpt_is_active|tojson }},
+                    lineCount: {{ line_count }},
+                    devices: {{ devices|tojson }},
+                    config: {
+                        delay: {{ config.delay if config.delay else 0 }},
+                        debug: {{ config.debug|tojson if config.debug else 'false' }},
+                        ruido: {{ config.ruido|tojson if config.ruido else 'false' }}
+                    }
+                }
+            },
+            methods: {
+                getDeviceIcon(deviceName) {
+                    // Verificar que deviceName existe y no es undefined
+                    if (!deviceName || typeof deviceName !== 'string') {
+                        return '/static/bars.svg';
+                    }
+                    
+                    // Mapear nombres de dispositivos a iconos específicos
+                    const iconMap = {
+                        'carmen': '/static/carmen.png',
+                        'obdulia': '/static/obdulia.png'
+                    };
+                    return iconMap[deviceName.toLowerCase()] || '/static/bars.svg';
+                },
+                async updateConfig() {
+                    this.loading = true;
+                    try {
+                        const formData = new FormData();
+                        formData.append('delay', this.config.delay);
+                        formData.append('debug', this.config.debug);
+                        
+                        const response = await fetch('/', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        
+                        if (response.ok) {
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 2000);
+                        }
+                    } catch (error) {
+                        console.error('Error updating config:', error);
+                        this.loading = false;
+                    }
+                },
+                
+                async updateRuido() {
+                    try {
+                        const formData = new FormData();
+                        formData.append('ruido', this.config.ruido);
+                        
+                        await fetch('/ruido', {
+                            method: 'POST',
+                            body: formData
+                        });
+                    } catch (error) {
+                        console.error('Error updating ruido:', error);
+                    }
+                },
+                
+                async clearData() {
+                    this.loading = true;
+                    try {
+                        const response = await fetch('/limpia', {
+                            method: 'POST'
+                        });
+                        
+                        if (response.ok) {
+                            window.location.reload();
+                        }
+                    } catch (error) {
+                        console.error('Error clearing data:', error);
+                        this.loading = false;
+                    }
+                },
+                
+                goToDevice(ip) {
+                    window.location.href = `http://${ip}:8080/robot`;
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

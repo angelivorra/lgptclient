@@ -153,7 +153,7 @@ def create_app():
             with open(CSV_FILENAME, 'r') as file:
                 line_count = len(file.readlines()) - 1
                 
-        return render_template('home.html', 
+        return render_template('home_vue_fixed.html', 
                                name=name, 
                                is_active=is_active, 
                                logs=logs, 
@@ -182,18 +182,6 @@ def create_app():
         return render_template('resultados.html', name=name)
 
     
-    @app.route('/testvelocidad/<int:intvalue>', methods=(['GET']))
-    def test_velocidad(intvalue):
-        app.logger.info('Test Velocidad')
-        name = subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip()
-        
-        file_count = 0
-        if os.path.exists(CSV_FILENAME):
-            with open(CSV_FILENAME, 'r') as file:
-                file_count = len(file.readlines()) - 1
-        
-        return render_template('test.html', name=name, intvalue=intvalue * 3, file_count=file_count)
-    
     @app.route('/ruido', methods=(['POST']))
     def ruido():
         ruido = request.form.get('ruido', type=str, default='false')
@@ -203,25 +191,6 @@ def create_app():
         return jsonify({})
     
     
-    @app.route('/generadatos', methods=(['POST']))
-    def genera_datos():
-        def send_message_to_socket(message):            
-            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)            
-            server_address = '/tmp/copilot.sock'
-            try:
-                sock.connect(server_address)
-                sock.sendall(message.encode('utf-8'))
-                # Wait briefly to ensure message is sent
-                time.sleep(0.1)
-            except Exception as e:
-                return {"error": str(e)}
-            finally:
-                sock.close()
-            return {"status": "ok"}
-        data = request.form.get('data', type=int, default=50)
-        result = send_message_to_socket("generate-data," + str(data))
-        return jsonify(result)
-
     @app.route('/', methods=(['POST']))
     def restart():
         app.logger.info('Restart')
@@ -252,7 +221,7 @@ def create_app():
         app.logger.info('robot')
         name = subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip()        
         robot_data = get_robot_stats()
-        return render_template('robot.html', name=name, datos=robot_data)
+        return render_template('robot_vue_fixed.html', name=name, datos=robot_data)
 
     @app.route('/robot_data', methods=(['GET']))
     def robot_data_endpoint():

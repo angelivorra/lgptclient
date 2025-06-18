@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{name}} - Estado Robot</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='libs/bulma.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-style.css') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32x32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon-16x16.png') }}">
+    <meta name="mobile-web-app-capable" content="yes">
+    <style>
+        .hero {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+        .progress-container {
+            background: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+        .metric-item {
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 8px;
+            text-align: center;
+            border-left: 4px solid #3273dc;
+        }
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #3273dc;
+        }
+        .metric-label {
+            font-size: 0.9rem;
+            color: #666;
+            margin-top: 0.5rem;
+        }
+        .section-title {
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: bold;
+            margin-bottom: 1rem;
+        }
+        .update-indicator {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+        }
+        .status-good { border-left-color: #48c774; }
+        .status-warning { border-left-color: #ffdd57; }
+        .status-danger { border-left-color: #f14668; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- Update Indicator -->
+        <div class="update-indicator">
+            <span v-if="isUpdating" class="tag is-info">
+                <span>🔄 Actualizando...</span>
+            </span>
+        </div>
+
+        <!-- Hero Section -->
+        <section class="hero is-primary">
+            <div class="hero-body">
+                <div class="container">
+                    <h1 class="title is-2">{{name}}</h1>
+                    <h2 class="subtitle">Monitor del Robot en Tiempo Real</h2>
+                    <p class="is-size-6">Última actualización: {{ robotData.current_time }}</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Stats -->
+        <section class="section">
+            <div class="container">
+                <div class="columns">
+                    <div class="column is-3">
+                        <div class="stat-card">
+                            <div class="title is-4 has-text-white">{{ robotData.cpu_usage_percent }}%</div>
+                            <div class="subtitle is-6 has-text-white">CPU</div>
+                        </div>
+                    </div>
+                    <div class="column is-3">
+                        <div class="stat-card">
+                            <div class="title is-4 has-text-white">{{ robotData.disk_usage_percent }}%</div>
+                            <div class="subtitle is-6 has-text-white">Disco</div>
+                        </div>
+                    </div>
+                    <div class="column is-3">
+                        <div class="stat-card">
+                            <div class="title is-4 has-text-white">{{ robotData.total_registros_procesados }}</div>
+                            <div class="subtitle is-6 has-text-white">Registros</div>
+                        </div>
+                    </div>
+                    <div class="column is-3">
+                        <div class="stat-card">
+                            <div class="title is-4 has-text-white">{{ robotData.total_signals_ok }}</div>
+                            <div class="subtitle is-6 has-text-white">Señales OK</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Progress Bars -->
+        <section class="section">
+            <div class="container">
+                <div class="progress-container">
+                    <h3 class="title is-5 section-title">Estado General del Sistema</h3>
+                    
+                    <!-- Signal Quality Progress -->
+                    <div class="field">
+                        <label class="label">Calidad de Señal Global</label>
+                        <progress 
+                            class="progress is-success" 
+                            :value="robotData.total_signals_ok" 
+                            :max="robotData.total_registros_procesados">
+                            {{ signalQualityPercentage }}%
+                        </progress>
+                        <p class="help">
+                            {{ robotData.total_signals_ok }} / {{ robotData.total_registros_procesados }} señales 
+                            (&lt;25ms) - {{ signalQualityPercentage }}%
+                        </p>
+                    </div>
+
+                    <!-- CPU Usage Progress -->
+                    <div class="field">
+                        <label class="label">Uso de CPU</label>
+                        <progress 
+                            class="progress" 
+                            :class="cpuProgressClass"
+                            :value="robotData.cpu_usage_percent" 
+                            max="100">
+                            {{ robotData.cpu_usage_percent }}%
+                        </progress>
+                    </div>
+
+                    <!-- Disk Usage Progress -->
+                    <div class="field">
+                        <label class="label">Uso de Disco</label>
+                        <progress 
+                            class="progress" 
+                            :class="diskProgressClass"
+                            :value="robotData.disk_usage_percent" 
+                            max="100">
+                            {{ robotData.disk_usage_percent }}%
+                        </progress>
+                        <p class="help">{{ robotData.disk_usage_string }}</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Detailed Metrics -->
+        <section class="section">
+            <div class="container">
+                <h3 class="title is-4 section-title">Métricas Detalladas</h3>
+                
+                <div class="columns">
+                    <!-- Pantalla Metrics -->
+                    <div class="column is-6">
+                        <div class="box">
+                            <h4 class="title is-5">Pantalla</h4>
+                            <div class="metric-grid">
+                                <div class="metric-item" :class="getStatusClass(robotData.media_diff_pantalla)">
+                                    <div class="metric-value">{{ formatNumber(robotData.media_diff_pantalla) }}ms</div>
+                                    <div class="metric-label">Latencia Media</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">{{ formatNumber(robotData.max_diff_pantalla) }}ms</div>
+                                    <div class="metric-label">Latencia Máxima</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">{{ formatNumber(robotData.min_diff_pantalla) }}ms</div>
+                                    <div class="metric-label">Latencia Mínima</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">{{ robotData.num_registros_pantalla }}</div>
+                                    <div class="metric-label">Total Registros</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">{{ robotData.signals_ok_pantalla }}</div>
+                                    <div class="metric-label">Señales OK</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">{{ pantallaSuccessRate }}%</div>
+                                    <div class="metric-label">Tasa de Éxito</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Batería Metrics -->
+                    <div class="column is-6">
+                        <div class="box">
+                            <h4 class="title is-5">Batería</h4>
+                            <div class="metric-grid">
+                                <div class="metric-item" :class="getStatusClass(robotData.media_diff_bateria)">
+                                    <div class="metric-value">{{ formatNumber(robotData.media_diff_bateria) }}ms</div>
+                                    <div class="metric-label">Latencia Media</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">{{ formatNumber(robotData.max_diff_bateria) }}ms</div>
+                                    <div class="metric-label">Latencia Máxima</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">{{ formatNumber(robotData.min_diff_bateria) }}ms</div>
+                                    <div class="metric-label">Latencia Mínima</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">{{ robotData.num_registros_bateria }}</div>
+                                    <div class="metric-label">Total Registros</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">{{ robotData.signals_ok_bateria }}</div>
+                                    <div class="metric-label">Señales OK</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-value">{{ bateriaSuccessRate }}%</div>
+                                    <div class="metric-label">Tasa de Éxito</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Controls -->
+        <section class="section">
+            <div class="container">
+                <div class="buttons is-centered">
+                    <button @click="cleanData" class="button is-warning is-large" :class="{'is-loading': isLoading}">
+                        <span>🗑️ Limpiar Datos</span>
+                    </button>
+                    <a href="/" class="button is-primary is-large">
+                        <span>🏠 Volver al Inicio</span>
+                    </a>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="{{ url_for('static', filename='libs/vue.js') }}"></script>
+    <script src="{{ url_for('static', filename='libs/axios.js') }}"></script>
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    robotData: {{ datos|tojson }},
+                    isUpdating: false,
+                    isLoading: false,
+                    updateInterval: null
+                }
+            },
+            computed: {
+                signalQualityPercentage() {
+                    if (this.robotData.total_registros_procesados === 0) return 0;
+                    return Math.round((this.robotData.total_signals_ok / this.robotData.total_registros_procesados) * 100);
+                },
+                pantallaSuccessRate() {
+                    if (this.robotData.num_registros_pantalla === 0) return 0;
+                    return Math.round((this.robotData.signals_ok_pantalla / this.robotData.num_registros_pantalla) * 100);
+                },
+                bateriaSuccessRate() {
+                    if (this.robotData.num_registros_bateria === 0) return 0;
+                    return Math.round((this.robotData.signals_ok_bateria / this.robotData.num_registros_bateria) * 100);
+                },
+                cpuProgressClass() {
+                    if (this.robotData.cpu_usage_percent > 80) return 'is-danger';
+                    if (this.robotData.cpu_usage_percent > 60) return 'is-warning';
+                    return 'is-success';
+                },
+                diskProgressClass() {
+                    if (this.robotData.disk_usage_percent > 90) return 'is-danger';
+                    if (this.robotData.disk_usage_percent > 75) return 'is-warning';
+                    return 'is-success';
+                }
+            },
+            methods: {
+                formatNumber(num, decimals = 2) {
+                    if (typeof num === 'number' && !isNaN(num)) {
+                        return num.toFixed(decimals);
+                    }
+                    return 'N/A';
+                },
+                getStatusClass(latencia) {
+                    if (latencia <= 25) return 'status-good';
+                    if (latencia <= 50) return 'status-warning';
+                    return 'status-danger';
+                },
+                async fetchRobotData() {
+                    this.isUpdating = true;
+                    try {
+                        const response = await axios.get('/robot_data');
+                        this.robotData = response.data;
+                    } catch (error) {
+                        console.error('Error fetching robot data:', error);
+                    } finally {
+                        this.isUpdating = false;
+                    }
+                },
+                async cleanData() {
+                    this.isLoading = true;
+                    try {
+                        await axios.post('/limpia');
+                        await this.fetchRobotData();
+                    } catch (error) {
+                        console.error('Error cleaning data:', error);
+                        alert('Error al limpiar los datos');
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+                startAutoUpdate() {
+                    this.updateInterval = setInterval(() => {
+                        this.fetchRobotData();
+                    }, 2000); // Update every 2 seconds
+                },
+                stopAutoUpdate() {
+                    if (this.updateInterval) {
+                        clearInterval(this.updateInterval);
+                        this.updateInterval = null;
+                    }
+                }
+            },
+            mounted() {
+                this.startAutoUpdate();
+            },
+            beforeUnmount() {
+                this.stopAutoUpdate();
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{name}} - Estado del Robot</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='libs/bulma.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-style.css') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32x32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon-16x16.png') }}">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <section class="hero is-info">
+            <div class="hero-body">
+                <div class="container">
+                    <h1 class="title is-2">🤖 {{name}}</h1>
+                    <h2 class="subtitle">Estado del Robot</h2>
+                    <div class="columns">
+                        <div class="column">
+                            <p class="is-size-6">⏰ Tiempo actual: <span v-text="currentTime"></span></p>
+                        </div>
+                        <div class="column has-text-right">
+                            <button class="button is-warning" @click="clearData" :disabled="loading">
+                                🗑️ Limpiar Datos
+                            </button>
+                            <a class="button is-light ml-2" href="/">🏠 Inicio</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Content -->
+        <section class="section">
+            <div class="container">
+                <div class="columns is-multiline">
+                    
+                    <!-- System Usage Card -->
+                    <div class="column is-half">
+                        <div class="card">
+                            <header class="card-header">
+                                <p class="card-header-title">📊 Uso del Sistema</p>
+                            </header>
+                            <div class="card-content">
+                                <div class="field">
+                                    <label class="label">💾 Uso de Disco</label>
+                                    <progress class="progress is-primary" :value="diskUsagePercent" max="100"></progress>
+                                    <p class="help" v-text="diskUsageString"></p>
+                                </div>
+                                <div class="field">
+                                    <label class="label">🔧 Uso de CPU</label>
+                                    <progress class="progress is-info" :value="cpuUsagePercent" max="100"></progress>
+                                    <p class="help"><span v-text="cpuUsagePercent"></span>%</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Signal Quality Card -->
+                    <div class="column is-half">
+                        <div class="card">
+                            <header class="card-header">
+                                <p class="card-header-title">📡 Calidad de Señal</p>
+                            </header>
+                            <div class="card-content">
+                                <div class="field">
+                                    <label class="label">✅ Señales OK (< 25ms)</label>
+                                    <progress class="progress is-success" :value="signalsOk" :max="totalSignals"></progress>
+                                    <p class="help">
+                                        <span v-text="signalsOk"></span> / <span v-text="totalSignals"></span> señales 
+                                        (<span v-text="signalPercentage"></span>%)
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pantalla Stats Card -->
+                    <div class="column is-half">
+                        <div class="card">
+                            <header class="card-header">
+                                <p class="card-header-title">🖥️ Estadísticas Pantalla</p>
+                            </header>
+                            <div class="card-content">
+                                <div class="columns is-multiline">
+                                    <div class="column is-half">
+                                        <div class="has-text-centered">
+                                            <p class="title is-4" v-text="pantallaStats.count"></p>
+                                            <p class="subtitle is-6">📊 Registros</p>
+                                        </div>
+                                    </div>
+                                    <div class="column is-half">
+                                        <div class="has-text-centered">
+                                            <p class="title is-4" v-text="pantallaStats.signalsOk"></p>
+                                            <p class="subtitle is-6">✅ Señales OK</p>
+                                        </div>
+                                    </div>
+                                    <div class="column is-half">
+                                        <div class="has-text-centered">
+                                            <p class="title is-5" v-text="pantallaStats.avgDiff + 'ms'"></p>
+                                            <p class="subtitle is-6">📈 Promedio</p>
+                                        </div>
+                                    </div>
+                                    <div class="column is-half">
+                                        <div class="has-text-centered">
+                                            <p class="title is-5" v-text="pantallaStats.maxDiff + 'ms'"></p>
+                                            <p class="subtitle is-6">📊 Máximo</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Batería Stats Card -->
+                    <div class="column is-half">
+                        <div class="card">
+                            <header class="card-header">
+                                <p class="card-header-title">🔋 Estadísticas Batería</p>
+                            </header>
+                            <div class="card-content">
+                                <div class="columns is-multiline">
+                                    <div class="column is-half">
+                                        <div class="has-text-centered">
+                                            <p class="title is-4" v-text="bateriaStats.count"></p>
+                                            <p class="subtitle is-6">📊 Registros</p>
+                                        </div>
+                                    </div>
+                                    <div class="column is-half">
+                                        <div class="has-text-centered">
+                                            <p class="title is-4" v-text="bateriaStats.signalsOk"></p>
+                                            <p class="subtitle is-6">✅ Señales OK</p>
+                                        </div>
+                                    </div>
+                                    <div class="column is-half">
+                                        <div class="has-text-centered">
+                                            <p class="title is-5" v-text="bateriaStats.avgDiff + 'ms'"></p>
+                                            <p class="subtitle is-6">📈 Promedio</p>
+                                        </div>
+                                    </div>
+                                    <div class="column is-half">
+                                        <div class="has-text-centered">
+                                            <p class="title is-5" v-text="bateriaStats.maxDiff + 'ms'"></p>
+                                            <p class="subtitle is-6">📊 Máximo</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+
+        <!-- Loading Modal -->
+        <div v-if="loading" class="modal is-active">
+            <div class="modal-background"></div>
+            <div class="modal-content">
+                <div class="box has-text-centered">
+                    <div class="is-size-4 mb-4">🔄 Procesando...</div>
+                    <progress class="progress is-primary" max="100">Loading</progress>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{{ url_for('static', filename='libs/vue.js') }}"></script>
+    <script>
+        const { createApp } = Vue;
+
+        // Datos iniciales del servidor
+        const initialData = {{ datos|tojson }};
+
+        createApp({
+            data() {
+                return {
+                    loading: false,
+                    currentTime: initialData.current_time || '',
+                    diskUsageString: initialData.disk_usage_string || '',
+                    diskUsagePercent: initialData.disk_usage_percent || 0,
+                    cpuUsagePercent: initialData.cpu_usage_percent || 0,
+                    totalSignals: initialData.total_registros_procesados || 0,
+                    signalsOk: initialData.total_signals_ok || 0,
+                    pantallaStats: {
+                        count: initialData.num_registros_pantalla || 0,
+                        avgDiff: parseFloat(initialData.media_diff_pantalla || 0).toFixed(2),
+                        maxDiff: parseFloat(initialData.max_diff_pantalla || 0).toFixed(2),
+                        minDiff: parseFloat(initialData.min_diff_pantalla || 0).toFixed(2),
+                        signalsOk: initialData.signals_ok_pantalla || 0
+                    },
+                    bateriaStats: {
+                        count: initialData.num_registros_bateria || 0,
+                        avgDiff: parseFloat(initialData.media_diff_bateria || 0).toFixed(2),
+                        maxDiff: parseFloat(initialData.max_diff_bateria || 0).toFixed(2),
+                        minDiff: parseFloat(initialData.min_diff_bateria || 0).toFixed(2),
+                        signalsOk: initialData.signals_ok_bateria || 0
+                    }
+                }
+            },
+            computed: {
+                signalPercentage() {
+                    if (this.totalSignals === 0) return 0;
+                    return ((this.signalsOk / this.totalSignals) * 100).toFixed(1);
+                }
+            },
+            methods: {
+                async fetchRobotData() {
+                    try {
+                        const response = await fetch('/robot_data');
+                        const data = await response.json();
+                        
+                        this.currentTime = data.current_time;
+                        this.diskUsageString = data.disk_usage_string;
+                        this.diskUsagePercent = data.disk_usage_percent;
+                        this.cpuUsagePercent = data.cpu_usage_percent;
+                        this.totalSignals = data.total_registros_procesados;
+                        this.signalsOk = data.total_signals_ok;
+                        
+                        this.pantallaStats = {
+                            count: data.num_registros_pantalla,
+                            avgDiff: parseFloat(data.media_diff_pantalla).toFixed(2),
+                            maxDiff: parseFloat(data.max_diff_pantalla).toFixed(2),
+                            minDiff: parseFloat(data.min_diff_pantalla).toFixed(2),
+                            signalsOk: data.signals_ok_pantalla
+                        };
+                        
+                        this.bateriaStats = {
+                            count: data.num_registros_bateria,
+                            avgDiff: parseFloat(data.media_diff_bateria).toFixed(2),
+                            maxDiff: parseFloat(data.max_diff_bateria).toFixed(2),
+                            minDiff: parseFloat(data.min_diff_bateria).toFixed(2),
+                            signalsOk: data.signals_ok_bateria
+                        };
+                    } catch (error) {
+                        console.error('Error fetching robot data:', error);
+                    }
+                },
+                
+                async clearData() {
+                    this.loading = true;
+                    try {
+                        const response = await fetch('/limpia', {
+                            method: 'POST'
+                        });
+                        
+                        if (response.ok) {
+                            await this.fetchRobotData();
+                        }
+                    } catch (error) {
+                        console.error('Error clearing data:', error);
+                    } finally {
+                        this.loading = false;
+                    }
+                }
+            },
+            mounted() {
+                // Actualizar datos cada 5 segundos
+                setInterval(() => {
+                    this.fetchRobotData();
+                }, 5000);
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
