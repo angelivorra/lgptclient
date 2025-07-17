@@ -135,11 +135,15 @@ def genera_imagenes_con_texto(terminal):
 
         # creamos la imagen final
         canvas = bg.copy().convert("RGBA")
-        # posición centrada
-        x = (W - w) // 2
-        y = (H - h) // 2
         # calcula ancho de contorno para efecto neon
         stroke_width = 20
+        # recalcula bounding box con contorno para centrar correctamente
+        measurer = ImageDraw.Draw(canvas)
+        bbox = measurer.textbbox((0, 0), word, font=font, stroke_width=stroke_width)
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
+        x = (W - w) // 2 - bbox[0]
+        y = (H - h) // 2 - bbox[1]
         # capa de glow: dibuja texto con contorno y aplica blur
         glow_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         draw_glow = ImageDraw.Draw(glow_layer)
