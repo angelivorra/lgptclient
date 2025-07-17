@@ -2,7 +2,7 @@ import argparse
 from pathlib import Path
 import shutil
 import struct
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 DATOS = {
     "sombrilla":{
@@ -98,7 +98,68 @@ def empty_folder(folder_path):
                 file.unlink()  # Remove file
             elif file.is_dir():
                 shutil.rmtree(file)  # Remove subdirectories
-    
+
+def genera_imagenes_con_texto(terminal):
+    terminal = terminal.lower()
+    if terminal not in DATOS:
+        raise ValueError(f"Terminal '{terminal}' no encontrado en DATOS")
+        
+    origin_folder = "/home/angel/lgptclient/images"  
+    plantilla = "/home/angel/lgptclient/images/fondo.png"  
+    font_path="/home/angel/lgptclient/images/NeonSans.ttf"
+    palabras = ["We're", "charging", "our", "battery", "And now", "we're", "full of", "energy", "WE", "ARE", "THE", "ROBOTS"]
+    margin_ratio: float = 0.1
+
+    bg = Image.open(plantilla).convert("RGBA")
+
+    W, H = bg.size
+    start_index: int = 999
+
+    # zonas máximas para el texto
+    max_w = W * (1 - 2 * margin_ratio)
+    max_h = H * (1 - 2 * margin_ratio)
+
+    for i, word in enumerate(palabras):
+        # arrancamos con un tamaño de fuente grande y bajamos hasta que quepa usando textbbox
+        font_size = int(min(max_w, max_h))  # punto de partida
+        font = None
+        while True:
+            font = ImageFont.truetype(font_path, font_size)
+            draw_measure = ImageDraw.Draw(bg)
+            bbox = draw_measure.textbbox((0, 0), word, font=font)
+            w = bbox[2] - bbox[0]
+            h = bbox[3] - bbox[1]
+            if (w <= max_w and h <= max_h) or font_size <= 1:
+                break
+            font_size -= 2
+
+        # creamos la imagen final
+        canvas = bg.copy().convert("RGBA")
+        # posición centrada
+        x = (W - w) // 2
+        y = (H - h) // 2
+        # calcula ancho de contorno para efecto neon
+        stroke_width = 20
+        # capa de glow: dibuja texto con contorno y aplica blur
+        glow_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        draw_glow = ImageDraw.Draw(glow_layer)
+        draw_glow.text((x, y), word, font=font, fill="white", stroke_width=stroke_width, stroke_fill="white")
+        glow_blur = glow_layer.filter(ImageFilter.GaussianBlur(radius=8))
+        # reduce glow opacity a 50%
+        alpha = glow_blur.getchannel('A').point(lambda a: a * 0.5)
+        glow_blur.putalpha(alpha)
+        # compone el glow tras el fondo
+        canvas = Image.alpha_composite(canvas, glow_blur)
+        # dibuja el texto principal sobre el glow
+        draw = ImageDraw.Draw(canvas)
+        draw.text((x, y), word, font=font, fill="white")
+
+
+        index = start_index - i
+        filename = f"{index:03d}.png"
+        canvas.save(Path(origin_folder) / filename)
+
+
 def convierte_imagenes(terminal, width = 800, height = 480, bpp=16, invert=False):
     terminal = terminal.lower()
     if terminal not in DATOS:
@@ -185,5 +246,8 @@ if __name__ == "__main__":
     if not args.prima:
         parser.error("First argument cannot be empty")
     
-    convierte_imagenes(args.prima, invert=DATOS[args.prima]["invert"])
-    convierte_animaciones(args.prima, invert=DATOS[args.prima]["invert"])
+    
+    genera_imagenes_con_texto(args.prima)
+
+    #convierte_imagenes(args.prima, invert=DATOS[args.prima]["invert"])
+    #convierte_animaciones(args.prima, invert=DATOS[args.prima]["invert"])
