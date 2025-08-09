@@ -253,5 +253,5 @@ if __name__ == "__main__":
     
     genera_imagenes_con_texto(args.prima)
 
-    #convierte_imagenes(args.prima, invert=DATOS[args.prima]["invert"])
-    #convierte_animaciones(args.prima, invert=DATOS[args.prima]["invert"])
+    convierte_imagenes(args.prima, invert=DATOS[args.prima]["invert"])
+    convierte_animaciones(args.prima, invert=DATOS[args.prima]["invert"])

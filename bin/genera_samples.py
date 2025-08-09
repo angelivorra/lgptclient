@@ -73,4 +73,4 @@ def convert_audio_files(folder_origin: str, folder_destiny: str):
 
 
 
-convert_audio_files('/home/angel/lgptclient/aaaaa', '/home/angel/lgptclient/bbbbb')
+convert_audio_files('/home/angel/.config/pipewire/origen', '/home/angel/.config/pipewire/destino')
