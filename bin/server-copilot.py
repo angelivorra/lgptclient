@@ -4,7 +4,24 @@ import csv
 import os
 import socket
 import random
-from alsa_midi import AsyncSequencerClient, WRITE_PORT, NoteOnEvent, StopEvent, StartEvent, ProgramChangeEvent
+from alsa_midi import (
+    AsyncSequencerClient,
+    READ_PORT,
+    WRITE_PORT,
+    NoteOnEvent,
+    StopEvent,
+    StartEvent,
+    ControlChangeEvent,
+    ClockEvent,
+    PortUnsubscribedEvent,
+    PortSubscribedEvent
+)
+try:
+    # Algunas versiones usan ProgramChangeEvent
+    from alsa_midi import ProgramChangeEvent
+except ImportError:
+    ProgramChangeEvent = None
+
 import logging
 from datetime import datetime
 import json
@@ -12,6 +29,8 @@ import json
 # Constants
 MIDI_CLIENT_NAME = 'movida'
 MIDI_PORT = "inout"
+# Puerto fuente (cliente:puerto) que queremos escuchar; se puede sobreescribir con env MIDI_SRC e.g. "130:0"
+DEFAULT_SRC = os.environ.get("MIDI_SRC", "130:0")
 TCP_PORT = 8888  # Define the port to listen on
 CSV_FILENAME = '/home/angel/midi_notes_log_server.csv'
 UNIX_SOCKET_PATH = '/tmp/copilot.sock'
@@ -20,7 +39,7 @@ UNIX_SOCKET_PATH = '/tmp/copilot.sock'
 logger = logging.getLogger(__name__)
 logging.basicConfig(
     format='%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s',
-    level=logging.INFO,
+    level=logging.DEBUG,  # subir a DEBUG para ver eventos crudos
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
@@ -121,22 +140,24 @@ async def broadcast_event(event, timestamp, debug_mode):
     if isinstance(event, NoteOnEvent):
         message = f"NOTA,{timestamp},{event.note}\n"
         if debug_mode:
-            await log_event_to_csv(event.note, timestamp, event.channel, event.velocity)    
+            await log_event_to_csv(event.note, timestamp, event.channel, event.velocity)
+    elif isinstance(event, ControlChangeEvent):
+        message = f"IMG,{timestamp},{event.param},{event.value}\n"
     elif  isinstance(event, StartEvent):
         message = f"START,{timestamp}\n"
     elif isinstance(event, StopEvent):
         message = f"END,{timestamp}\n"
-    elif isinstance(event, ProgramChangeEvent):
-        message = f"IMG,{timestamp},{event.channel},{event.value}\n"
+    # elif isinstance(event, ProgramChangeEvent):
+    #     message = f"IMG,{timestamp},{event.channel},{event.value}\n"
     
-    # if debug_mode:
-    #     logger.info(f"Broadcasting event: {message}")
+    if debug_mode:
+        logger.info(f"Broadcasting event: {message}")
 
     if message:
         for client in clients:
             client.write(message.encode())
             await client.drain()
-
+    
 async def main():
     # Initialize CSV logging
     config = load_config()
@@ -150,26 +171,64 @@ async def main():
     
     # Initialize MIDI client and port
     client = AsyncSequencerClient(MIDI_CLIENT_NAME)
-    port = client.create_port(MIDI_PORT, WRITE_PORT)
+    # Habilitar recepción y (opcional) emisión: READ_PORT | WRITE_PORT
+    port = client.create_port(MIDI_PORT, READ_PORT | WRITE_PORT)
     logger.info("MIDI client and port created")    
     
+    # Conectar automáticamente (suscripción) desde el emisor conocido hacia este puerto
+    # AsyncSequencerClient no expone connect_ports; usamos port.connect_from
+    try:
+        src_client_str, src_port_str = DEFAULT_SRC.split(":", 1)
+        SRC_CLIENT = int(src_client_str)
+        SRC_PORT = int(src_port_str)
+        port.connect_from((SRC_CLIENT, SRC_PORT))
+        logger.info(f"Suscripción creada: {SRC_CLIENT}:{SRC_PORT} -> {MIDI_CLIENT_NAME}:{MIDI_PORT}")
+    except Exception as e:
+        logger.warning(f"No se pudo crear suscripción automática desde {DEFAULT_SRC}: {e}")
+
     # Start a UNIX domain socket server
     server_local = await asyncio.start_unix_server(handle_local_client, path=UNIX_SOCKET_PATH)
     os.chmod(UNIX_SOCKET_PATH, 0o777)
-    logger.info(f"Local UNIX socket server started on {UNIX_SOCKET_PATH}")
+    if debug_mode:
+        logger.info(f"Local UNIX socket server started on {UNIX_SOCKET_PATH}")
 
     # Start TCP server
     server = await asyncio.start_server(handle_client, '0.0.0.0', TCP_PORT)
-    logger.info(f"TCP server started on port {TCP_PORT}")
+    if debug_mode:
+        logger.info(f"TCP server started on port {TCP_PORT}")
 
     async with server, server_local:
         # Listen for MIDI events
         while True:
             event = await client.event_input()
-            if isinstance(event, (NoteOnEvent, StartEvent, StopEvent, ProgramChangeEvent)):
+            # Log crudo para inspección (omitimos ClockEvent salvo que LOG_CLOCK=1)
+            
+            if debug_mode:
+                if isinstance(event, ClockEvent):
+                    if os.environ.get("LOG_CLOCK") == "1":
+                        logger.debug(f"RAW event type={event.__class__.__name__} repr={event!r}")
+                    continue
+                else:                    
+                    logger.debug(f"RAW event type={event.__class__.__name__} repr={event!r}")
+                
+            if isinstance(event,(StartEvent,StopEvent, PortSubscribedEvent, PortUnsubscribedEvent)):
+                continue
+                
+            allowed_types = [NoteOnEvent, StartEvent, StopEvent, ControlChangeEvent]
+
+            if isinstance(event, tuple(allowed_types)):
                 timestamp = int(datetime.now().timestamp() * 1000)
                 await broadcast_event(event, timestamp, debug_mode)
-                
+                continue
+
+            # # Fallback: si tiene atributos tipo control/value (probable CC en nombre distinto)
+            # if hasattr(event, 'control') and hasattr(event, 'value'):
+            #     timestamp = int(datetime.now().timestamp() * 1000)
+            #     await broadcast_event(event, timestamp, debug_mode)
+            #     logger.debug("Evento tratado vía fallback control/value (probable ControlChange)")
+            # else:
+            #     # Último recurso: mostrar atributos disponibles para depurar tipos no tratados
+            #     logger.debug(f"Evento ignorado. Atributos: {dir(event)}")
 
 def load_config(config_path='/home/angel/lgptclient/bin/config.json'):
     """Load configuration from JSON file"""

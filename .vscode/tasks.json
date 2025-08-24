@@ -1,0 +1,23 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Stop servidor service",
+      "type": "shell",
+      "command": "sudo systemctl stop servidor.service",
+      "problemMatcher": []
+    },
+    {
+      "label": "Start servidor service",
+      "type": "shell",
+      "command": "sudo systemctl start servidor.service",
+      "problemMatcher": []
+    },
+    {
+      "label": "Restart servidor service",
+      "type": "shell",
+      "command": "sudo systemctl restart servidor.service",
+      "problemMatcher": []
+    }
+  ]
+}

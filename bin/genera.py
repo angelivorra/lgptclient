@@ -334,8 +334,7 @@ def convierte_animaciones(terminal, width = 800, height = 480, bpp=16, invert=Fa
             try:
                 logger.info(f"[ANIM {animation_name}] Frame {png_file.name}")
                 img = Image.open(png_file)
-                if invert:
-                    logger.info("  Invertido")
+                if invert:                    
                     img = img.transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
                 try:
                     frame_str = png_file.stem.split('_')[-1]

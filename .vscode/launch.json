@@ -27,6 +27,19 @@
             ],
             "cwd": "${workspaceFolder}/ansible",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug servidor (server-copilot.py)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/bin/server-copilot.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONUNBUFFERED": "1"
+            },
+            "justMyCode": false,
+            "preLaunchTask": "Stop servidor service"
         }
     ]
 }
