@@ -1,6 +1,7 @@
 import logging
 import mmap
 import os
+from typing import Union
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,21 @@ class Framebuffer:
             image_data = f.read()
         self.mapped_fb.seek(0)
         self.mapped_fb.write(image_data)
+    
+    def blit(self, frame_bytes: Union[bytes, bytearray, memoryview]):
+        """Escribe directamente un frame ya cargado en el framebuffer.
+
+        Evita reabrir el archivo cuando los datos ya están en caché.
+        """
+        if len(frame_bytes) != self.screen_size:
+            logger.warning(
+                f"Frame size mismatch: expected {self.screen_size} got {len(frame_bytes)}"
+            )
+        self.mapped_fb.seek(0)
+        # memoryview hace la escritura sin copiar si es posible
+        if not isinstance(frame_bytes, (bytes, bytearray)):
+            frame_bytes = memoryview(frame_bytes)
+        self.mapped_fb.write(frame_bytes)
         
     def clear(self):
         logger.debug("Clearing framebuffer")

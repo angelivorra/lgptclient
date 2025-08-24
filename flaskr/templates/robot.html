@@ -17,18 +17,18 @@
     .header-icon {
       position: fixed;
       /* Changed from absolute to fixed */
-      top: 5px;
-      right: 5px;
+      top: 1px;
+      right: 1px;
       cursor: pointer;
-      width: 180px;
-      height: 180px;
+      width: 160px;
+      height: 160px;
       z-index: 1000;
       /* Ensure it's on top */
     }
 
     header.container {
       position: relative;
-      padding-bottom: 10px;
+      padding-bottom: 30px;
       /* Espacio para info debajo del título */
     }
 
@@ -90,17 +90,39 @@
         $.getJSON("/robot_data", function (data) {
           $("#current_time").text(data.current_time);
 
-          // Barra de progreso general de señal
-          let totalSignals = data.total_registros_procesados || 0;
-          let signalsOk = data.total_signals_ok || 0;
-          $("#signal-progress").attr('value', signalsOk);
-          $("#signal-progress").attr('max', totalSignals);
-          if (totalSignals > 0) {
-            let percentageOk = (signalsOk / totalSignals) * 100;
-            $("#signal-progress-label-text").text(signalsOk + " / " + totalSignals + " señales (<25ms) - " + formatNumber(percentageOk, 1) + "%");
-          } else {
-            $("#signal-progress-label-text").text("No hay datos de señales procesadas.");
-          }
+          // Barra Pantalla
+            let pantallaTotal = data.num_registros_pantalla || 0;
+            let pantallaOk = data.signals_ok_pantalla || 0;
+            $("#pantalla-progress").attr('value', pantallaOk);
+            $("#pantalla-progress").attr('max', pantallaTotal);
+            if (pantallaTotal > 0) {
+              let pctPantalla = (pantallaOk / pantallaTotal) * 100;
+              $("#pantalla-progress-label-text").text(
+                pantallaOk + " / " + pantallaTotal +
+                " | OK " + formatNumber(pctPantalla,1) + "%" +
+                " | media " + formatNumber(data.media_diff_pantalla,1) + "ms" +
+                " | max " + formatNumber(data.max_diff_pantalla,1) + "ms"
+              );
+            } else {
+              $("#pantalla-progress-label-text").text("Sin datos pantalla.");
+            }
+
+            // Barra Batería
+            let bateriaTotal = data.num_registros_bateria || 0;
+            let bateriaOk = data.signals_ok_bateria || 0;
+            $("#bateria-progress").attr('value', bateriaOk);
+            $("#bateria-progress").attr('max', bateriaTotal);
+            if (bateriaTotal > 0) {
+              let pctBateria = (bateriaOk / bateriaTotal) * 100;
+              $("#bateria-progress-label-text").text(
+                bateriaOk + " / " + bateriaTotal +
+                " | OK " + formatNumber(pctBateria,1) + "%" +
+                " | media " + formatNumber(data.media_diff_bateria,1) + "ms" +
+                " | max " + formatNumber(data.max_diff_bateria,1) + "ms"
+              );
+            } else {
+              $("#bateria-progress-label-text").text("Sin datos batería.");
+            }
 
           // Barra de progreso CPU
           let cpuUsage = data.cpu_usage_percent || 0;
@@ -111,6 +133,11 @@
           let diskUsage = data.disk_usage_percent || 0;
           $("#disk-progress").attr('value', diskUsage);
           $("#disk-progress-label-text").text("Uso de Disco: " + formatNumber(diskUsage, 1) + "% (" + data.disk_usage_string + ")");
+
+          // Barra de progreso RAM
+          let ramUsage = data.ram_usage_percent || 0;
+          $("#ram-progress").attr('value', ramUsage);
+          $("#ram-progress-label-text").text("Uso de RAM: " + formatNumber(ramUsage, 1) + "% (" + data.ram_usage_string + ")");
 
 
           // Detalles de Pantalla
@@ -129,9 +156,11 @@
 
         }).fail(function (jqXHR, textStatus, errorThrown) {
           console.error("Error fetching robot data:", textStatus, errorThrown);
-          $("#signal-progress-label-text").text("Error al cargar datos de señal.");
+          $("#pantalla-progress-label-text").text("Error datos pantalla.");
+          $("#bateria-progress-label-text").text("Error datos batería.");
           $("#cpu-progress-label-text").text("Error al cargar datos de CPU.");
           $("#disk-progress-label-text").text("Error al cargar datos de Disco.");
+          $("#ram-progress-label-text").text("Error al cargar datos de RAM.");
         });
       }
 
@@ -151,21 +180,33 @@
     </hgroup>
   </header>
   <main class="container">
-    <section id="overall-signal-quality">
+    <section id="signal-quality-separate">
       <h2>Calidad Señal</h2>
-          <progress id="signal-progress" value="0" max="100"></progress>
-          <small id="signal-progress-label-text" class="progress-label">Cargando datos de progreso...</small>
+      <div style="margin-bottom:0.75rem;">
+        <h3 style="margin:0 0 0.25rem 0;">Pantalla</h3>
+        <progress id="pantalla-progress" value="0" max="100"></progress>
+        <small id="pantalla-progress-label-text" class="progress-label">Cargando...</small>
+      </div>
+      <div>
+        <h3 style="margin:0 0 0.25rem 0;">Batería</h3>
+        <progress id="bateria-progress" value="0" max="100"></progress>
+        <small id="bateria-progress-label-text" class="progress-label">Cargando...</small>
+      </div>
     </section>
 
     <section id="system-usage-bars" class="usage-bars-container">
       <h2>Uso del Sistema</h2>
       <div>
         <progress id="cpu-progress" value="0" max="100"></progress>
-        <small id="cpu-progress-label-text" class="progress-label">Cargando uso de CPU...</small>
+        <small id="cpu-progress-label-text" class="progress-label">Cargando...</small>
       </div>
       <div style="margin-top: 0.5rem;">
         <progress id="disk-progress" value="0" max="100"></progress>
-        <small id="disk-progress-label-text" class="progress-label">Cargando uso de disco...</small>
+        <small id="disk-progress-label-text" class="progress-label">Cargando...</small>
+      </div>
+      <div style="margin-top: 0.5rem;">
+        <progress id="ram-progress" value="0" max="100"></progress>
+        <small id="ram-progress-label-text" class="progress-label">Cargando...</small>
       </div>
     </section>
 

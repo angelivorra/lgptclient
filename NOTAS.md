@@ -4,6 +4,8 @@ Para enviar imagenes, hay que primero ver el canal.
   - **Instrumento 80**: Imagenes estaticas
   - **Instrumento 81**: Animaciones
 
+y luego 
+
   Animaciones:
     - 0 : connect
     - 1 : eyes

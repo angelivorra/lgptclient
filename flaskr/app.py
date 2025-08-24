@@ -2,6 +2,8 @@ import csv
 import os
 import subprocess
 import time
+from collections import deque
+import threading
 
 from flask import Flask, redirect, render_template, current_app # Added current_app
 from helpers import check_service_status, get_devices, restart_service, save_config, read_config, save_config_value
@@ -11,6 +13,10 @@ import socket
 import pandas as pd
 import shutil
 import psutil # Import psutil
+
+# Deque to store (timestamp, cpu_percent) samples for last 3 seconds
+CPU_SAMPLES = deque()
+CPU_SAMPLES_LOCK = threading.Lock()
 
 
 CSV_FILENAME = '/home/angel/midi_notes_log_server.csv'
@@ -28,11 +34,24 @@ def get_robot_stats():
     disk_usage_string = f"{disk_used_gb:.2f} GB / {disk_total_gb:.2f} GB"
     disk_usage_percent = (disk_stats.used / disk_stats.total) * 100
     
-    # CPU Usage
-    # cpu_usage_percent = psutil.cpu_percent(interval=0.1) # Non-blocking, short interval
-    # Using interval=None for potentially faster, non-blocking call if acceptable for your use case.
-    # interval=0.1 can be a good compromise. Test what works best for responsiveness.
-    cpu_usage_percent = psutil.cpu_percent(interval=0.1) 
+    # RAM Usage
+    mem = psutil.virtual_memory()
+    ram_used_gb = mem.used / (1024**3)
+    ram_total_gb = mem.total / (1024**3)
+    ram_usage_string = f"{ram_used_gb:.2f} GB / {ram_total_gb:.2f} GB"
+    ram_usage_percent = mem.percent
+    
+    # CPU Usage: compute instantaneous sample (0.1s) and keep max of last 3 seconds
+    current_sample = psutil.cpu_percent(interval=0.1)
+    now_ts = time.time()
+    with CPU_SAMPLES_LOCK:
+        CPU_SAMPLES.append((now_ts, current_sample))
+        # Drop samples older than 3 seconds
+        cutoff = now_ts - 3.0
+        while CPU_SAMPLES and CPU_SAMPLES[0][0] < cutoff:
+            CPU_SAMPLES.popleft()
+        # Max percent in last 3 seconds window
+        cpu_usage_percent = max(sample for _, sample in CPU_SAMPLES) if CPU_SAMPLES else current_sample
 
     current_time = time.strftime('%Y-%m-%d %H:%M:%S')
     
@@ -104,6 +123,8 @@ def get_robot_stats():
         "disk_usage_string": disk_usage_string, # Changed from disk_usage
         "disk_usage_percent": round(disk_usage_percent, 2),
         "cpu_usage_percent": round(cpu_usage_percent, 2),
+        "ram_usage_percent": round(ram_usage_percent, 2),
+        "ram_usage_string": ram_usage_string,
         "current_time": current_time,
         "total_registros_procesados": int(total_registros_procesados),
         "total_signals_ok": int(total_signals_ok),

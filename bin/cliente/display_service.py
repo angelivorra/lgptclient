@@ -8,6 +8,7 @@ import glob
 import time
 from pathlib import Path
 from frame_buffer import Framebuffer
+from typing import Dict, List
 
 ANIMACIONES_DIR = "/home/angel/animaciones"
 IMG_DIR = "/home/angel/images"
@@ -61,7 +62,12 @@ class DisplayService:
         self.current_animation = None
         self.task_queue = asyncio.Queue()
         self.animaciones = list(ANIMACIONES.items())
-        
+        # Caches
+        self._frame_list_cache = {}  # nombre_anim -> lista de paths
+        self._frame_bytes_cache = {}  # path -> bytes frame
+        # Buffer reutilizable para lecturas (usado solo al cargar por primera vez)
+        self._read_buffer = bytearray(self.fb.screen_size)
+
         # Asegurar que el socket no existe previamente
         try:
             os.unlink(self.socket_path)
@@ -129,7 +135,12 @@ class DisplayService:
                 self.fb.clear()
             else:
                 logger.info(f"Mostramos imagen: {nota}")
-                self.fb.display_image(f"{IMG_DIR}/{nota:03d}.bin")            
+                path = f"{IMG_DIR}/{nota:03d}.bin"
+                frame_bytes = self._get_frame_bytes(path)
+                if frame_bytes:
+                    self.fb.blit(frame_bytes)
+                else:
+                    logger.error(f"No se pudo cargar imagen {path}")            
         
         if message["canal"] == 1:
             logger.info(f"Animación: {message['data'][0]}")
@@ -146,26 +157,71 @@ class DisplayService:
         try:
             frame_delay = 1.0 / fps
             logger.info(f"Comenzamos animacion: {name}")
+            files = self._get_animation_file_list(name)
+            if not files:
+                logger.error(f"Animación no encontrada: {name}")
+                return
+            # Precarga de bytes (lazy: se cargan al primer uso)
             while True:
-                files = sorted(Path(ANIMACIONES_DIR).glob(f"{name}*.bin"))
-                if not files:
-                    logger.error(f"Animación no encontrada: {name}")
-                    return
-
-                for file in files:
-                    self.fb.display_image(str(file))
+                start_cycle = time.monotonic()
+                for file_path in files:
+                    frame_bytes = self._get_frame_bytes(file_path)
+                    if not frame_bytes:
+                        logger.error(f"Fallo cargando frame {file_path}")
+                        continue
+                    self.fb.blit(frame_bytes)
                     await asyncio.sleep(frame_delay)
-
                 if not loop:
                     break
-                
-                await asyncio.sleep(random.uniform(max_delay/2, max_delay))
+                jitter = random.uniform(max_delay/2, max_delay)
+                # Ajuste para que el ciclo completo (frames + espera) se mantenga estable
+                elapsed = time.monotonic() - start_cycle
+                restante = jitter - elapsed + len(files)*frame_delay
+                if restante > 0:
+                    await asyncio.sleep(restante)
                 
         except asyncio.CancelledError:
             logger.info("Animación cancelada")
             self.fb.clear()
         except Exception as e:
             logger.error(f"Error en animación: {e}")
+
+    # ---------------------------
+    # Métodos de caché
+    # ---------------------------
+    def _get_animation_file_list(self, name: str) -> List[str]:
+        lst = self._frame_list_cache.get(name)
+        if lst is None:
+            pattern = f"{name}*.bin"
+            lst = [str(p) for p in sorted(Path(ANIMACIONES_DIR).glob(pattern))]
+            self._frame_list_cache[name] = lst
+        return lst
+
+    def _get_frame_bytes(self, path: str) -> bytes:
+        data = self._frame_bytes_cache.get(path)
+        if data is not None:
+            return data
+        # Cargar desde disco usando buffer reutilizable
+        try:
+            size = os.path.getsize(path)
+            if size != self.fb.screen_size:
+                logger.warning(
+                    f"Tamaño inesperado en {path}: {size} != {self.fb.screen_size}"
+                )
+            with open(path, 'rb') as f:
+                mv = memoryview(self._read_buffer)
+                read_total = 0
+                while read_total < size:
+                    n = f.readinto(mv[read_total:])
+                    if n == 0:
+                        break
+                    read_total += n
+                data = bytes(mv[:read_total])
+            self._frame_bytes_cache[path] = data
+            return data
+        except Exception as e:
+            logger.error(f"Error cargando frame {path}: {e}")
+            return b''
 
     async def start(self):
         self.fb.open()
