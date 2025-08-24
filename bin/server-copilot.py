@@ -135,28 +135,59 @@ async def log_event_to_csv(note, timestamp, channel, velocity):
         writer = csv.writer(file)
         writer.writerow([timestamp, note, channel, velocity])
 
+IMAGE_CC_DIRECT = 20          # CC para imagen directa 0-127 (canal 0)
+ANIM_CC_DIRECT = 21           # CC para animación directa 0-127 (canal 1)
+
+_pending_image_high = 0       # buffer para imagen extendida
+
+def _encode_image_id(high7: int, low7: int) -> int:
+    return (high7 << 7) | low7
+
 async def broadcast_event(event, timestamp, debug_mode):
+    global _pending_image_high
     message = None
     if isinstance(event, NoteOnEvent):
+        # NOTA,<ts>,<note>
         message = f"NOTA,{timestamp},{event.note}\n"
         if debug_mode:
             await log_event_to_csv(event.note, timestamp, event.channel, event.velocity)
     elif isinstance(event, ControlChangeEvent):
-        message = f"IMG,{timestamp},{event.param},{event.value}\n"
-    elif  isinstance(event, StartEvent):
+        ctrl = event.param  # número de controlador
+        val = event.value   # 0-127
+        ch = event.channel  # canal MIDI 0-15
+        # Protocolo:
+        # Canal 0 => imágenes
+        #   CC20 valor -> imagen directa valor        
+        # Canal 1 => animaciones
+        #   CC21 valor -> animación directa valor
+        if ch == 0:
+            if ctrl == IMAGE_CC_DIRECT:
+                image_id = val
+                message = f"IMG,{timestamp},{IMAGE_CC_DIRECT},{image_id}\n"
+        elif ch == 1:
+            if ctrl == ANIM_CC_DIRECT:
+                anim_id = val
+                message = f"ANIM,{timestamp},1,{anim_id}\n"
+        # Otros canales ignorados por ahora
+    elif isinstance(event, StartEvent):
         message = f"START,{timestamp}\n"
     elif isinstance(event, StopEvent):
         message = f"END,{timestamp}\n"
-    # elif isinstance(event, ProgramChangeEvent):
-    #     message = f"IMG,{timestamp},{event.channel},{event.value}\n"
-    
-    if debug_mode:
-        logger.info(f"Broadcasting event: {message}")
+
+    if message and debug_mode:
+        logger.info(f"Broadcasting event: {message.strip()}")
 
     if message:
+        dead = []
         for client in clients:
-            client.write(message.encode())
-            await client.drain()
+            try:
+                client.write(message.encode())
+                await client.drain()
+            except Exception:
+                dead.append(client)
+        for d in dead:
+            if d in clients:
+                clients.remove(d)
     
 async def main():
     # Initialize CSV logging

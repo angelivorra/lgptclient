@@ -115,20 +115,43 @@ async def handle_event(reader):
                 if debug_mode:
                     logger.info("Received END message")                    
             elif data.startswith("IMG,"):
-                logger.info(f"Received IMG message: {data}")
-                # Handle IMG message
+                # IMG,<ts_sent>,<channel>,<img_id>
                 parts = data.split(',')
-                if len(parts) == 4:
-                    _, timestamp, channel, img_id = parts
-                    img_id = int(img_id)
-                    timestamp = int(timestamp)
-                    channel = int(channel)
-                    current_timestamp = int(datetime.now().timestamp() * 1000)
-                    expected_timestamp = timestamp + delay
-                    asyncio.create_task(
-                        send_message_to_socket(f"IMG,{expected_timestamp},{channel},{img_id}", delay)
-                    ) 
-                    logger.info(f"Received IMG message with ID: {img_id}")
+                if len(parts) != 4:
+                    logger.error(f"Bad IMG line: {data}")
+                    continue
+                _, ts_sent_s, ch_s, img_id_s = parts
+                try:
+                    ts_sent = int(ts_sent_s)
+                    ch = int(ch_s)
+                    img_id = int(img_id_s)
+                except ValueError:
+                    logger.error(f"Bad IMG values: {data}")
+                    continue
+                show_ts = ts_sent + delay
+                now_ms = int(datetime.now().timestamp() * 1000)
+                delta_ms = max(0, show_ts - now_ms)
+                logger.info(f"Schedule IMG id={img_id} ch={ch} in {delta_ms}ms (target {show_ts})")
+                asyncio.create_task(send_message_to_socket(f"IMG,{show_ts},{ch},{img_id}", delta_ms))
+            elif data.startswith("ANIM,"):
+                # ANIM,<ts_sent>,<channel>,<anim_id>
+                parts = data.split(',')
+                if len(parts) != 4:
+                    logger.error(f"Bad ANIM line: {data}")
+                    continue
+                _, ts_sent_s, ch_s, anim_id_s = parts
+                try:
+                    ts_sent = int(ts_sent_s)
+                    ch = int(ch_s)
+                    anim_id = int(anim_id_s)
+                except ValueError:
+                    logger.error(f"Bad ANIM values: {data}")
+                    continue
+                show_ts = ts_sent + delay
+                now_ms = int(datetime.now().timestamp() * 1000)
+                delta_ms = max(0, show_ts - now_ms)
+                logger.info(f"Schedule ANIM id={anim_id} ch={ch} in {delta_ms}ms (target {show_ts})")
+                asyncio.create_task(send_message_to_socket(f"ANIM,{show_ts},{ch},{anim_id}", delta_ms))
             
         except Exception as e:
             logger.error(f"Error handling event: {e}")

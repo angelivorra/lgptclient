@@ -14,10 +14,10 @@ class DisplayManager:
         self.fb = fb
         self.current_state = "off"
         self.animation_task = None
-    # Caches básicos (nombre_anim -> lista paths)
-    self._frame_list_cache = {}
-    self._frame_bytes_cache = {}
-    self._read_buffer = bytearray(self.fb.screen_size)
+        # Caches básicos (nombre_anim -> lista paths)
+        self._frame_list_cache = {}
+        self._frame_bytes_cache = {}
+        self._read_buffer = bytearray(self.fb.screen_size)
 
     async def show_animation(self, name, fps=30, loop=True, max_delay=2.0):
         frame_delay = 1.0 / fps
