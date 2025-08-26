@@ -6,6 +6,7 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Any
 import struct
+from array import array
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import shutil
 
@@ -51,6 +52,8 @@ DATOS_TERMINAL: Dict[str, Dict[str, Any]] = {
 
 # Config en uso durante la ejecución (se setea en main)
 CURRENT_CONFIG: Dict[str, Any] = {}
+OUTPUT_BASE = Path('/home/angel/img_output')  # Salida principal solicitada
+ANIM_CONFIG_FILENAME = 'anim.cfg'  # Archivo esperado dentro de cada carpeta de animación
 
 
 class Cartera(Enum):  # alias semántico (evita conflicto con folder) (unused but placeholder)
@@ -93,12 +96,13 @@ def note_from_index(index: int) -> str:
 def png_to_bin(img: Image.Image, bin_path: Path, width: int = 800, height: int = 480, bpp: int = 16):
     img = img.resize((width, height))
     img = img.convert("RGB")
-    if bpp == 16:  # RGB565
-        out = []
-        for r, g, b in img.getdata():
-            rgb565 = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
-            out.append(struct.pack('<H', rgb565))
-        data = b''.join(out)
+    if bpp == 16:  # RGB565 optimizado
+        pixels = img.getdata()
+        buff = array('H', (( (r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3) for r, g, b in pixels ))
+        # Asegurar little-endian
+        if struct.pack('H', 1) == b'\x00\x01':  # big endian
+            buff.byteswap()
+        data = buff.tobytes()
     elif bpp == 24:
         data = img.tobytes()
     elif bpp == 32:
@@ -166,7 +170,8 @@ def procesa_textos(path: Path) -> Dict:
         raise FileNotFoundError("Faltan fondo.png o fuente.ttf para textos")
     bg = Image.open(fondo).convert('RGBA')
     W, H = bg.size
-    out_dir = path / 'output/textos'
+    
+    out_dir = OUTPUT_BASE / CURRENT_CONFIG.get('terminal', 'default') / path.name 
     vacia_carpeta(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     margin_ratio = 0.1
@@ -204,7 +209,14 @@ def procesa_textos(path: Path) -> Dict:
         if invert:
             canvas = canvas.transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
         filename = f"{255 - idx:03d}.png"  # replicar patrón inverso
-        canvas.save(out_dir / filename)
+        png_path = out_dir / filename
+        canvas.save(png_path)
+        # Generar bin paralelo
+        try:
+            bin_path = out_dir / f"{png_path.stem}.bin"
+            png_to_bin(canvas, bin_path)
+        except Exception as e:
+            logger.warning(f"No se pudo crear bin para texto {png_path.name}: {e}")
     return {"palabras": len(palabras), "out": str(out_dir)}
 
 
@@ -218,7 +230,8 @@ def procesa_imagenes(path: Path) -> Dict:
     png_dir = path / 'png'
     if not png_dir.exists():
         return {"procesadas": 0, "razon": "No existe png/"}
-    out_dir = path / 'output/imagenes'
+    # Salida: /home/angel/img_output/<terminal>/<XXX>/
+    out_dir = OUTPUT_BASE / CURRENT_CONFIG.get('terminal', 'default') / path.name
     vacia_carpeta(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     margin_ratio = 0.10
@@ -246,7 +259,14 @@ def procesa_imagenes(path: Path) -> Dict:
             lienzo.alpha_composite(fg, dest=(x, y))
             if invert:
                 lienzo = lienzo.transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
-            lienzo.save(out_dir / f"{i:03d}.png")
+            png_dest = out_dir / f"{i:03d}.png"
+            bin_dest = out_dir / f"{i:03d}.bin"
+            lienzo.save(png_dest)
+            # Generar bin directamente
+            try:
+                png_to_bin(lienzo, bin_dest)
+            except Exception as e:
+                logger.error(f"Error generando bin {bin_dest.name}: {e}")
             procesadas += 1
         except Exception as e:
             logger.error(f"Error procesando {src}: {e}")
@@ -256,9 +276,11 @@ def procesa_imagenes(path: Path) -> Dict:
 def procesa_animaciones(path: Path) -> Dict:
     """Cada subcarpeta => animación, frames *.png -> se exportan centrados en canvas 800x480 si posible."""
     subdirs = [d for d in path.iterdir() if d.is_dir()]
-    out_dir = path / 'output/animaciones'
-    vacia_carpeta(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    configs_copiados = 0
+    # Salida: /home/angel/img_output/<terminal>/<XXX>/animaciones/<animacion>/
+    base_out = OUTPUT_BASE / CURRENT_CONFIG.get('terminal', 'default') / path.name
+    vacia_carpeta(base_out)
+    base_out.mkdir(parents=True, exist_ok=True)
     animaciones = 0
     frames_total = 0
     invert = bool(CURRENT_CONFIG.get("invert"))
@@ -267,18 +289,37 @@ def procesa_animaciones(path: Path) -> Dict:
         if not frames:
             continue
         animaciones += 1
+        anim_dir = base_out / d.name
+        anim_dir.mkdir(parents=True, exist_ok=True)
+        # Copiar archivo de config si existe
+        cfg_src = d / ANIM_CONFIG_FILENAME
+        if cfg_src.exists() and cfg_src.is_file():
+            try:
+                shutil.copy2(cfg_src, anim_dir / ANIM_CONFIG_FILENAME)
+                configs_copiados += 1
+            except Exception as e_cfg:
+                logger.warning(f"No se pudo copiar config {cfg_src}: {e_cfg}")
         for idx, frame in enumerate(frames):
             try:
                 img = Image.open(frame).convert('RGBA')
-                # normalizamos a 800x480 si difiere
                 img = img.resize((800, 480))
                 if invert:
                     img = img.transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
-                img.save(out_dir / f"{d.name}_{idx:03d}.png")
+                frame_num = idx + 1  # 1-based
+                bin_dest = anim_dir / f"{frame_num:03d}.bin"
+                png_dest = anim_dir / f"{frame_num:03d}.png"
+                # Guardar PNG (copia del frame normalizado)
+                try:
+                    img.save(png_dest)
+                except Exception as e_png:
+                    logger.error(f"Error guardando PNG {png_dest}: {e_png}")
+                png_to_bin(img, bin_dest)
+                if frame_num % 25 == 0 or frame_num == len(frames):
+                    logger.debug(f"Anim {d.name}: frame {frame_num}/{len(frames)}")
                 frames_total += 1
             except Exception as e:
                 logger.error(f"Frame {frame} error: {e}")
-    return {"animaciones": animaciones, "frames": frames_total, "out": str(out_dir)}
+    return {"animaciones": animaciones, "frames": frames_total, "configs": configs_copiados, "out": str(base_out)}
 
 
 PROCESSORS: Dict[CarpetaTipo, Callable[[Path], Dict]] = {
@@ -319,6 +360,7 @@ def main():
     parser.add_argument('terminal', help=f"Terminal destino ({', '.join(DATOS_TERMINAL.keys())})")
     parser.add_argument('--images-root', default='/home/angel/lgptclient/images', help='Ruta base images/')
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--markdown', action='store_true', help='Generar guías markdown en ayuda_imagenes/')
     args = parser.parse_args()
     terminal = args.terminal.lower()
     if terminal not in DATOS_TERMINAL:
@@ -331,10 +373,22 @@ def main():
     images_root = Path(args.images_root)
     if not images_root.exists():
         raise SystemExit(f"No existe: {images_root}")
+    # Limpiar carpeta de salida del terminal antes de generar
+    terminal_output_dir = Path('/home/angel/img_output') / terminal
+    if terminal_output_dir.exists():
+        logger.info(f"Vaciando salida previa: {terminal_output_dir}")
+        vacia_carpeta(terminal_output_dir)
+    terminal_output_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Procesando root: {images_root} para terminal '{terminal}' (invert={CURRENT_CONFIG.get('invert')})")
     logger.debug(f"CONFIG ACTUAL: {CURRENT_CONFIG}")
     t0 = time.perf_counter()
     resultados = recorrer_images(images_root)
+    # Generar markdown si se solicita
+    if args.markdown:
+        try:
+            generar_markdown_ayuda(resultados)
+        except Exception as e:
+            logger.error(f"Error generando markdown de ayuda: {e}")
     total = time.perf_counter() - t0
     logger.info("Resumen:")
     for r in resultados:
@@ -344,5 +398,89 @@ def main():
     logger.info(f"Tiempo total: {total:.2f}s")
 
 
+# -----------------------------------------------------------
+# Markdown de ayuda
+# -----------------------------------------------------------
+def generar_markdown_ayuda(resultados: List[ProcesamientoResultado]):
+    """Genera 001.md, 002.md, ... en /home/angel/lgptclient/ayuda_imagenes/
+    Copiando también los PNG necesarios para visualizarlos.
+    Para carpetas IMAGENES / TEXTOS: lista de miniaturas.
+    Para ANIMACIONES: se listan animaciones y frames.
+    """
+    ayuda_root = Path('/home/angel/lgptclient/ayuda_imagenes')
+    ayuda_root.mkdir(parents=True, exist_ok=True)
+    terminal = CURRENT_CONFIG.get('terminal', 'default')
+    for res in resultados:
+        carpeta_id = res.carpeta.name  # '001', '002', ...
+        md_path = ayuda_root / f"{carpeta_id}.md"
+        salida_dir = OUTPUT_BASE / terminal / carpeta_id
+        if not salida_dir.exists():
+            logger.warning(f"Salida no encontrada para {carpeta_id}, se omite markdown")
+            continue
+        # Directorio local para copiar assets: ayuda_imagenes/<carpeta_id>/
+        assets_dir = ayuda_root / carpeta_id
+        if assets_dir.exists():
+            vacia_carpeta(assets_dir)
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        secciones: List[str] = [f"# Carpeta {carpeta_id}", f"Tipo: {res.tipo.name}"]
+        if res.tipo == CarpetaTipo.IMAGENES or res.tipo == CarpetaTipo.TEXTOS:
+            pngs = sorted(p for p in salida_dir.glob('*.png'))
+            filas = []
+            columnas = 5
+            row = []
+            for idx, png in enumerate(pngs, 1):
+                destino_png = assets_dir / png.name
+                try:
+                    shutil.copy2(png, destino_png)
+                except Exception as e:
+                    logger.warning(f"No se pudo copiar {png}: {e}")
+                rel = f"{carpeta_id}/{png.name}"
+                row.append(f"<td align='center' style='font-family:monospace;font-size:14px'>{png.stem}<br><img src='{rel}' width='240'/></td>")
+                if len(row) == columnas:
+                    filas.append('<tr>' + ''.join(row) + '</tr>')
+                    row = []
+            if row:
+                while len(row) < columnas:
+                    row.append('<td></td>')
+                filas.append('<tr>' + ''.join(row) + '</tr>')
+            secciones.append('<table>')
+            secciones.extend(filas)
+            secciones.append('</table>')
+        elif res.tipo == CarpetaTipo.ANIMACIONES:
+            # Subcarpetas = animaciones
+            anims = [d for d in salida_dir.iterdir() if d.is_dir()]
+            for anim in sorted(anims):
+                secciones.append(f"\n## Animación {anim.name}")
+                anim_assets_dir = assets_dir / anim.name
+                anim_assets_dir.mkdir(parents=True, exist_ok=True)
+                frames = sorted(anim.glob('*.png'))
+                if not frames:
+                    secciones.append("(Sin frames PNG)")
+                    continue
+                filas = []
+                columnas = 8
+                row = []
+                for i, frame in enumerate(frames, 1):
+                    destino_png = anim_assets_dir / frame.name
+                    try:
+                        shutil.copy2(frame, destino_png)
+                    except Exception as e:
+                        logger.warning(f"No se pudo copiar frame {frame}: {e}")
+                    rel = f"{carpeta_id}/{anim.name}/{frame.name}"
+                    row.append(f"<td style='padding:2px;font-size:12px;font-family:monospace'>{frame.stem}<br><img src='{rel}' width='120'/></td>")
+                    if len(row) == columnas:
+                        filas.append('<tr>' + ''.join(row) + '</tr>')
+                        row = []
+                if row:
+                    while len(row) < columnas:
+                        row.append('<td></td>')
+                    filas.append('<tr>' + ''.join(row) + '</tr>')
+                secciones.append('<table>')
+                secciones.extend(filas)
+                secciones.append('</table>')
+        md_path.write_text('\n\n'.join(secciones), encoding='utf-8')
+        logger.info(f"Markdown ayuda generado: {md_path}")
+
 if __name__ == '__main__':
     main()
+
