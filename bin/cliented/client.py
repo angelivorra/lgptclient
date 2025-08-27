@@ -35,6 +35,16 @@ import logging
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+# Manejo flexible de imports (ejecución directa o como paquete)
+try:
+    from .display_executor import get_display
+    from .media_cache import get_cache
+except ImportError:  # ejecución directa
+    import sys
+    sys.path.append(os.path.dirname(__file__))
+    from display_executor import get_display  # type: ignore
+    from media_cache import get_cache  # type: ignore
+
 SERVER_HOST = os.environ.get("SERVER_HOST", "192.168.0.2")
 SERVER_PORT = int(os.environ.get("SERVER_PORT", "8888"))
 OFFSET_ALPHA = float(os.environ.get("OFFSET_ALPHA", "0.2"))
@@ -143,6 +153,11 @@ class EventScheduler:
         elif ev.kind == 'CC':
             value, channel, controller = ev.payload
             logger.info(f"CC exec ctrl={controller} val={value} ch={channel}")
+            # Mostrar imagen / animación ahora (display manager decide según config pantalla)
+            try:
+                get_display().handle_cc(controller, value)
+            except Exception as e:
+                logger.warning(f"Fallo handle_cc ctrl={controller} val={value}: {e}")
         elif ev.kind == 'START':
             logger.info("START exec")
         elif ev.kind == 'END':
@@ -153,6 +168,7 @@ class EventScheduler:
         self._new_event.set()
 
 async def reader_loop(reader: asyncio.StreamReader, tsync: TimeSync, sched: EventScheduler, debug: bool):
+    cache = get_cache()
     while True:
         line = await reader.readline()
         if not line:
@@ -166,21 +182,19 @@ async def reader_loop(reader: asyncio.StreamReader, tsync: TimeSync, sched: Even
         parts = text.split(',')
         tag = parts[0]
         if tag == 'CONFIG' and len(parts) >= 5:
-            # CONFIG,<delay_ms>,<debug>,<ruido>,<pantalla>
             try:
                 delay_ms = int(parts[1])
             except ValueError:
                 delay_ms = 0
-            
             def _parse_bool(v:str)->bool:
                 return v.lower() in ('1','true','t','yes','y')
-            debug_flag   = _parse_bool(parts[2])
-            ruido_flag   = _parse_bool(parts[3])
-            pantalla_flag= _parse_bool(parts[4])
+            debug_flag    = _parse_bool(parts[2])
+            ruido_flag    = _parse_bool(parts[3])
+            pantalla_flag = _parse_bool(parts[4])
             sched.set_delay(delay_ms)
-            # debug_flag del config controla nivel detallado de logs
             if debug_flag:
                 logger.setLevel(logging.DEBUG)
+            get_display().set_pantalla(pantalla_flag)
             logger.info(f"CONFIG recibido delay={delay_ms} debug={debug_flag} ruido={ruido_flag} pantalla={pantalla_flag}")
             if debug:
                 logger.debug(f"Recibido CONFIG raw: {parts}")
@@ -190,10 +204,7 @@ async def reader_loop(reader: asyncio.StreamReader, tsync: TimeSync, sched: Even
             except ValueError:
                 continue
             sample, filt, first = tsync.update(server_ts_ms)
-            # Mensaje debug siempre que haya nivel DEBUG activo
-            logger.debug(
-                ("PRIMERA " if first else "") +
-                f"SYNC offset_sample={sample}ms offset_filtrado={filt:.2f}ms samples={tsync.samples}")
+            logger.debug(("PRIMERA " if first else "") + f"SYNC offset_sample={sample}ms offset_filtrado={filt:.2f}ms samples={tsync.samples}")
         elif tag == 'NOTA' and len(parts) >= 5:
             try:
                 server_ts_ms = int(parts[1])
@@ -211,6 +222,10 @@ async def reader_loop(reader: asyncio.StreamReader, tsync: TimeSync, sched: Even
                 controller = int(parts[4])
             except ValueError:
                 continue
+            try:
+                cache.ensure_loaded(controller, value)
+            except Exception as e:
+                logger.debug(f"Preload fallo ctrl={controller} val={value}: {e}")
             sched.schedule('CC', server_ts_ms, tsync.get_offset(), (value, channel, controller))
         elif tag == 'START' and len(parts) >= 2:
             try:
@@ -233,9 +248,7 @@ async def run_client():
     sched = EventScheduler()
     debug_env = os.environ.get('CLIENT_DEBUG', '0')
     debug = debug_env in ('1', 'true', 'yes', 'y')
-
-    sched_task = asyncio.create_task(sched.run())
-
+    asyncio.create_task(sched.run())
     backoff = RECONNECT_BASE_DELAY
     while True:
         try:
@@ -245,11 +258,14 @@ async def run_client():
             backoff = RECONNECT_BASE_DELAY
             try:
                 await reader_loop(reader, tsync, sched, debug)
+            except ConnectionError as e:
+                logger.warning(f"Loop lector terminó: {e}")
             finally:
-                writer.close()
-                with contextlib.suppress(Exception):
+                try:
+                    writer.close()
                     await writer.wait_closed()
-                raise ConnectionError("Desconectado")
+                except Exception:
+                    pass
         except Exception as e:
             logger.warning(f"Conexión perdida: {e}. Reintentando en {backoff:.1f}s")
             await asyncio.sleep(backoff)

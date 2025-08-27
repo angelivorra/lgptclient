@@ -109,14 +109,18 @@ async def handle_client(reader, writer):
             data = await reader.read(100)
             if not data:
                 break
-    except asyncio.CancelledError:
+    except (asyncio.CancelledError, ConnectionResetError):
         pass
     finally:
-        clients.remove(writer)
+        if writer in clients:
+            clients.remove(writer)
         logger.info(f"Client disconnected from {client_ip}:{client_port}")
         logger.info(f"Total connected clients: {len(clients)}")
-        writer.close()
-        await writer.wait_closed()
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except Exception:
+            pass
 
 async def send_data(count, channels, persecond):
     """Send random NoteOnEvent data to clients."""

@@ -396,7 +396,8 @@ def procesa_animaciones(path: Path) -> Dict:
                 img = img.resize((800, 480))
                 if invert:
                     img = img.transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
-                frame_num = idx + 1  # 1-based
+                # Numeración desde 000
+                frame_num = idx  # 0-based -> 000,001,...
                 bin_dest = anim_dir / f"{frame_num:03d}.bin"
                 png_to_bin(img, bin_dest)
                 bin_paths.append(bin_dest)
@@ -410,12 +411,13 @@ def procesa_animaciones(path: Path) -> Dict:
                         prev.save(anim_thumbs / f"{frame_num:03d}.png")
                     except Exception as e_prev:
                         logger.warning(f"Miniatura frame fallo {frame_num:03d}: {e_prev}")
-                if frame_num % 25 == 0 or frame_num == len(frames):
-                    logger.debug(f"Anim {d.name}: frame {frame_num}/{len(frames)}")
+                # Progreso (humano) 1-based para legibilidad
+                if (idx + 1) % 25 == 0 or (idx + 1) == len(frames):
+                    logger.debug(f"Anim {d.name}: frame {idx + 1}/{len(frames)} (archivo {frame_num:03d}.bin)")
                 frames_total += 1
             except Exception as e:
                 logger.error(f"Frame {frame} error: {e}")
-        # Siempre crear pack para cada animación
+        # Crear pack
         if bin_paths:
             crear_pack(bin_paths, anim_dir, pack_name='pack.bin')
     return {"animaciones": animaciones, "frames": frames_total, "configs": configs_copiados, "out": str(base_out)}
