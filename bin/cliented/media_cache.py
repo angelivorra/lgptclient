@@ -7,7 +7,7 @@ Estructura esperada:
 """
 from __future__ import annotations
 import os, json, threading, time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 import logging
 
@@ -29,6 +29,7 @@ class AnimationPack:
     fps: int
     loop: bool
     max_delay: float
+    data: bytes | None = field(default=None)  # preloaded raw pack content (optional)
 
     @property
     def frame_interval(self) -> float:
@@ -53,16 +54,19 @@ class MediaCache:
         key = self._key(cc,val)
         with self._lock:
             return self._anim_cache.get(key)
-
     def ensure_loaded(self, cc:int, val:int):
-        """Carga en memoria la imagen o animación si existe y no está en cache."""
+        """Carga en memoria la imagen o animación si existe y no está en cache.
+
+        Para animaciones:
+          Si ANIM_PRELOAD=1 y el pack.bin no supera ANIM_PRELOAD_MAX_MB (default 32) se carga
+          entero en memoria para acceso más fluido.
+        """
         path_dir = os.path.join(self.base_dir, f"{cc:03d}", f"{val:03d}")
         key = self._key(cc,val)
         with self._lock:
             if key in self._image_cache or key in self._anim_cache:
                 return
         if not os.path.isdir(path_dir):
-            # Puede ser imagen suelta? /<cc>/<val>.bin
             file_path = os.path.join(self.base_dir, f"{cc:03d}", f"{val:03d}.bin")
             if os.path.isfile(file_path):
                 try:
@@ -75,7 +79,6 @@ class MediaCache:
             else:
                 logger.warning(f"Media no encontrada (ni dir ni archivo): esperado archivo {file_path} o directorio {path_dir}")
             return
-        # Directorio: animación o imagen dentro
         pack_path = os.path.join(path_dir, "pack.bin")
         if os.path.isfile(pack_path):
             index_path = pack_path + ".index.json"
@@ -84,17 +87,30 @@ class MediaCache:
                 idx = json.load(open(index_path))
                 cfg = json.load(open(cfg_path)) if os.path.isfile(cfg_path) else {"fps":30,"loop":True,"max_delay":2}
                 frames = [AnimationFrameIndex(e['offset'], e['size']) for e in idx['entries']]
+                preload = os.environ.get('ANIM_PRELOAD','1') in ('1','true','yes','y')
+                max_mb = float(os.environ.get('ANIM_PRELOAD_MAX_MB','32'))
+                anim_data = None
+                if preload:
+                    try:
+                        size_bytes = os.path.getsize(pack_path)
+                        if size_bytes <= max_mb * 1024 * 1024:
+                            with open(pack_path,'rb') as pf:
+                                anim_data = pf.read()
+                            logger.debug(f"Pack precargado en RAM {pack_path} ({size_bytes} bytes)")
+                        else:
+                            logger.info(f"Pack {pack_path} omitido (size {size_bytes} > {max_mb}MB límite)")
+                    except Exception as e:
+                        logger.warning(f"No se pudo precargar {pack_path}: {e}")
                 anim = AnimationPack(width=idx['width'], height=idx['height'], bpp=idx['bpp'],
                                       frames=frames, raw_path=pack_path,
                                       fps=cfg.get('fps',30), loop=cfg.get('loop',True),
-                                      max_delay=cfg.get('max_delay',2))
+                                      max_delay=cfg.get('max_delay',2), data=anim_data)
                 with self._lock:
                     self._anim_cache[key] = anim
                 logger.debug(f"Animación cacheada {pack_path} frames={len(frames)} fps={anim.fps}")
             except Exception as e:
                 logger.error(f"Error cargando animación {pack_path}: {e}")
             return
-        # Imagen dentro del directorio: <val>.bin
         img_file = os.path.join(path_dir, f"{val:03d}.bin")
         if os.path.isfile(img_file):
             try:

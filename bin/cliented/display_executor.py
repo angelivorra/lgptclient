@@ -82,37 +82,51 @@ class DisplayManager:
             t.start()
 
     def _anim_loop(self, key:str, anim:AnimationPack):
-        logger.info(f"Inicia animación {key} frames={len(anim.frames)} fps={anim.fps}")
+        logger.info(f"Inicia animación {key} frames={len(anim.frames)} fps={anim.fps} preload={'YES' if anim.data else 'NO'}")
         try:
-            with open(anim.raw_path, 'rb') as f:
-                last_cycle_start = time.time()
-                frame_interval = anim.frame_interval
-                while not self._anim_stop.is_set():
-                    for idx, frame in enumerate(anim.frames):
-                        if self._anim_stop.is_set():
+            frame_interval = anim.frame_interval
+            use_data = anim.data is not None
+            f = None
+            if not use_data:
+                f = open(anim.raw_path,'rb')
+            last_cycle_start = time.time()
+            while not self._anim_stop.is_set():
+                for idx, frame in enumerate(anim.frames):
+                    if self._anim_stop.is_set():
+                        break
+                    if use_data:
+                        # slice from data
+                        try:
+                            chunk = anim.data[frame.offset:frame.offset+frame.size]  # type: ignore[index]
+                        except Exception:
+                            logger.error(f"Slice error frame {idx} off={frame.offset} size={frame.size}")
                             break
+                        if self.pantalla_enabled:
+                            get_fb().blit(chunk)
+                        else:
+                            logger.debug(f"[SIM] frame {idx} anim {key}")
+                    else:
                         f.seek(frame.offset)
                         data = f.read(frame.size)
                         if self.pantalla_enabled:
                             get_fb().blit(data)
                         else:
                             logger.debug(f"[SIM] frame {idx} anim {key}")
-                        # timing
-                        elapsed = time.time() - last_cycle_start
-                        target = (idx + 1) * frame_interval
-                        delay = target - elapsed
-                        if delay > 0:
-                            # Evitar sleeps enormes si se para
-                            self._anim_stop.wait(delay)
-                        else:
-                            # Estamos retrasados
-                            pass
-                    if not anim.loop:
-                        break
-                    last_cycle_start = time.time()
+                    # timing
+                    elapsed = time.time() - last_cycle_start
+                    target = (idx + 1) * frame_interval
+                    delay = target - elapsed
+                    if delay > 0:
+                        self._anim_stop.wait(delay)
+                if not anim.loop:
+                    break
+                last_cycle_start = time.time()
         except Exception as e:
             logger.error(f"Fallo animación {key}: {e}")
         finally:
+            if f:
+                try: f.close()
+                except Exception: pass
             logger.info(f"Termina animación {key}")
             with self._lock:
                 if self._current_key == key:
