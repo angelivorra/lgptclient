@@ -27,6 +27,7 @@ class DisplayManager:
         self._current_key: Optional[str] = None
         self._lock = threading.RLock()
         self.pantalla_enabled = True
+        self.anim_start_warn_ms = int(os.environ.get("ANIM_START_WARN_MS", "15"))
 
     def set_pantalla(self, enabled: bool):
         self.pantalla_enabled = enabled
@@ -77,12 +78,16 @@ class DisplayManager:
             self.stop_animation()
             self._current_key = key
             self._anim_stop.clear()
-            t = threading.Thread(target=self._anim_loop, args=(key,anim), daemon=True)
+            request_ts = time.time()
+            t = threading.Thread(target=self._anim_loop, args=(key,anim,request_ts), daemon=True)
             self._anim_thread = t
             t.start()
 
-    def _anim_loop(self, key:str, anim:AnimationPack):
-        logger.info(f"Inicia animación {key} frames={len(anim.frames)} fps={anim.fps} preload={'YES' if anim.data else 'NO'}")
+    def _anim_loop(self, key:str, anim:AnimationPack, request_ts: float):
+        logger.debug(f"Inicia animación {key} frames={len(anim.frames)} fps={anim.fps} preload={'YES' if anim.data else 'NO'}")
+        start_delay_ms = int((time.time() - request_ts) * 1000)
+        if start_delay_ms > self.anim_start_warn_ms:
+            logger.warning(f"ANIM_START_LATE key={key} delay={start_delay_ms}ms thr={self.anim_start_warn_ms}ms")
         try:
             frame_interval = anim.frame_interval
             use_data = anim.data is not None
@@ -127,7 +132,7 @@ class DisplayManager:
             if f:
                 try: f.close()
                 except Exception: pass
-            logger.info(f"Termina animación {key}")
+            logger.debug(f"Termina animación {key}")
             with self._lock:
                 if self._current_key == key:
                     self._current_key = None

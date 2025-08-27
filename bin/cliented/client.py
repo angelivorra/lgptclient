@@ -51,6 +51,7 @@ OFFSET_ALPHA = float(os.environ.get("OFFSET_ALPHA", "0.2"))
 MAX_LATE_MS = int(os.environ.get("MAX_LATE_MS", "200"))
 RECONNECT_BASE_DELAY = 1.5
 RECONNECT_MAX_DELAY = 15
+EVENT_LATE_WARN_MS = int(os.environ.get("EVENT_LATE_WARN_MS", "25"))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -146,22 +147,27 @@ class EventScheduler:
         # Log único a nivel INFO siempre que se ejecute un evento (facilita ver sincronización)
         # Formato: EXEC,<tipo>,server_ts,lat_ms,<datos>
         base_prefix = f"EXEC,{ev.kind},{ev.server_ts_ms},{lateness}ms"
+        if lateness > EVENT_LATE_WARN_MS:
+            logger.warning(f"LATE_EVENT kind={ev.kind} server_ts={ev.server_ts_ms} lateness={lateness}ms thr={EVENT_LATE_WARN_MS}ms")
         if ev.kind == 'NOTA':
             note, channel, velocity = ev.payload
-            logger.info(f"{base_prefix},note={note},ch={channel},vel={velocity}")
+            #logger.info(f"{base_prefix},note={note},ch={channel},vel={velocity}")
         elif ev.kind == 'CC':
             value, channel, controller = ev.payload
-            logger.info(f"{base_prefix},cc={controller},val={value},ch={channel}")
+            #logger.info(f"{base_prefix},cc={controller},val={value},ch={channel}")
             try:
                 get_display().handle_cc(controller, value)
             except Exception as e:
                 logger.warning(f"Fallo handle_cc ctrl={controller} val={value}: {e}")
         elif ev.kind == 'START':
-            logger.info(f"{base_prefix}")
+            #logger.info(f"{base_prefix}")
+            pass
         elif ev.kind == 'END':
-            logger.info(f"{base_prefix}")
+            #logger.info(f"{base_prefix}")
+            pass
         else:
-            logger.info(f"{base_prefix}")
+            #logger.info(f"{base_prefix}")
+            pass
 
     def stop(self):
         self._running = False
