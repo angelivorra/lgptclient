@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import pickle
 import csv
 import os
@@ -34,12 +35,13 @@ DEFAULT_SRC = os.environ.get("MIDI_SRC", "130:0")
 TCP_PORT = 8888  # Define the port to listen on
 CSV_FILENAME = '/home/angel/midi_notes_log_server.csv'
 UNIX_SOCKET_PATH = '/tmp/copilot.sock'
+HEARTBEAT_INTERVAL = float(os.environ.get("HEARTBEAT_INTERVAL", "5.0"))  # segundos (puedes ajustar a 1.0 si quieres más precisión)
 
 # Logging configuration
 logger = logging.getLogger(__name__)
 logging.basicConfig(
     format='%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s',
-    level=logging.DEBUG,  # subir a DEBUG para ver eventos crudos
+    level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
@@ -94,8 +96,12 @@ async def handle_client(reader, writer):
     with open('/home/angel/lgptclient/bin/config.json') as f:
         config = json.load(f)
     
-    config_message = f"CONFIG,{config['delay']},{config['debug']},{config['ruido']}\n"
+    config_message = f"CONFIG,{config['delay']},{config['debug']},{config['ruido']},{config['pantalla']}\n"
     writer.write(config_message.encode())
+    logger.info(f"{config_message.strip()}")
+    # Enviar un SYNC inmediato para que el cliente pueda calibrar offset al inicio
+    initial_sync_ts = int(datetime.now().timestamp() * 1000)
+    writer.write(f"SYNC,{initial_sync_ts}\n".encode())
     await writer.drain()
     
     try:
@@ -141,13 +147,13 @@ _pending_image_high = 0       # buffer para imagen extendida
 def _encode_image_id(high7: int, low7: int) -> int:
     return (high7 << 7) | low7
 
-async def broadcast_event(event, timestamp, debug_mode):
+async def broadcast_event(event, timestamp, csv_logging):
     global _pending_image_high
     message = None
     if isinstance(event, NoteOnEvent):
         # NOTA,<ts>,<note>
         message = f"NOTA,{timestamp},{event.note},{event.channel},{event.velocity}\n"
-        if debug_mode:
+        if csv_logging:
             await log_event_to_csv(event.note, timestamp, event.channel, event.velocity)
     elif isinstance(event, ControlChangeEvent):
         ctrl = event.param  # número de controlador
@@ -159,8 +165,8 @@ async def broadcast_event(event, timestamp, debug_mode):
     elif isinstance(event, StopEvent):
         message = f"END,{timestamp}\n"
 
-    if message and debug_mode:
-        logger.info(f"Broadcasting event: {message.strip()}")
+    if message:
+        logger.info(f"Broadcast TX: {message.strip()}")
 
     if message:
         dead = []
@@ -174,11 +180,36 @@ async def broadcast_event(event, timestamp, debug_mode):
             if d in clients:
                 clients.remove(d)
     
+async def heartbeat_task(interval: float):
+    """Envia periódicamente un latido de sincronización de reloj a todos los clientes."""
+    while True:
+        ts_ms = int(datetime.now().timestamp() * 1000)
+        message = f"SYNC,{ts_ms}\n"
+        dead = []
+        for c in clients:
+            try:
+                c.write(message.encode())
+            except Exception:
+                dead.append(c)
+        # Limpieza de clientes muertos
+        for d in dead:
+            if d in clients:
+                clients.remove(d)
+        # Drain (hacerlo una sola vez para eficiencia)
+        for c in clients:
+            try:
+                await c.drain()
+            except Exception:
+                pass
+        
+        logger.info(f"Heartbeat SYNC enviado ({ts_ms}) a {len(clients)} clientes")
+        await asyncio.sleep(interval)
+
 async def main():
     # Initialize CSV logging
     config = load_config()
-    debug_mode = config.get("debug", False)
-    if debug_mode:
+    csv_logging = config.get("debug", True)
+    if csv_logging:
         initialize_csv(CSV_FILENAME)
 
     # Remove socket if it already exists
@@ -205,37 +236,41 @@ async def main():
     # Start a UNIX domain socket server
     server_local = await asyncio.start_unix_server(handle_local_client, path=UNIX_SOCKET_PATH)
     os.chmod(UNIX_SOCKET_PATH, 0o777)
-    if debug_mode:
-        logger.info(f"Local UNIX socket server started on {UNIX_SOCKET_PATH}")
+    logger.info(f"Local UNIX socket server started on {UNIX_SOCKET_PATH}")
 
     # Start TCP server
     server = await asyncio.start_server(handle_client, '0.0.0.0', TCP_PORT)
-    if debug_mode:
-        logger.info(f"TCP server started on port {TCP_PORT}")
+    logger.info(f"TCP server started on port {TCP_PORT}")
 
     async with server, server_local:
-        # Listen for MIDI events
-        while True:
-            event = await client.event_input()
-            # Log crudo para inspección (omitimos ClockEvent salvo que LOG_CLOCK=1)
-            
-            if debug_mode:
+        # Lanzar tarea heartbeat
+        hb = asyncio.create_task(heartbeat_task(HEARTBEAT_INTERVAL))
+        try:
+            while True:
+                event = await client.event_input()
+                # Log crudo para inspección (omitimos ClockEvent salvo que LOG_CLOCK=1)
+                
+                # Log de todos los eventos crudos (ClockEvent opcional)
                 if isinstance(event, ClockEvent):
                     if os.environ.get("LOG_CLOCK") == "1":
-                        logger.debug(f"RAW event type={event.__class__.__name__} repr={event!r}")
+                        logger.info(f"RAW event type={event.__class__.__name__} repr={event!r}")
                     continue
-                else:                    
-                    logger.debug(f"RAW event type={event.__class__.__name__} repr={event!r}")
+                else:
+                    logger.info(f"RAW event type={event.__class__.__name__} repr={event!r}")
                 
-            if isinstance(event,(StartEvent,StopEvent, PortSubscribedEvent, PortUnsubscribedEvent)):
-                continue
-                
-            allowed_types = [NoteOnEvent, StartEvent, StopEvent, ControlChangeEvent]
+                if isinstance(event,(StartEvent,StopEvent, PortSubscribedEvent, PortUnsubscribedEvent)):
+                    continue
+                    
+                allowed_types = [NoteOnEvent, StartEvent, StopEvent, ControlChangeEvent]
 
-            if isinstance(event, tuple(allowed_types)):
-                timestamp = int(datetime.now().timestamp() * 1000)
-                await broadcast_event(event, timestamp, debug_mode)
-                continue
+                if isinstance(event, tuple(allowed_types)):
+                    timestamp = int(datetime.now().timestamp() * 1000)
+                    await broadcast_event(event, timestamp, csv_logging)
+                    continue
+        finally:
+            hb.cancel()
+            with contextlib.suppress(Exception):
+                await hb
 
 def load_config(config_path='/home/angel/lgptclient/bin/config.json'):
     """Load configuration from JSON file"""
