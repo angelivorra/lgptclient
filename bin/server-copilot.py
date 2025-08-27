@@ -4,6 +4,7 @@ import csv
 import os
 import socket
 import random
+import time
 from alsa_midi import (
     AsyncSequencerClient,
     READ_PORT,
@@ -78,45 +79,80 @@ async def handle_local_client(reader, writer):
             pass
 
 async def handle_client(reader, writer):
-    # Get client address info
+    global LEAD_NS
     addr = writer.get_extra_info('peername')
     client_ip, client_port = addr
-    
     sock = writer.get_extra_info('socket')
     if sock:
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-    
-    # Log connection
     logger.info(f"New client connected from {client_ip}:{client_port}")
     clients.append(writer)
     logger.info(f"Total connected clients: {len(clients)}")
-
-    with open('/home/angel/lgptclient/bin/config.json') as f:
-        config = json.load(f)
-    
-    config_message = f"CONFIG,{config['delay']},{config['debug']},{config['ruido']}\n"
-    writer.write(config_message.encode())
-    await writer.drain()
-    
+    # Cargar config y enviar base temporal
+    try:
+        with open('/home/angel/lgptclient/bin/config.json') as f:
+            config = json.load(f)
+        writer.write(f"CONFIG,{config['delay']},{config['debug']},{config['ruido']}\n".encode())
+    except Exception as e_cfg:
+        logger.warning(f"No se pudo cargar/enviar config inicial: {e_cfg}")
+    try:
+        writer.write(f"TIME_BASE,{time.monotonic_ns()}\n".encode())
+        writer.write(f"LEAD,{LEAD_NS}\n".encode())
+        await writer.drain()
+    except Exception as e_init:
+        logger.warning(f"Fallo envío TIME_BASE/LEAD: {e_init}")
     try:
         while True:
-            data = await reader.read(100)
-            if not data:
+            line = await reader.readline()
+            if not line:
                 break
+            msg = line.decode(errors='ignore').strip()
+            if not msg:
+                continue
+            if msg.startswith('SYNC1'):
+                parts = msg.split(',')
+                if len(parts) == 2:
+                    try:
+                        c_send = int(parts[1])
+                        s_now = time.monotonic_ns()
+                        writer.write(f"SYNC2,{c_send},{s_now}\n".encode())
+                        await writer.drain()
+                    except ValueError:
+                        logger.debug(f"SYNC1 mal formado: {msg}")
+            elif msg.startswith('SET_LEAD'):
+                parts = msg.split(',')
+                if len(parts) == 2:
+                    try:
+                        new_ms = int(parts[1])
+                        if 5 <= new_ms <= 2000:
+                            LEAD_NS = new_ms * 1_000_000
+                            writer.write(f"LEAD,{LEAD_NS}\n".encode())
+                            await writer.drain()
+                            logger.info(f"LEAD ajustado a {new_ms}ms via {client_ip}")
+                    except ValueError:
+                        pass
+            # otros comandos ignorados
     except asyncio.CancelledError:
         pass
     finally:
-        clients.remove(writer)
+        if writer in clients:
+            clients.remove(writer)
         logger.info(f"Client disconnected from {client_ip}:{client_port}")
         logger.info(f"Total connected clients: {len(clients)}")
-        writer.close()
-        await writer.wait_closed()
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except:
+            pass
 
 async def send_data(count, channels, persecond):
     """Send random NoteOnEvent data to clients."""
     interval = 1.0 / persecond  # Time between each note per channel
-    for _ in range(count):
-        timestamp = int(datetime.now().timestamp() * 1000)
+    start_ns = time.monotonic_ns()
+    for i in range(count):
+        # timestamp relativo basado en monotonic (ms)
+        base_ms = (time.monotonic_ns() - start_ns) // 1_000_000
+        timestamp = base_ms
         for channel in channels:
             note = random.randint(1, 150)
             velocity = random.randint(1, 150)
@@ -135,48 +171,29 @@ async def log_event_to_csv(note, timestamp, channel, velocity):
         writer = csv.writer(file)
         writer.writerow([timestamp, note, channel, velocity])
 
-IMAGE_CC_DIRECT = 20          # CC para imagen directa 0-127 (canal 0)
-ANIM_CC_DIRECT = 21           # CC para animación directa 0-127 (canal 1)
+SEQ = 0
+LEAD_NS = 120_000_000  # 120 ms
 
-_pending_image_high = 0       # buffer para imagen extendida
+# Protocolo sincronizado con tiempo de reproducción futuro (monotonic_ns)
+# Eventos:
+#   NOTA,<seq>,<play_ns>,<note>,<channel>,<velocity>
+#   CC,<seq>,<play_ns>,<channel>,<controller>,<value>
+# Control inicial a cada cliente: TIME_BASE,<server_monotonic_ns> y LEAD,<lead_ns>
+# Sync ida/vuelta: SYNC1,<client_send_ns> -> SYNC2,<client_send_ns>,<server_time_ns>
 
-def _encode_image_id(high7: int, low7: int) -> int:
-    return (high7 << 7) | low7
-
-async def broadcast_event(event, timestamp, debug_mode):
-    global _pending_image_high
+async def broadcast_event(event, debug_mode):
+    global SEQ
+    play_ns = time.monotonic_ns() + LEAD_NS
+    SEQ += 1
     message = None
     if isinstance(event, NoteOnEvent):
-        # NOTA,<ts>,<note>
-        message = f"NOTA,{timestamp},{event.note}\n"
+        message = f"NOTA,{SEQ},{play_ns},{event.note},{event.channel},{event.velocity}\n"
         if debug_mode:
-            await log_event_to_csv(event.note, timestamp, event.channel, event.velocity)
+            await log_event_to_csv(event.note, play_ns, event.channel, event.velocity)
     elif isinstance(event, ControlChangeEvent):
-        ctrl = event.param  # número de controlador
-        val = event.value   # 0-127
-        ch = event.channel  # canal MIDI 0-15
-        # Protocolo:
-        # Canal 0 => imágenes
-        #   CC20 valor -> imagen directa valor        
-        # Canal 1 => animaciones
-        #   CC21 valor -> animación directa valor
-        if ch == 0:
-            if ctrl == IMAGE_CC_DIRECT:
-                image_id = val
-                message = f"IMG,{timestamp},{IMAGE_CC_DIRECT},{image_id}\n"
-        elif ch == 1:
-            if ctrl == ANIM_CC_DIRECT:
-                anim_id = val
-                message = f"ANIM,{timestamp},1,{anim_id}\n"
-        # Otros canales ignorados por ahora
-    elif isinstance(event, StartEvent):
-        message = f"START,{timestamp}\n"
-    elif isinstance(event, StopEvent):
-        message = f"END,{timestamp}\n"
-
+        message = f"CC,{SEQ},{play_ns},{event.channel},{event.param},{event.value}\n"
     if message and debug_mode:
-        logger.info(f"Broadcasting event: {message.strip()}")
-
+        logger.debug(f"TX {message.strip()}")
     if message:
         dead = []
         for client in clients:
@@ -242,24 +259,13 @@ async def main():
                 else:                    
                     logger.debug(f"RAW event type={event.__class__.__name__} repr={event!r}")
                 
-            if isinstance(event,(StartEvent,StopEvent, PortSubscribedEvent, PortUnsubscribedEvent)):
+            if isinstance(event,(PortSubscribedEvent, PortUnsubscribedEvent, StartEvent, StopEvent)):
+                # ignorar estos eventos para protocolo reducido
                 continue
-                
-            allowed_types = [NoteOnEvent, StartEvent, StopEvent, ControlChangeEvent]
-
+            allowed_types = [NoteOnEvent, ControlChangeEvent]
             if isinstance(event, tuple(allowed_types)):
-                timestamp = int(datetime.now().timestamp() * 1000)
-                await broadcast_event(event, timestamp, debug_mode)
+                await broadcast_event(event, debug_mode)
                 continue
-
-            # # Fallback: si tiene atributos tipo control/value (probable CC en nombre distinto)
-            # if hasattr(event, 'control') and hasattr(event, 'value'):
-            #     timestamp = int(datetime.now().timestamp() * 1000)
-            #     await broadcast_event(event, timestamp, debug_mode)
-            #     logger.debug("Evento tratado vía fallback control/value (probable ControlChange)")
-            # else:
-            #     # Último recurso: mostrar atributos disponibles para depurar tipos no tratados
-            #     logger.debug(f"Evento ignorado. Atributos: {dir(event)}")
 
 def load_config(config_path='/home/angel/lgptclient/bin/config.json'):
     """Load configuration from JSON file"""
