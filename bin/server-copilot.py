@@ -153,7 +153,8 @@ async def broadcast_event(event, timestamp, debug_mode):
         ctrl = event.param  # número de controlador
         val = event.value   # 0-127
         ch = event.channel  # canal MIDI 0-15
-        message = f"CC,{timestamp},{val},{ch},{ctrl}\n"
+        if ch != 7:
+            message = f"CC,{timestamp},{val},{ch},{ctrl}\n"
     elif isinstance(event, StartEvent):
         message = f"START,{timestamp}\n"
     elif isinstance(event, StopEvent):
