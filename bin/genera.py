@@ -9,6 +9,7 @@ import struct
 from array import array
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import shutil
+import json
 
 """genera.py
 Estructura esperada dentro de images/ :
@@ -88,6 +89,53 @@ def vacia_carpeta(path: Path):
                 shutil.rmtree(item)
         except Exception as e:
             logger.warning(f"No se pudo eliminar {item}: {e}")
+
+
+def crear_pack(bin_paths: List[Path], out_dir: Path, pack_name: str = 'pack.bin', remove_bins: bool = True) -> Dict[str, Any]:
+    """Concatena binarios (frames) en un único archivo pack.bin y genera un índice JSON.
+    Estructura:
+      pack.bin: concatenación cruda en el orden dado.
+      pack.bin.index.json: {
+         "width":800,"height":480,"bpp":16,
+         "entries":[{"file":"001.bin","offset":0,"size":768000}, ...]
+      }
+    remove_bins: si True elimina los .bin originales para reducir inodos / lecturas.
+    Devuelve dict resumen para logs.
+    """
+    if not bin_paths:
+        return {"pack": None, "entries": 0}
+    pack_path = out_dir / pack_name
+    index_path = out_dir / f"{pack_name}.index.json"
+    offset = 0
+    entries: List[Dict[str, Any]] = []
+    try:
+        with open(pack_path, 'wb') as fout:
+            for bp in bin_paths:
+                if not bp.exists():
+                    logger.warning(f"Saltando faltante para pack: {bp.name}")
+                    continue
+                size = bp.stat().st_size
+                with open(bp, 'rb') as fin:
+                    shutil.copyfileobj(fin, fout)
+                entries.append({
+                    "file": bp.name,
+                    "offset": offset,
+                    "size": size
+                })
+                offset += size
+        meta = {"width": 800, "height": 480, "bpp": 16, "entries": entries}
+        index_path.write_text(json.dumps(meta, indent=2), encoding='utf-8')
+        logger.info(f"Pack creado: {pack_path} ({len(entries)} frames)")
+        if remove_bins:
+            for bp in bin_paths:
+                try:
+                    bp.unlink()
+                except Exception as e_rm:
+                    logger.debug(f"No se pudo borrar {bp.name}: {e_rm}")
+        return {"pack": str(pack_path), "entries": len(entries)}
+    except Exception as e:
+        logger.error(f"Error creando pack en {out_dir}: {e}")
+        return {"pack_error": str(e)}
 
 
 def note_from_index(index: int) -> str:
@@ -185,6 +233,7 @@ def procesa_textos(path: Path) -> Dict:
     max_w = W * (1 - 2 * margin_ratio)
     max_h = H * (1 - 2 * margin_ratio)
     invert = bool(CURRENT_CONFIG.get("invert"))
+    # Ya no se empaquetan textos (solo animaciones requieren pack único)
     for idx, palabra in enumerate(palabras):
         font_size = int(min(max_w, max_h))
         while font_size > 1:
@@ -215,7 +264,8 @@ def procesa_textos(path: Path) -> Dict:
         draw2.text((x, y), palabra, font=font, fill='white')
         if invert:
             canvas = canvas.transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
-        filename = f"{255 - idx:03d}.png"  # replicar patrón inverso
+        # Numeración ascendente normal empezando en 000
+        filename = f"{idx:03d}.png"
         # Generar bin paralelo (no guardamos PNG en output)
         try:
             bin_path = out_dir / f"{filename.split('.')[0]}.bin"
@@ -261,6 +311,7 @@ def procesa_imagenes(path: Path) -> Dict:
     procesadas = 0
     existentes = 0
     invert = bool(CURRENT_CONFIG.get("invert"))
+    # No se empaquetan imágenes individuales; solo animaciones
     for i in range(1, 1000):
         src = png_dir / f"{i:03d}.png"
         if not src.exists():
@@ -338,6 +389,7 @@ def procesa_animaciones(path: Path) -> Dict:
                 configs_copiados += 1
             except Exception as e_cfg:
                 logger.warning(f"No se pudo copiar config {cfg_src}: {e_cfg}")
+        bin_paths: List[Path] = []
         for idx, frame in enumerate(frames):
             try:
                 img = Image.open(frame).convert('RGBA')
@@ -347,6 +399,7 @@ def procesa_animaciones(path: Path) -> Dict:
                 frame_num = idx + 1  # 1-based
                 bin_dest = anim_dir / f"{frame_num:03d}.bin"
                 png_to_bin(img, bin_dest)
+                bin_paths.append(bin_dest)
                 if anim_thumbs is not None:
                     try:
                         prev = img.copy().convert('RGB')
@@ -362,6 +415,9 @@ def procesa_animaciones(path: Path) -> Dict:
                 frames_total += 1
             except Exception as e:
                 logger.error(f"Frame {frame} error: {e}")
+        # Siempre crear pack para cada animación
+        if bin_paths:
+            crear_pack(bin_paths, anim_dir, pack_name='pack.bin')
     return {"animaciones": animaciones, "frames": frames_total, "configs": configs_copiados, "out": str(base_out)}
 
 
@@ -416,6 +472,7 @@ def main():
     # Propagar flag markdown para que los procesadores generen miniaturas
     if args.markdown:
         CURRENT_CONFIG['markdown'] = True
+    # Empaquetado de animaciones siempre activo, no necesita flag
     images_root = Path(args.images_root)
     if not images_root.exists():
         raise SystemExit(f"No existe: {images_root}")
