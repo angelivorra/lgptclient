@@ -1,4 +1,5 @@
 import argparse
+import argparse
 import logging
 import time
 from dataclasses import dataclass
@@ -460,8 +461,7 @@ def main():
     parser = argparse.ArgumentParser(description='Generador nuevo estructura por terminal')
     parser.add_argument('terminal', help=f"Terminal destino ({', '.join(DATOS_TERMINAL.keys())})")
     parser.add_argument('--images-root', default='/home/angel/lgptclient/images', help='Ruta base images/')
-    parser.add_argument('--debug', action='store_true')
-    parser.add_argument('--markdown', action='store_true', help='Generar guías markdown en ayuda_imagenes/')
+    parser.add_argument('--debug', action='store_true')    
     args = parser.parse_args()
     terminal = args.terminal.lower()
     if terminal not in DATOS_TERMINAL:
@@ -472,8 +472,10 @@ def main():
     if args.debug:
         logger.setLevel(logging.DEBUG)
     # Propagar flag markdown para que los procesadores generen miniaturas
-    if args.markdown:
+    if terminal == 'maleta':
         CURRENT_CONFIG['markdown'] = True
+    else:
+        logger.info("--markdown ignorado: solo se generan markdowns para terminal 'maleta'")
     # Empaquetado de animaciones siempre activo, no necesita flag
     images_root = Path(args.images_root)
     if not images_root.exists():
@@ -489,7 +491,7 @@ def main():
     t0 = time.perf_counter()
     resultados = recorrer_images(images_root)
     # Generar markdown si se solicita
-    if args.markdown:
+    if CURRENT_CONFIG.get('markdown') and terminal == 'maleta':
         try:
             generar_markdown_ayuda(resultados)
         except Exception as e:

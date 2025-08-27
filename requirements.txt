@@ -7,3 +7,4 @@ tabulate
 pandas
 pillow
 pydub
+pyalsaaudio

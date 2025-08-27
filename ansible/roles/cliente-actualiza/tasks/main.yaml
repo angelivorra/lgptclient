@@ -35,6 +35,14 @@
   command: /usr/bin/python3 -m venv /home/angel/venv
   when: entorno_python | default(false) | bool
 
+- name: Copy requirements.txt to target
+  ansible.builtin.copy:
+    src: "/home/angel/lgptclient/requirements_{{ inventory_hostname  }}.txt"
+    dest: /home/angel/requirements.txt
+    owner: angel
+    group: angel
+  when: entorno_python | default(false) | bool
+
 - name: Install Python dependencies (if entorno_python is true)
   pip:
     requirements: /home/angel/requirements.txt
@@ -60,13 +68,6 @@
   ansible.builtin.copy:
     src: /home/angel/lgptclient/bin/cliented/
     dest: /home/angel/bin/
-    owner: angel
-    group: angel
-
-- name: Copy requirements.txt to target
-  ansible.builtin.copy:
-    src: "/home/angel/lgptclient/requirements_{{ inventory_hostname  }}.txt"
-    dest: /home/angel/requirements.txt
     owner: angel
     group: angel
 
@@ -96,7 +97,7 @@
 - name: Generate binary files locally (if imagenes is true)
   local_action:
     module: command
-    cmd: "/home/angel/lgptclient/venv/bin/python /home/angel/lgptclient/bin/genera.py {{ inventory_hostname }} --markdown"
+    cmd: "/home/angel/lgptclient/venv/bin/python /home/angel/lgptclient/bin/genera.py {{ inventory_hostname }}"
   when: imagenes | default(false) | bool
 
 - name: Copy img binary files to target (if imagenes is true)

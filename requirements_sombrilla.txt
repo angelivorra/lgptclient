@@ -3,4 +3,3 @@ RPi.GPIO
 pillow
 pyvips
 pandas
-pyalsaaudio
