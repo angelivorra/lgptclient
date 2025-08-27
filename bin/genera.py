@@ -564,7 +564,7 @@ def generar_markdown_ayuda(resultados: List[ProcesamientoResultado]):
                 carpeta_hex = f"{int(carpeta_id):02X}"
                 stem_hex = f"{int(anim.name):02X}"
                 etiqueta = f"{carpeta_hex}{stem_hex}" 
-                secciones.append(f"\n##{etiqueta}")
+                secciones.append(f"\n## {etiqueta}")
                 frames = sorted(anim.glob('*.png'))
                 if not frames:
                     secciones.append('(Sin frames)')
