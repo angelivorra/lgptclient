@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 import logging
 
 logger = logging.getLogger("cliented.cache")
-BASE_DIR = "/home/angel/imgs_directo"
+BASE_DIR = "/home/angel/images"
 
 @dataclass
 class AnimationFrameIndex:
@@ -69,7 +69,7 @@ class MediaCache:
                     data = open(file_path,'rb').read()
                     with self._lock:
                         self._image_cache[key] = data
-                    logger.info(f"Imagen cacheada {file_path} ({len(data)} bytes)")
+                    logger.debug(f"Imagen cacheada {file_path} ({len(data)} bytes)")
                 except Exception as e:
                     logger.error(f"Error leyendo {file_path}: {e}")
             else:
@@ -90,7 +90,7 @@ class MediaCache:
                                       max_delay=cfg.get('max_delay',2))
                 with self._lock:
                     self._anim_cache[key] = anim
-                logger.info(f"Animación cacheada {pack_path} frames={len(frames)} fps={anim.fps}")
+                logger.debug(f"Animación cacheada {pack_path} frames={len(frames)} fps={anim.fps}")
             except Exception as e:
                 logger.error(f"Error cargando animación {pack_path}: {e}")
             return
@@ -101,7 +101,7 @@ class MediaCache:
                 data = open(img_file,'rb').read()
                 with self._lock:
                     self._image_cache[key] = data
-                logger.info(f"Imagen cacheada {img_file} ({len(data)} bytes)")
+                logger.debug(f"Imagen cacheada {img_file} ({len(data)} bytes)")
             except Exception as e:
                 logger.error(f"Error leyendo {img_file}: {e}")
         else:

@@ -63,11 +63,11 @@ class DisplayManager:
 
     def _show_image(self, data:bytes, key:str):
         if not self.pantalla_enabled:
-            logger.info(f"[SIMULADO] Mostrar imagen {key} ({len(data)} bytes)")
+            #logger.info(f"[SIMULADO] Mostrar imagen {key} ({len(data)} bytes)")
             return
         fb = get_fb()
         fb.blit(data)
-        logger.info(f"Mostrada imagen {key}")
+        logger.debug(f"Mostrada imagen {key}")
 
     def _start_animation(self, key:str, anim:AnimationPack):
         # Si ya está esa animación corriendo, nada

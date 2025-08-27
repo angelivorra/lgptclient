@@ -540,7 +540,9 @@ def generar_markdown_ayuda(resultados: List[ProcesamientoResultado]):
             columnas = 5
             row = []
             for png in pngs:
-                etiqueta = dec_stem_a_hex(png.stem)
+                carpeta_hex = f"{int(carpeta_id):02X}"
+                stem_hex = f"{int(png.stem):02X}"
+                etiqueta = f"{carpeta_hex}{stem_hex}"
                 rel = f"{carpeta_id}/{png.name}"
                 row.append(
                     f"<td align='center' style='font-family:monospace;font-size:14px'>{etiqueta}<br>"
@@ -559,7 +561,10 @@ def generar_markdown_ayuda(resultados: List[ProcesamientoResultado]):
         elif res.tipo == CarpetaTipo.ANIMACIONES:
             anims = [d for d in thumbs_dir.iterdir() if d.is_dir()]
             for anim in sorted(anims):
-                secciones.append(f"\n## Animación {anim.name}")
+                carpeta_hex = f"{int(carpeta_id):02X}"
+                stem_hex = f"{int(anim.name):02X}"
+                etiqueta = f"{carpeta_hex}{stem_hex}" 
+                secciones.append(f"\n##{etiqueta}")
                 frames = sorted(anim.glob('*.png'))
                 if not frames:
                     secciones.append('(Sin frames)')

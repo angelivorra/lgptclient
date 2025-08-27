@@ -15,6 +15,14 @@
     enabled: no
   ignore_errors: yes
 
+- name: Stop the service panel if it exists
+  become: true
+  service:
+    name: cliente
+    state: stopped
+    enabled: no
+  ignore_errors: yes  
+
 - name: Empty venv directory (if entorno_python is true)
   file:
     path: /home/angel/venv
@@ -33,6 +41,13 @@
     virtualenv: /home/angel/venv
   when: entorno_python | default(false) | bool
 
+- name: Empty Image directory (if imagenes is true)
+  become: true
+  file:
+    path: /home/angel/bin/
+    state: absent
+
+
 - name: Ensure destination directory exists
   file:
     path: /home/angel/bin/
@@ -43,7 +58,7 @@
 
 - name: Copiamos los ficheros de cliente
   ansible.builtin.copy:
-    src: /home/angel/lgptclient/bin/cliente/
+    src: /home/angel/lgptclient/bin/cliented/
     dest: /home/angel/bin/
     owner: angel
     group: angel
@@ -70,15 +85,6 @@
     group: angel
   when: imagenes | default(false) | bool
 
-
-- name: Empty Animaciones directory (if imagenes is true)
-  file:
-    path: /home/angel/animaciones/
-    state: absent
-    owner: angel
-    group: angel
-  when: imagenes | default(false) | bool
-
 - name: Create image dir (if imagenes is true)
   ansible.builtin.file:
     state: directory
@@ -87,48 +93,16 @@
     group: angel
   when: imagenes | default(false) | bool
 
-- name: Create animaciones dir (if imagenes is true)
-  ansible.builtin.file:
-    state: directory
-    path: /home/angel/animaciones/
-    owner: angel
-    group: angel
-  when: imagenes | default(false) | bool
-
 - name: Generate binary files locally (if imagenes is true)
   local_action:
     module: command
-    cmd: "/home/angel/lgptclient/venv/bin/python /home/angel/lgptclient/bin/genera.py {{ inventory_hostname }}"
+    cmd: "/home/angel/lgptclient/venv/bin/python /home/angel/lgptclient/bin/genera.py {{ inventory_hostname }} --markdown"
   when: imagenes | default(false) | bool
 
 - name: Copy img binary files to target (if imagenes is true)
   copy:
-    src: "/home/angel/lgptclient/images{{inventory_hostname}}/imagenes/"
+    src: "/home/angel/lgptclient/img_output/{{inventory_hostname}}/"
     dest: /home/angel/images/
-    owner: angel
-    group: angel
-  when: imagenes | default(false) | bool
-
-- name: Copy animation binary files to target (if imagenes is true)
-  copy:
-    src: "/home/angel/lgptclient/images{{inventory_hostname}}/animaciones/"
-    dest: /home/angel/animaciones/
-    owner: angel
-    group: angel
-  when: imagenes | default(false) | bool
-
-- name: Empty Imagepi directory (if imagenes is true)
-  file:
-    path: "/home/angel/lgptclient/images{{inventory_hostname}}/animaciones/imagenes_pi"
-    state: absent
-    owner: angel
-    group: angel
-  when: imagenes | default(false) | bool
-
-- name: Empty Imagepi animations directory (if imagenes is true)
-  file:
-    path: "/home/angel/lgptclient/images{{inventory_hostname}}/imagenes/imagenes_pi"
-    state: absent
     owner: angel
     group: angel
   when: imagenes | default(false) | bool
@@ -142,23 +116,6 @@
     group: root
     mode: '0644' 
 
-- name: Configure the display service on the remote machine
-  become: true
-  template:
-    src: display.service.j2
-    dest: /etc/systemd/system/display.service
-    owner: root
-    group: root
-    mode: '0644'
-
-- name: Enable and start the display service
-  become: true
-  systemd:
-    name: display.service
-    enabled: yes
-    state: started
-    daemon_reload: yes
-
 - name: Enable and start the cliente service
   become: true
   systemd:
@@ -166,4 +123,3 @@
     enabled: yes
     state: started
     daemon_reload: yes
-

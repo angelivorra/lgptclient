@@ -143,25 +143,25 @@ class EventScheduler:
     def execute(self, ev: ScheduledEvent):
         now_wall_ms = int(time.time() * 1000)
         lateness = now_wall_ms - ev.scheduled_local_wall_ms
-        if lateness > 5:
-            level = logging.WARNING if lateness > MAX_LATE_MS else logging.DEBUG
-            logger.log(level, f"Evento {ev.kind} tarde {lateness} ms (ts_server={ev.server_ts_ms})")
-        # Aquí se implementaría la acción real (mostrar imagen, reproducir nota, etc.)
+        # Log único a nivel INFO siempre que se ejecute un evento (facilita ver sincronización)
+        # Formato: EXEC,<tipo>,server_ts,lat_ms,<datos>
+        base_prefix = f"EXEC,{ev.kind},{ev.server_ts_ms},{lateness}ms"
         if ev.kind == 'NOTA':
             note, channel, velocity = ev.payload
-            logger.info(f"NOTA exec note={note} ch={channel} vel={velocity}")
+            logger.info(f"{base_prefix},note={note},ch={channel},vel={velocity}")
         elif ev.kind == 'CC':
             value, channel, controller = ev.payload
-            logger.info(f"CC exec ctrl={controller} val={value} ch={channel}")
-            # Mostrar imagen / animación ahora (display manager decide según config pantalla)
+            logger.info(f"{base_prefix},cc={controller},val={value},ch={channel}")
             try:
                 get_display().handle_cc(controller, value)
             except Exception as e:
                 logger.warning(f"Fallo handle_cc ctrl={controller} val={value}: {e}")
         elif ev.kind == 'START':
-            logger.info("START exec")
+            logger.info(f"{base_prefix}")
         elif ev.kind == 'END':
-            logger.info("END exec")
+            logger.info(f"{base_prefix}")
+        else:
+            logger.info(f"{base_prefix}")
 
     def stop(self):
         self._running = False
@@ -192,8 +192,8 @@ async def reader_loop(reader: asyncio.StreamReader, tsync: TimeSync, sched: Even
             ruido_flag    = _parse_bool(parts[3])
             pantalla_flag = _parse_bool(parts[4])
             sched.set_delay(delay_ms)
-            if debug_flag:
-                logger.setLevel(logging.DEBUG)
+            # if debug_flag:
+            #     logger.setLevel(logging.DEBUG)
             get_display().set_pantalla(pantalla_flag)
             logger.info(f"CONFIG recibido delay={delay_ms} debug={debug_flag} ruido={ruido_flag} pantalla={pantalla_flag}")
             if debug:
@@ -240,8 +240,7 @@ async def reader_loop(reader: asyncio.StreamReader, tsync: TimeSync, sched: Even
                 continue
             sched.schedule('END', server_ts_ms, tsync.get_offset(), tuple())
         else:
-            if debug:
-                logger.debug(f"Ignorado: {text}")
+            logger.debug(f"Ignorado: {text}")
 
 async def run_client():
     tsync = TimeSync(OFFSET_ALPHA)
