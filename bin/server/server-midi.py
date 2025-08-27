@@ -26,16 +26,12 @@ except ImportError:
 import logging
 from datetime import datetime
 import json
-import subprocess
-import re
 
 # Constants
 MIDI_CLIENT_NAME = 'movida'
 MIDI_PORT = "inout"
 # Puerto fuente (cliente:puerto) que queremos escuchar; se puede sobreescribir con env MIDI_SRC e.g. "130:0"
-MIDI_SRC_NAME = os.environ.get("MIDI_SRC_NAME", "").strip()
-# Ahora permitimos que MIDI_SRC sea o bien "num:num", o "Nombre", o "Nombre:puerto"
-DEFAULT_SRC   = os.environ.get("MIDI_SRC", "Midi Through")  # sin :0 para evitar parsing numérico
+DEFAULT_SRC = os.environ.get("MIDI_SRC", "130:0")
 TCP_PORT = 8888  # Define the port to listen on
 CSV_FILENAME = '/home/angel/midi_notes_log_server.csv'
 UNIX_SOCKET_PATH = '/tmp/copilot.sock'
@@ -230,9 +226,16 @@ async def main():
     port = client.create_port(MIDI_PORT, READ_PORT | WRITE_PORT)
     logger.info("MIDI client and port created")    
     
-    connected = connect_source_once(client, port)
-    if not connected:
-        logger.warning("Sin fuente MIDI enlazada (no habrá eventos)")
+    # Conectar automáticamente (suscripción) desde el emisor conocido hacia este puerto
+    # AsyncSequencerClient no expone connect_ports; usamos port.connect_from
+    try:
+        src_client_str, src_port_str = DEFAULT_SRC.split(":", 1)
+        SRC_CLIENT = int(src_client_str)
+        SRC_PORT = int(src_port_str)
+        port.connect_from((SRC_CLIENT, SRC_PORT))
+        logger.info(f"Suscripción creada: {SRC_CLIENT}:{SRC_PORT} -> {MIDI_CLIENT_NAME}:{MIDI_PORT}")
+    except Exception as e:
+        logger.warning(f"No se pudo crear suscripción automática desde {DEFAULT_SRC}: {e}")
 
     # Start a UNIX domain socket server
     server_local = await asyncio.start_unix_server(handle_local_client, path=UNIX_SOCKET_PATH)
@@ -281,112 +284,6 @@ def load_config(config_path='/home/angel/lgptclient/bin/config.json'):
     except Exception as e:
         logger.error(f"Error loading config: {e}")
         return {"delay": 900, "debug": False}  # default values
-
-ACONNECT_CLIENT_RE = re.compile(r"^client\s+(\d+):\s+'([^']+)'")
-ACONNECT_PORT_RE   = re.compile(r"^\s+(\d+)\s+'([^']+)'")
-
-def find_midi_port_by_name(pattern: str, desired_port: str | None = None):
-    """
-    Busca primer puerto cuyo nombre de cliente o de puerto contenga `pattern`
-    (case-insensitive). Si desired_port es numérico, filtra por ese port id.
-    Devuelve (client_id, port_id) o None.
-    """
-    if not pattern:
-        return None
-    pat = pattern.lower()
-    try:
-        out = subprocess.check_output(["aconnect", "-l"], text=True, stderr=subprocess.DEVNULL)
-    except Exception as e:
-        logger.warning(f"No se pudo ejecutar aconnect -l: {e}")
-        return None
-
-    current_client_id = None
-    current_client_name = None
-    for line in out.splitlines():
-        m_client = ACONNECT_CLIENT_RE.match(line)
-        if m_client:
-            current_client_id = int(m_client.group(1))
-            current_client_name = m_client.group(2)
-            continue
-        m_port = ACONNECT_PORT_RE.match(line)
-        if m_port and current_client_id is not None:
-            port_id = int(m_port.group(1))
-            port_name = m_port.group(2)
-            # Coincidencia
-            if (pat in current_client_name.lower()) or (pat in port_name.lower()):
-                if desired_port is not None and desired_port.isdigit():
-                    if str(port_id) != desired_port:
-                        continue
-                return (current_client_id, port_id)
-    return None
-
-def connect_source_once(client, port):
-    """
-    Orden:
-      1) MIDI_SRC_NAME (solo nombre o nombre:port)
-      2) DEFAULT_SRC (nombre o nombre:port o id:id)
-    """
-    # Helper interno
-    def try_name_spec(spec: str):
-        if ':' in spec:
-            left, right = spec.split(':', 1)
-            return find_midi_port_by_name(left, right)
-        else:
-            return find_midi_port_by_name(spec)
-
-    # 1) MIDI_SRC_NAME explícito
-    if MIDI_SRC_NAME:
-        t = try_name_spec(MIDI_SRC_NAME)
-        if t:
-            try:
-                port.connect_from(t)
-                logger.info(f"Fuente enlazada por nombre (MIDI_SRC_NAME): {t[0]}:{t[1]}")
-                return True
-            except Exception as e:
-                logger.warning(f"Fallo enlace nombre (MIDI_SRC_NAME) {t}: {e}")
-        else:
-            logger.warning(f"No se encontró puerto que coincida con '{MIDI_SRC_NAME}'")
-
-    # 2) DEFAULT_SRC
-    if DEFAULT_SRC:
-        spec = DEFAULT_SRC.strip()
-        if ':' in spec:
-            left, right = spec.split(':', 1)
-            if left.isdigit() and right.isdigit():
-                # Interpretar como IDs numéricos directos
-                try:
-                    t = (int(left), int(right))
-                    port.connect_from(t)
-                    logger.info(f"Fuente enlazada por ID: {t[0]}:{t[1]}")
-                    return True
-                except Exception as e:
-                    logger.warning(f"Fallo enlace ID {spec}: {e}")
-            # Si no son ambos dígitos, tratar como nombre:puerto
-            t = try_name_spec(spec)
-            if t:
-                try:
-                    port.connect_from(t)
-                    logger.info(f"Fuente enlazada por nombre DEFAULT_SRC '{spec}' → {t[0]}:{t[1]}")
-                    return True
-                except Exception as e:
-                    logger.warning(f"Fallo enlace nombre DEFAULT_SRC {t}: {e}")
-            else:
-                logger.warning(f"No coincidencia para patrón '{spec}' (DEFAULT_SRC)")
-        else:
-            # Solo nombre
-            t = try_name_spec(spec)
-            if t:
-                try:
-                    port.connect_from(t)
-                    logger.info(f"Fuente enlazada por nombre DEFAULT_SRC '{spec}' → {t[0]}:{t[1]}")
-                    return True
-                except Exception as e:
-                    logger.warning(f"Fallo enlace nombre DEFAULT_SRC {t}: {e}")
-            else:
-                logger.warning(f"No coincidencia para patrón '{spec}' (DEFAULT_SRC)")
-    return False
-
-# Elimina las funciones antiguas resolve_source_by_name y la versión anterior de connect_source_once.
 
 if __name__ == '__main__':    
     asyncio.run(main())
