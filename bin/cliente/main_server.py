@@ -30,7 +30,17 @@ PINES = config["pines"]
 
 
 def sinchronize_time():
-    os.system('sudo ntpdate 192.168.0.2')
+    try:
+        logger.info("Attempting to synchronize time with NTP server 192.168.0.2")
+        result = os.system('sudo ntpdate 192.168.0.2')
+        if result == 0:
+            logger.info("Time synchronization successful")
+        else:
+            logger.error(f"Time synchronization failed with exit code: {result}")
+            logger.error("Please check if ntpdate is installed and NTP server is accessible")
+    except Exception as e:
+        logger.error(f"Error during time synchronization: {e}")
+        logger.error("Time synchronization failed - continuing without sync")
 
 def initialize_timing_csv():
     if os.path.exists(TIMING_CSV) == False:
