@@ -20,8 +20,10 @@ from media_manager import AnimationConfig
 logger = logging.getLogger("clientet.display")
 
 # Constantes
-FPS = 30
-FRAME_INTERVAL = 1.0 / FPS  # ~0.033 segundos
+SYSTEM_FPS = 30  # FPS del thread de renderizado
+ANIMATION_FPS = 20  # FPS para todas las animaciones
+FRAME_INTERVAL = 1.0 / SYSTEM_FPS  # ~0.033 segundos
+ANIMATION_FRAME_INTERVAL = 1.0 / ANIMATION_FPS  # 0.05 segundos
 
 
 class FramebufferWriter:
@@ -84,6 +86,7 @@ class DisplayExecutor:
     Ejecuta imágenes y animaciones en el framebuffer con un único thread a 30 FPS.
     
     - Un solo thread a 30 FPS constante
+    - Animaciones reproducidas a 20 FPS
     - Cambio instantáneo entre contenidos
     - Loop con delay aleatorio para animaciones
     """
@@ -109,6 +112,10 @@ class DisplayExecutor:
         self._animation_pack_file = None
         self._waiting_until: Optional[float] = None  # Para delays entre loops
         
+        # Control de velocidad de animación (20 FPS)
+        self._last_frame_time: float = 0
+        self._frame_accumulator: float = 0
+        
         # Estadísticas
         self.stats = {
             'images_shown': 0,
@@ -131,7 +138,7 @@ class DisplayExecutor:
             name="DisplayRenderer"
         )
         self._render_thread.start()
-        logger.debug("🎬 Thread de renderizado iniciado (30 FPS)")
+        logger.debug(f"🎬 Thread de renderizado iniciado ({SYSTEM_FPS} FPS sistema, {ANIMATION_FPS} FPS animaciones)")
     
     def show_image(self, data: bytes, cc: int, value: int):
         """
@@ -203,17 +210,20 @@ class DisplayExecutor:
             self._current_animation = config
             self._animation_frame_idx = 0
             self._waiting_until = None
+            self._last_frame_time = 0  # Resetear control de tiempo
+            self._frame_accumulator = 0
             
             self.stats['animations_started'] += 1
             logger.info(
                 f"🎬 Animación configurada: {animation_id} "
-                f"({len(config.frames)} frames, loop={config.loop}, "
+                f"({len(config.frames)} frames @ {ANIMATION_FPS} FPS, loop={config.loop}, "
                 f"max_delay={config.max_delay}s)"
             )
     
     def _render_loop(self):
         """
-        Loop principal de renderizado a 30 FPS.
+        Loop principal de renderizado a 30 FPS del sistema.
+        Las animaciones se reproducen a 20 FPS.
         Se ejecuta en un thread separado.
         """
         logger.debug("🎬 Iniciando loop de renderizado")
@@ -235,18 +245,35 @@ class DisplayExecutor:
                                 # Termina el delay, reiniciar animación
                                 self._animation_frame_idx = 0
                                 self._waiting_until = None
+                                self._last_frame_time = 0
+                                self._frame_accumulator = 0
                                 logger.debug(f"🔄 Reiniciando loop de animación")
                             else:
                                 # Seguimos esperando, no renderizar nada
                                 pass
                         else:
-                            # Renderizar frame actual de la animación
-                            self._render_animation_frame()
+                            # Controlar velocidad de animación (20 FPS)
+                            current_time = time.time()
+                            
+                            if self._last_frame_time == 0:
+                                # Primera vez, renderizar inmediatamente
+                                self._render_animation_frame()
+                                self._last_frame_time = current_time
+                                self._frame_accumulator = 0
+                            else:
+                                # Acumular tiempo transcurrido
+                                self._frame_accumulator += (current_time - self._last_frame_time)
+                                self._last_frame_time = current_time
+                                
+                                # ¿Es momento de avanzar al siguiente frame? (20 FPS = 0.05s por frame)
+                                if self._frame_accumulator >= ANIMATION_FRAME_INTERVAL:
+                                    self._render_animation_frame()
+                                    self._frame_accumulator -= ANIMATION_FRAME_INTERVAL
             
             except Exception as e:
                 logger.error(f"❌ Error en render loop: {e}")
             
-            # Dormir hasta el próximo frame (30 FPS)
+            # Dormir hasta el próximo frame (30 FPS del sistema)
             elapsed = time.time() - frame_start
             sleep_time = FRAME_INTERVAL - elapsed
             if sleep_time > 0:
@@ -266,8 +293,8 @@ class DisplayExecutor:
         # ¿Ya terminamos todos los frames?
         if self._animation_frame_idx >= len(config.frames):
             if config.loop:
-                # Calcular delay aleatorio entre max_delay/2 y max_delay
-                min_delay = config.max_delay / 2.0
+                # Calcular delay aleatorio entre max_delay/5 y max_delay
+                min_delay = config.max_delay / 5.0
                 max_delay = config.max_delay
                 delay = random.uniform(min_delay, max_delay)
                 
