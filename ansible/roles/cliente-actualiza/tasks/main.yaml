@@ -108,10 +108,10 @@
     group: root
     mode: '0644'
 
-# - name: Enable and start the cliente service
-#   become: true
-#   systemd:
-#     name: cliente.service
-#     enabled: yes
-#     state: started
-#     daemon_reload: yes
+- name: Enable and start the cliente service
+  become: true
+  systemd:
+    name: cliente.service
+    enabled: yes
+    state: started
+    daemon_reload: yes

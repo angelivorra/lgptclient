@@ -67,6 +67,14 @@ class EventOrchestrator:
             'gpio_programados': 0,
             'cc_recibidos': 0,
         }
+        
+        # Animación por defecto (idle)
+        self.DEFAULT_ANIMATION_CC = 3
+        self.DEFAULT_ANIMATION_VALUE = 3
+        
+        # Iniciar animación por defecto al crear el orchestrator
+        logger.info("🎬 Cargando animación de inicio...")
+        self.start_default_animation()
     
     def handle_nota(self, server_ts_ms: int, note: int, channel: int, velocity: int):
         """
@@ -231,13 +239,39 @@ class EventOrchestrator:
         except Exception as e:
             logger.error(f"❌ Error mostrando imagen {cc:03d}/{value:03d}: {e}")
     
+    def start_default_animation(self):
+        """
+        Inicia la animación por defecto (idle).
+        Se llama al arrancar el cliente y al terminar una canción.
+        """
+        logger.info(f"🎬 Iniciando animación por defecto CC {self.DEFAULT_ANIMATION_CC:03d}/{self.DEFAULT_ANIMATION_VALUE:03d}")
+        
+        # Cargar animación
+        anim_config = self.media_manager.get_animation(
+            self.DEFAULT_ANIMATION_CC, 
+            self.DEFAULT_ANIMATION_VALUE
+        )
+        
+        if anim_config:
+            # Reproducir inmediatamente (sin delay)
+            self.display_executor.play_animation(anim_config)
+            logger.info("✅ Animación por defecto iniciada")
+        else:
+            logger.warning(
+                f"⚠️  Animación por defecto CC {self.DEFAULT_ANIMATION_CC:03d}/"
+                f"{self.DEFAULT_ANIMATION_VALUE:03d} no encontrada"
+            )
+    
     def handle_start(self, server_ts_ms: int):
         """Procesa un evento START del servidor."""
-        logger.debug(f"▶️  START recibido (ts={server_ts_ms})")
+        logger.info(f"▶️  START recibido (ts={server_ts_ms}) - Iniciando canción")
     
     def handle_end(self, server_ts_ms: int):
         """Procesa un evento END del servidor."""
-        logger.debug(f"⏹️  END recibido (ts={server_ts_ms})")
+        logger.info(f"⏹️  END recibido (ts={server_ts_ms}) - Canción terminada")
+        
+        # Volver a la animación por defecto
+        self.start_default_animation()
     
     def get_stats(self) -> dict:
         """Retorna estadísticas de eventos procesados."""

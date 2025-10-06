@@ -77,7 +77,7 @@ class MIDIClient:
         logger.info(f"   Ruta de medios: {MEDIA_BASE_PATH}")
         logger.info(f"   Modo display: {'Simulación' if SIMULATE_DISPLAY else 'Real'}")
         
-        # Crear orquestador
+        # Crear orquestador (inicia automáticamente la animación por defecto)
         self.orchestrator = EventOrchestrator(
             config=self.config,
             scheduler=self.scheduler,
