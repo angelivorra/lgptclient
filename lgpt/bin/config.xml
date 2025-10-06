@@ -7,14 +7,19 @@
         <AUDIODEVICE value="hw:IQaudIODAC,0" /> 
         
         <AUDIODEVICE value="hw:Loopback,0"/>
-	
-
-        <AUDIOAPI value='Jack Client'/>
-        <AUDIODEVICE value="system:playback_1" />
         -->
-
+        
+        <!--
+        <AUDIOAPI value='Jack Client'/>        
+        -->
+        
+        
+        
         <AUDIOAPI value='Linux ALSA'/>
         <AUDIODEVICE value="hw:Loopback,0"/>
+        <!--
+        <AUDIODEVICE value="jack"/>
+        -->
 
         <AUDIOBUFFERSIZE value='512'/>
         <AUDIOPREBUFFERCOUNT value='4'/>
