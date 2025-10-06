@@ -37,11 +37,17 @@ logger = logging.getLogger("clientet.main")
 from config_loader import ConfigLoader
 from scheduler import Scheduler
 from gpio_executor import GPIOExecutor
+from media_manager import MediaManager
+from display_executor import DisplayExecutor
 from event_orchestrator import EventOrchestrator
+
+# Configuración de medios
+MEDIA_BASE_PATH = os.environ.get("MEDIA_BASE_PATH", "/home/angel/images")
+SIMULATE_DISPLAY = os.environ.get("SIMULATE_DISPLAY", "0") == "1"
 
 
 class MIDIClient:
-    """Cliente MIDI completo con GPIO y scheduling."""
+    """Cliente MIDI completo con GPIO, display y scheduling."""
     
     def __init__(self, config_path: str = "config.json"):
         """
@@ -64,11 +70,20 @@ class MIDIClient:
         all_pins = list(self.config.pines.keys())
         self.gpio_executor.initialize(all_pins)
         
+        # Crear gestor de medios y ejecutor de display
+        logger.info("📺 Inicializando sistema de display...")
+        self.media_manager = MediaManager(MEDIA_BASE_PATH, max_image_cache=10)
+        self.display_executor = DisplayExecutor(simulate=SIMULATE_DISPLAY)
+        logger.info(f"   Ruta de medios: {MEDIA_BASE_PATH}")
+        logger.info(f"   Modo display: {'Simulación' if SIMULATE_DISPLAY else 'Real'}")
+        
         # Crear orquestador
         self.orchestrator = EventOrchestrator(
             config=self.config,
             scheduler=self.scheduler,
             gpio_executor=self.gpio_executor,
+            media_manager=self.media_manager,
+            display_executor=self.display_executor,
             base_delay_ms=1000
         )
         
@@ -230,6 +245,9 @@ class MIDIClient:
             
             # Cleanup GPIO
             self.gpio_executor.cleanup()
+            
+            # Cleanup display
+            self.display_executor.cleanup()
 
 
 async def main():
