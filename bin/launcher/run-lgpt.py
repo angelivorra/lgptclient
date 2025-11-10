@@ -175,9 +175,11 @@ class AudioStack:
                 return False
             self.jackd, self.jack_stdout, self.jack_stderr = jack_result
 
-            # Esperar 2 segundos para que jackd se estabilice completamente
-            logging.info("Esperando 2 segundos para estabilización de jackd...")
-            time.sleep(2.0)
+            # Esperar más tiempo en boot para que jackd se estabilice completamente
+            # Durante el arranque del sistema, puede tardar más
+            stabilization_time = 5.0
+            logging.info("Esperando %.1fs para estabilización de jackd...", stabilization_time)
+            time.sleep(stabilization_time)
         else:
             logging.warning("ARRANCAR_JACKD=False - Saltando inicio de jackd (debe estar corriendo externamente)")
             # Verificar que jackd esté corriendo
@@ -545,44 +547,126 @@ def start_delay_buffer(delay_seconds: float) -> Optional[subprocess.Popen]:
         return None
     
     python_bin = sys.executable
-    cmd = [python_bin, DELAY_BUFFER_BIN, str(delay_seconds), "delay_buffer"]
+    cmd = [python_bin, "-u", DELAY_BUFFER_BIN, str(delay_seconds), "delay_buffer"]
     
     logging.info("Iniciando buffer de delay de %.2fs...", delay_seconds)
+    logging.info("Comando: %s", " ".join(cmd))
+    
+    # Crear archivo de log para el delay buffer (con timestamp para debug)
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    log_file_path = f"/tmp/jack_delay_buffer_{timestamp}.log"
+    # También mantener un symlink al último log
+    log_file_link = "/tmp/jack_delay_buffer_latest.log"
+    
+    # Preparar el entorno: heredar variables de JACK del entorno actual
+    env = os.environ.copy()
     
     try:
+        log_file = open(log_file_path, "w", buffering=1)  # line buffering
         proc = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
             text=True,
+            env=env,
             start_new_session=True,
         )
+        logging.info("Proceso delay_buffer iniciado (PID: %d, log: %s)", proc.pid, log_file_path)
+        
+        # Crear symlink al último log para fácil acceso
+        try:
+            if os.path.exists(log_file_link) or os.path.islink(log_file_link):
+                os.remove(log_file_link)
+            os.symlink(log_file_path, log_file_link)
+        except Exception:
+            pass  # No crítico si falla
+            
     except Exception as exc:
         logging.error("Error lanzando buffer de delay: %s", exc)
         return None
     
     # Esperar a que el cliente JACK se registre y los puertos estén disponibles
-    deadline = time.time() + 5.0
+    timeout_seconds = 20.0  # Aumentado a 20 segundos para boot lento
+    deadline = time.time() + timeout_seconds
+    start_time = time.time()
+    checks = 0
+    last_log_time = start_time
+    
     while time.time() < deadline:
+        checks += 1
+        elapsed = time.time() - start_time
+        
+        # Log de progreso cada 3 segundos
+        if time.time() - last_log_time >= 3.0:
+            logging.info("Esperando delay_buffer... (%.1fs, %d checks)", elapsed, checks)
+            last_log_time = time.time()
+        
+        # Verificar si el proceso sigue vivo
         if proc.poll() is not None:
-            out, err = proc.communicate()
-            logging.error("Buffer de delay terminó prematuramente:\n%s%s", out, err)
+            elapsed_final = time.time() - start_time
+            logging.error("Buffer de delay terminó prematuramente después de %.1fs (código: %s)", elapsed_final, proc.returncode)
+            try:
+                log_file.flush()
+                log_file.close()
+                with open(log_file_path, "r") as f:
+                    log_content = f.read()
+                if log_content:
+                    logging.error("Log del delay buffer:\n%s", log_content)
+                else:
+                    logging.error("Log del delay buffer está vacío")
+            except Exception as e:
+                logging.error("No se pudo leer el log: %s", e)
             return None
         
         # Verificar que los puertos del delay buffer existan
         try:
-            result = subprocess.run(["jack_lsp"], capture_output=True, text=True, check=False)
+            result = subprocess.run(["jack_lsp"], capture_output=True, text=True, check=False, timeout=1.0)
             if result.returncode == 0:
                 ports = result.stdout
                 if "delay_buffer:input_L" in ports and "delay_buffer:output_L" in ports:
-                    logging.info("Buffer de delay operativo (puertos detectados)")
+                    elapsed_final = time.time() - start_time
+                    logging.info("✓ Buffer de delay operativo (%.1fs, %d checks)", elapsed_final, checks)
                     return proc
-        except Exception:
-            pass
+            else:
+                if checks % 10 == 0:  # Log cada 10 checks
+                    logging.debug("jack_lsp falló (check %d): rc=%d", checks, result.returncode)
+        except subprocess.TimeoutExpired:
+            logging.warning("jack_lsp timeout en check %d", checks)
+        except Exception as e:
+            if checks % 10 == 0:  # Log cada 10 checks
+                logging.debug("Error ejecutando jack_lsp (check %d): %s", checks, e)
         
         time.sleep(0.2)
     
-    logging.error("Timeout esperando puertos del buffer de delay")
+    # Timeout: verificar el estado final
+    elapsed_final = time.time() - start_time
+    logging.error("⏱ Timeout esperando puertos del buffer de delay (%.1fs, %d checks)", elapsed_final, checks)
+    logging.error("Proceso delay_buffer PID=%d, poll=%s", proc.pid, proc.poll())
+    
+    # Intentar leer el log antes de terminar el proceso
+    try:
+        log_file.flush()
+        log_file.close()
+        with open(log_file_path, "r") as f:
+            log_content = f.read()
+        if log_content:
+            logging.error("Log del delay buffer en timeout:\n%s", log_content)
+        else:
+            logging.error("⚠ Log del delay buffer está vacío después del timeout")
+            logging.error("Esto sugiere que el proceso no pudo escribir nada (posible problema de permisos o crash inmediato)")
+    except Exception as e:
+        logging.error("No se pudo leer el log después del timeout: %s", e)
+    
+    # Verificar estado de JACK antes de terminar
+    try:
+        result = subprocess.run(["jack_lsp"], capture_output=True, text=True, check=False, timeout=2.0)
+        if result.returncode == 0:
+            logging.error("Puertos JACK disponibles en timeout:\n%s", result.stdout[:500])
+        else:
+            logging.error("jack_lsp falló en timeout: rc=%d", result.returncode)
+    except Exception as e:
+        logging.error("No se pudo ejecutar jack_lsp en timeout: %s", e)
+    
     terminate_process(proc, "delay_buffer")
     return None
 

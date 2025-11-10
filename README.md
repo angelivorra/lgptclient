@@ -4,3 +4,5 @@
 ```
 ansible-playbook actualiza.yaml -i ./inventario
 ```
+
+## Ver log 
