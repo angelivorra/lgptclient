@@ -1,0 +1,23 @@
+{
+  "device_name": "USB gamepad           ",
+  "device_path": "/dev/input/event0",
+  "mappings": {
+    "up": {
+      "type": "axis",
+      "code": 1,
+      "value": 0,
+      "name": "ABS_Y"
+    },
+    "down": {
+      "type": "axis",
+      "code": 1,
+      "value": 255,
+      "name": "ABS_Y"
+    },
+    "select": {
+      "type": "button",
+      "code": 289,
+      "name": "BTN_289"
+    }
+  }
+}

@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Deque, List, Optional, Tuple
 
 LGPT_BIN = "/home/angel/lgptclient/lgpt/bin/lgpt.rpi-exe"
+LGPT_EXECUTABLE = LGPT_BIN  # Alias para compatibilidad
 DELAY_BUFFER_BIN = "/home/angel/lgptclient/bin/launcher/jack_delay_buffer.py"
 LOG_FILE = "/home/angel/lgpt.log"
 EXEC_LOG_FILE = "/home/angel/lgpt.exec.log"
@@ -877,6 +878,23 @@ def write_exec_log(stdout_lines: List[str], stderr_lines: List[str], code: int) 
         logging.error("No se pudo escribir EXEC_LOG_FILE: %s", exc)
 
 
+def run_lgpt_process(lgpt_path: str = None) -> int:
+    """
+    Ejecuta LGPT una sola vez (sin loop) - para uso desde la UI.
+    Retorna el código de salida.
+    """
+    if lgpt_path is None:
+        lgpt_path = LGPT_BIN
+    
+    try:
+        # Ejecutar LGPT directamente (bloqueante)
+        result = subprocess.run([lgpt_path], check=False)
+        return result.returncode
+    except Exception as e:
+        logging.error("Error ejecutando LGPT: %s", e)
+        return -1
+
+
 def run_lgpt_loop(config: AudioConfig, stack: 'AudioStack') -> None:
     restarts = 0
     max_restarts = config.max_restarts
@@ -951,11 +969,29 @@ def main() -> None:
         return
 
     try:
-        if ARRANCAR_LGPT:
-            run_lgpt_loop(config, stack)
+        # Verificar si debemos usar la UI o el modo legacy
+        use_ui = os.environ.get("LGPT_USE_UI", "1") == "1"
+        
+        if use_ui:
+            # Modo UI interactiva (Robotraca)
+            logging.info("Iniciando interfaz Robotraca...")
+            try:
+                from robotraca_ui import run_ui
+                run_ui(stack)
+            except ImportError as e:
+                logging.error("No se pudo importar robotraca_ui: %s", e)
+                logging.info("Cayendo al modo legacy (loop automático)")
+                if ARRANCAR_LGPT:
+                    run_lgpt_loop(config, stack)
+                else:
+                    STOP_EVENT.wait()
         else:
-            logging.warning("ARRANCAR_LGPT=False - No se iniciará LGPT, esperando señal de terminación...")
-            STOP_EVENT.wait()
+            # Modo legacy: auto-ejecutar LGPT
+            if ARRANCAR_LGPT:
+                run_lgpt_loop(config, stack)
+            else:
+                logging.warning("ARRANCAR_LGPT=False - No se iniciará LGPT, esperando señal de terminación...")
+                STOP_EVENT.wait()
     finally:
         stack.stop()
         logging.info("Cleanup final completado (jackd/alsa_in/lgpt detenidos)")
