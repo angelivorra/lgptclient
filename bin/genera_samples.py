@@ -71,6 +71,4 @@ def convert_audio_files(folder_origin: str, folder_destiny: str):
     print(f"Total origin size: {total_origin_size / (1024 ** 2):.2f} MB")
     print(f"Total destiny size: {total_destiny_size / (1024 ** 2):.2f} MB")
 
-
-
-convert_audio_files('/home/angel/.config/pipewire/origen', '/home/angel/.config/pipewire/destino')
+convert_audio_files('/home/angel/samples/', '/home/angel/lgptclient/samples_bien/')
