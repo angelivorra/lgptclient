@@ -16,3 +16,4 @@ sudo nano /etc/rc.local
 
 ## generar miniaturas
 
+Para generar minuaturas 
