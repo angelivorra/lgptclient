@@ -6,19 +6,18 @@
 -->
 <MAPPINGS>
 
-	<MAP src="joy:0:1-" dst="/event/up" />
-	<MAP src="joy:0:1+" dst="/event/down" />
-	<MAP src="joy:0:0-" dst="/event/left" />
-	<MAP src="joy:0:0+" dst="/event/right" />
+	<MAP src="key:0:c" dst="/event/up" />
+	<MAP src="key:0:d" dst="/event/down" />
+	<MAP src="key:0:e" dst="/event/left" />
+	<MAP src="key:0:f" dst="/event/right" />
 
-	<MAP src="but:0:1" dst="/event/a" />
-	<MAP src="but:0:2" dst="/event/b" />
-	<MAP src="but:0:0" dst="/event/a" />
-	<MAP src="but:0:3" dst="/event/b" />
+	<MAP src="key:0:g" dst="/event/a" />
+	<MAP src="key:0:j" dst="/event/b" />
 
-	<MAP src="but:0:5" dst="/event/rshoulder" />
-	<MAP src="but:0:4" dst="/event/lshoulder" />
-	<MAP src="but:0:9" dst="/event/start" />
-	<MAP src="but:0:8" dst="/tempo/tap" />
+	<MAP src="key:0:m" dst="/event/rshoulder" />
+	<MAP src="key:0:k" dst="/event/lshoulder" />
+	<MAP src="key:0:o" dst="/event/start" />
+	<MAP src="key:0:n" dst="/tempo/tap" /> 
+
 
 </MAPPINGS>
