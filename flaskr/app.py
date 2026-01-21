@@ -267,6 +267,49 @@ def create_app():
         
         return jsonify({"status": "ok"})
 
+    @app.route('/bluetooth', methods=(['POST']))
+    def bluetooth():
+        app.logger.info('Bluetooth pairing')
+        bt_mac = 'E4:17:D8:04:73:D3'
+        try:
+            # Enable pairable mode
+            subprocess.run(['bluetoothctl', 'pairable', 'on'], capture_output=True, timeout=5)
+            
+            # Start scanning for a brief moment
+            scan_proc = subprocess.Popen(['bluetoothctl', 'scan', 'on'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            time.sleep(3)  # Wait for scan to detect devices
+            scan_proc.terminate()
+            
+            # Stop scanning
+            subprocess.run(['bluetoothctl', 'scan', 'off'], capture_output=True, timeout=5)
+            
+            # Remove device if already paired (ignore errors)
+            subprocess.run(['bluetoothctl', 'remove', bt_mac], capture_output=True, timeout=5)
+            
+            # Pair the device
+            result = subprocess.run(['bluetoothctl', 'pair', bt_mac], capture_output=True, text=True, timeout=15)
+            app.logger.info(f'Pair result: {result.stdout}')
+            
+            if result.returncode != 0:
+                return jsonify({"status": "error", "message": f"Error al emparejar: {result.stderr}"}), 500
+            
+            # Trust the device
+            subprocess.run(['bluetoothctl', 'trust', bt_mac], capture_output=True, timeout=5)
+            
+            # Connect the device
+            connect_result = subprocess.run(['bluetoothctl', 'connect', bt_mac], capture_output=True, text=True, timeout=10)
+            app.logger.info(f'Connect result: {connect_result.stdout}')
+            
+            if connect_result.returncode == 0 or "Connected: yes" in result.stdout:
+                return jsonify({"status": "ok", "message": "Mando bluetooth conectado correctamente"})
+            else:
+                return jsonify({"status": "error", "message": f"Error al conectar: {connect_result.stderr}"}), 500
+        except subprocess.TimeoutExpired:
+            return jsonify({"status": "error", "message": "Timeout al conectar"}), 500
+        except Exception as e:
+            app.logger.error(f'Bluetooth error: {str(e)}')
+            return jsonify({"status": "error", "message": str(e)}), 500
+
 
     @app.route('/robot', methods=(['GET']))
     def robot():

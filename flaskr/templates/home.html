@@ -41,6 +41,31 @@
         location.href = 'http://' + deviceIp + ':8080/robot';
       });
 
+      $('#bluetoothBtn').on('click', function () {
+        var $btn = $(this);
+        var $msg = $('#bluetooth-message');
+        
+        $btn.prop('disabled', true).attr('aria-busy', 'true').text('Conectando...');
+        $msg.hide();
+        
+        $.ajax({
+          url: '/bluetooth',
+          method: 'POST',
+          success: function (response) {
+            $msg.css('color', 'green').text(response.message || 'Conectado correctamente').show();
+            $btn.prop('disabled', false).removeAttr('aria-busy').text('Conectar Mando Bluetooth');
+          },
+          error: function (xhr) {
+            var errorMsg = 'Error al conectar';
+            if (xhr.responseJSON && xhr.responseJSON.message) {
+              errorMsg = xhr.responseJSON.message;
+            }
+            $msg.css('color', 'red').text(errorMsg).show();
+            $btn.prop('disabled', false).removeAttr('aria-busy').text('Conectar Mando Bluetooth');
+          }
+        });
+      });
+
       $form.on('submit', function (e) {
         e.preventDefault();
         console.log('Form submitted'); // Debug log
@@ -101,6 +126,12 @@
       <p>No hay na.</p>
     </section>
     {% endif %}
+
+    <section id="bluetooth">
+      <h2>Bluetooth</h2>
+      <button type="button" class="bluetooth-button" id="bluetoothBtn">Conectar Mando Bluetooth</button>
+      <div id="bluetooth-message" style="margin-top: 1rem; display: none;"></div>
+    </section>
 
     <section id="control">
       <h2>Configuración</h2>
