@@ -1,0 +1,15 @@
+# Core dependencies - using flexible versions
+alsa-midi
+numpy
+pysftp
+RPi.GPIO
+ansible
+tabulate
+pandas
+Pillow
+pydub
+pyalsaaudio
+Flask
+psutil
+gunicorn
+JACK-Client
