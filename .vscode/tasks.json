@@ -18,6 +18,12 @@
       "type": "shell",
       "command": "sudo systemctl restart servidor.service",
       "problemMatcher": []
+    },
+    {
+      "label": "Ansible - Actualiza",
+      "type": "shell",
+      "command": "${workspaceFolder}/venv/bin/ansible-playbook ${workspaceFolder}/ansible/actualiza.yaml -i ${workspaceFolder}/ansible/inventario",
+      "problemMatcher": []
     }
   ]
 }

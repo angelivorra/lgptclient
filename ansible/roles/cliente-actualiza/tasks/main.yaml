@@ -86,9 +86,9 @@
   when: imagenes | default(false) | bool
 
 - name: Generate image binary files locally
-  local_action:
-    module: command
+  ansible.builtin.command:
     cmd: "/home/angel/lgptclient/venv/bin/python /home/angel/lgptclient/bin/genera.py {{ inventory_hostname }}"
+  delegate_to: localhost
   when: imagenes | default(false) | bool
 
 - name: Copy image binary files
