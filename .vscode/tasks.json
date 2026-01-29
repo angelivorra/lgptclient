@@ -24,6 +24,19 @@
       "type": "shell",
       "command": "${workspaceFolder}/venv/bin/ansible-playbook ${workspaceFolder}/ansible/actualiza.yaml -i ${workspaceFolder}/ansible/inventario",
       "problemMatcher": []
+    },
+    {
+      "label": "MIDI Monitor",
+      "type": "shell",
+      "command": "${workspaceFolder}/midi_monitor/venv/bin/python ${workspaceFolder}/midi_monitor/main.py",
+      "windows": {
+        "command": "${workspaceFolder}\\midi_monitor\\venv\\Scripts\\python.exe ${workspaceFolder}\\midi_monitor\\main.py"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
     }
   ]
 }

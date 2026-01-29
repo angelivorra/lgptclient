@@ -1,0 +1,29 @@
+{
+    "description": "Configuración de eventos MIDI para batería",
+    "channel": 0,
+    "events": {
+        "62": ["bombo"],
+        "63": ["caja1"],
+        "64": ["bombo", "caja1"],
+        "65": ["caja2"],
+        "66": ["bombo", "caja2"],
+        "67": ["caja1", "caja2"],
+        "68": ["bombo", "caja1", "caja2"],
+        "69": ["crash"],
+        "70": ["bombo", "crash"],
+        "71": ["caja1", "crash"],
+        "72": ["caja2", "crash"]
+    },
+    "labels": {
+        "bombo": "Bombo",
+        "caja1": "Caja 1",
+        "caja2": "Caja 2",
+        "crash": "Crash"
+    },
+    "colors": {
+        "bombo": "#e74c3c",
+        "caja1": "#3498db",
+        "caja2": "#2ecc71",
+        "crash": "#f39c12"
+    }
+}
