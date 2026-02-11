@@ -89,6 +89,7 @@ ipython_config.py
 lgpt/samplelib/
 lgpt/songs/
 lgpt/samplelibsrc/
+samples/
 
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is

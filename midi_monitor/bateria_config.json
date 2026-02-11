@@ -1,6 +1,20 @@
 {
     "description": "Configuración de eventos MIDI para batería",
     "channel": 0,
+    "notes_reference": {
+        "_comment": "Referencia de notas MIDI (C4 = 60)",
+        "62": "D4",
+        "63": "D#4/Eb4",
+        "64": "E4",
+        "65": "F4",
+        "66": "F#4/Gb4",
+        "67": "G4",
+        "68": "G#4/Ab4",
+        "69": "A4",
+        "70": "A#4/Bb4",
+        "71": "B4",
+        "72": "C5"
+    },
     "events": {
         "62": ["bombo"],
         "63": ["caja1"],

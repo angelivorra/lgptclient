@@ -37,6 +37,19 @@
         "reveal": "always",
         "panel": "new"
       }
+    },
+    {
+      "label": "Convierte Samples",
+      "type": "shell",
+      "command": "${workspaceFolder}/bin/venv/bin/python ${workspaceFolder}/bin/genera_samples.py",
+      "windows": {
+        "command": "${workspaceFolder}\\bin\\venv\\Scripts\\python.exe ${workspaceFolder}\\bin\\genera_samples.py"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
     }
   ]
 }
