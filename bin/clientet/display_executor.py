@@ -12,6 +12,7 @@ import time
 import random
 import logging
 import threading
+import queue
 from typing import Optional
 from pathlib import Path
 
@@ -103,6 +104,9 @@ class DisplayExecutor:
         self._render_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         
+        # Cola de comandos para evitar contención del lock
+        self._command_queue = queue.Queue(maxsize=100)
+        
         # Estado actual (protegido por lock)
         self._state_lock = threading.Lock()
         self._current_type: Optional[str] = None  # 'image' o 'animation'
@@ -142,13 +146,22 @@ class DisplayExecutor:
     
     def show_image(self, data: bytes, cc: int, value: int):
         """
-        Muestra una imagen estática.
+        Muestra una imagen estática (non-blocking).
         
         Args:
             data: Datos binarios de la imagen
             cc: Control change (para logging)
             value: Valor (para logging)
         """
+        try:
+            # Usar cola para evitar bloquear el scheduler
+            self._command_queue.put_nowait(('image', data, cc, value))
+        except:
+            # Si la cola está llena, ejecutar directamente (fallback)
+            self._show_image_internal(data, cc, value)
+    
+    def _show_image_internal(self, data: bytes, cc: int, value: int):
+        """Implementación interna de show_image."""
         with self._state_lock:
             # Cerrar archivo de animación si existe
             if self._animation_pack_file:
@@ -173,11 +186,20 @@ class DisplayExecutor:
     
     def play_animation(self, config: AnimationConfig):
         """
-        Reproduce una animación.
+        Reproduce una animación (non-blocking).
         
         Args:
             config: Configuración de la animación a reproducir
         """
+        try:
+            # Usar cola para evitar bloquear el scheduler
+            self._command_queue.put_nowait(('animation', config))
+        except:
+            # Si la cola está llena, ejecutar directamente (fallback)
+            self._play_animation_internal(config)
+    
+    def _play_animation_internal(self, config: AnimationConfig):
+        """Implementación interna de play_animation."""
         animation_id = f"{config.cc:03d}/{config.value:03d}"
         
         with self._state_lock:
@@ -230,6 +252,17 @@ class DisplayExecutor:
         
         while not self._stop_event.is_set():
             frame_start = time.time()
+            
+            # Procesar comandos pendientes en la cola (sin bloquear)
+            try:
+                while True:
+                    cmd = self._command_queue.get_nowait()
+                    if cmd[0] == 'image':
+                        self._show_image_internal(cmd[1], cmd[2], cmd[3])
+                    elif cmd[0] == 'animation':
+                        self._play_animation_internal(cmd[1])
+            except:
+                pass  # Cola vacía
             
             try:
                 with self._state_lock:

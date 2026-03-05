@@ -155,13 +155,16 @@ class Scheduler:
             now_mono = time.monotonic()
             wait_s = next_task.due_mono - now_mono
             
-            if wait_s > 0.010:  # Más de 10ms
-                # Esperar de forma eficiente
-                sleep_time = min(wait_s * 0.5, 0.050)  # Máximo 50ms
-                await asyncio.sleep(sleep_time)
+            if wait_s > 0.050:  # Más de 50ms
+                # Esperar solo 20ms cuando hay tiempo, para ser más responsive
+                await asyncio.sleep(0.020)
                 continue
-            elif wait_s > 0:  # Entre 0 y 10ms
-                # Espera fina
+            elif wait_s > 0.005:  # Entre 5ms y 50ms
+                # Espera más precisa para tareas cercanas
+                await asyncio.sleep(wait_s * 0.5)
+                continue
+            elif wait_s > 0:  # Menos de 5ms
+                # Espera mínima para precisión máxima
                 await asyncio.sleep(wait_s)
             
             # Es hora de ejecutar
@@ -171,13 +174,14 @@ class Scheduler:
             now_mono = time.monotonic()
             lateness_ms = (now_mono - task.due_mono) * 1000
             
-            if lateness_ms > 5:  # Umbral de advertencia
+            if lateness_ms > 15:  # Umbral de advertencia más tolerante (15ms)
                 logger.warning(
                     f"⚠️  Tarea #{task.seq} ejecutada con {lateness_ms:.1f}ms de retraso"
                 )
             
-            # Ejecutar la tarea
-            await self._execute_task(task)
+            # Ejecutar la tarea de forma no bloqueante
+            # Crear la tarea pero no esperar a que termine si hay más tareas pendientes
+            asyncio.create_task(self._execute_task(task))
     
     async def _execute_task(self, task: ScheduledTask):
         """Ejecuta una tarea programada."""
