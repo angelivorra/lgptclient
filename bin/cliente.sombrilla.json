@@ -16,19 +16,19 @@
             "nombre": "Bombo",
             "tiempo": 0.15,            
             "idelay": 0,
-            "delay": 150
+            "delay": -50
         },
         "17": {
             "nombre": "Caja1",
             "tiempo": 0.05,            
             "idelay": 0, 
-            "delay": 30
+            "delay": 0
         },
         "27": {
             "nombre": "Caja2",
             "tiempo": 0.05,
             "idelay": 30,
-            "delay": 30
+            "delay": 0
         },
         "22": {
             "nombre": "Platillo",

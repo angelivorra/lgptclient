@@ -177,7 +177,7 @@ def classifier_textos(path: Path) -> Optional[CarpetaTipo]:
 
 
 def classifier_imagenes(path: Path) -> Optional[CarpetaTipo]:
-    if (path / 'fondo.png').exists() and (path / 'fuente.ttf').exists():
+    if (path / 'fondo.png').exists():
         return CarpetaTipo.IMAGENES
     return None
 
