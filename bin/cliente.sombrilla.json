@@ -1,5 +1,6 @@
 {
     "nombre": "Carmen",
+    "invertir": true,
     "instruments": {
         "62": 23, 
         "63": 27,

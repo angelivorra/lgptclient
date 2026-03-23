@@ -57,7 +57,7 @@
 
 - name: Copy client files
   ansible.builtin.copy:
-    src: /home/angel/lgptclient/bin/clientet/
+    src: /home/angel/lgptclient/bin/cliente_final/
     dest: /home/angel/bin/
     owner: angel
     group: angel

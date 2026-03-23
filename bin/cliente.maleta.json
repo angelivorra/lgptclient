@@ -1,5 +1,6 @@
 {
     "name": "Obdulia",
+    "invertir": false,
     "instruments": {
         "62": 17,         
         "63": 22,
