@@ -3,9 +3,19 @@
     "allow": [
       "Read(//home/angel/**)",
       "Bash(ls -la /home/angel/lgptclient/bin/cliente*/)",
-      "Bash(/home/angel/venvflask/bin/flask --app app run --host=0.0.0.0 --debug --port 5001)",
-      "Bash(curl -s http://localhost:5001/ -o /dev/null -w \"%{http_code}\")",
-      "Bash(kill %1)"
+      "Bash(identify /home/angel/lgptclient/flaskr/static/*.png /home/angel/lgptclient/flaskr/static/*.jpg)",
+      "Bash(file /home/angel/lgptclient/flaskr/static/*.png /home/angel/lgptclient/flaskr/static/*.jpg)",
+      "Bash(ls -lh /home/angel/lgptclient/flaskr/static/*.png /home/angel/lgptclient/flaskr/static/*.jpg)",
+      "Bash(python3 -c \"from PIL import Image; print\\('PIL ok'\\)\")",
+      "Bash(python3 -c ':*)",
+      "WebSearch",
+      "WebFetch(domain:www.8bitdo.com)",
+      "WebFetch(domain:www.amazon.com)",
+      "WebFetch(domain:shop.8bitdo.com)",
+      "Bash(python3)",
+      "Bash(grep -n \"health\\\\|ping\\\\|available\\\\|is_active\\\\|devices\" /home/angel/lgptclient/flaskr/*.py)",
+      "Bash(sed -n '155,200p' /home/angel/lgptclient/flaskr/app.py)",
+      "Bash(sed -n '330,360p' /home/angel/lgptclient/flaskr/app.py)"
     ]
   }
 }

@@ -339,4 +339,26 @@ def create_app():
         _, error_logs = check_service_status("servidor", errors_only=True)
         return jsonify({"errors": error_logs})
 
+    @app.route('/api/health', methods=['GET'])
+    def api_health():
+        name = subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip()
+        return jsonify({"status": "ok", "name": name, "timestamp": time.time()})
+
+    @app.route('/api/devices-health', methods=['GET'])
+    def api_devices_health():
+        import concurrent.futures
+
+        def check_device(dev):
+            try:
+                with socket.create_connection((dev['ip'], 8080), timeout=1.5):
+                    pass
+                return {**dev, 'available': True}
+            except OSError:
+                return {**dev, 'available': False}
+
+        devices = get_devices()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(devices)) as ex:
+            results = list(ex.map(check_device, devices))
+        return jsonify(results)
+
     return app

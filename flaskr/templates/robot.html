@@ -1,242 +1,278 @@
-<!doctype html>
-<html lang="es" data-theme="night">
-
+<!DOCTYPE html>
+<html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="{{ url_for('static', filename='jquery-3.7.1.min.js') }}"></script>
-  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32x32.png') }}">
-  <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon-16x16.png') }}">
-  <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
-  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>{{ name }} - Robot</title>
-  <script>
-    $(document).ready(function () {
-      $("#btn-limpia").click(function () {
-        $.post("/limpia", function () {
-          fetchRobotData();
-        });
-      });
-
-      function formatNumber(num, decimals) {
-        decimals = decimals !== undefined ? decimals : 2;
-        if (typeof num === 'number' && !isNaN(num)) {
-          return num.toFixed(decimals);
-        }
-        return 'N/A';
-      }
-
-      function fetchRobotData() {
-        $.getJSON("/robot_data", function (data) {
-          $("#current_time").text(data.current_time);
-
-          // Pantalla
-          var pantallaTotal = data.num_registros_pantalla || 0;
-          var pantallaOk = data.signals_ok_pantalla || 0;
-          $("#pantalla-progress").attr('value', pantallaOk).attr('max', pantallaTotal);
-          if (pantallaTotal > 0) {
-            var pctPantalla = (pantallaOk / pantallaTotal) * 100;
-            $("#pantalla-progress-label-text").text(
-              pantallaOk + " / " + pantallaTotal +
-              " | OK " + formatNumber(pctPantalla, 1) + "%" +
-              " | media " + formatNumber(data.media_diff_pantalla, 1) + "ms" +
-              " | max " + formatNumber(data.max_diff_pantalla, 1) + "ms"
-            );
-          } else {
-            $("#pantalla-progress-label-text").text("Sin datos pantalla.");
-          }
-
-          // Batería
-          var bateriaTotal = data.num_registros_bateria || 0;
-          var bateriaOk = data.signals_ok_bateria || 0;
-          $("#bateria-progress").attr('value', bateriaOk).attr('max', bateriaTotal);
-          if (bateriaTotal > 0) {
-            var pctBateria = (bateriaOk / bateriaTotal) * 100;
-            $("#bateria-progress-label-text").text(
-              bateriaOk + " / " + bateriaTotal +
-              " | OK " + formatNumber(pctBateria, 1) + "%" +
-              " | media " + formatNumber(data.media_diff_bateria, 1) + "ms" +
-              " | max " + formatNumber(data.max_diff_bateria, 1) + "ms"
-            );
-          } else {
-            $("#bateria-progress-label-text").text("Sin datos batería.");
-          }
-
-          // CPU
-          var cpuUsage = data.cpu_usage_percent || 0;
-          $("#cpu-progress").attr('value', cpuUsage);
-          $("#cpu-progress-label-text").text("CPU: " + formatNumber(cpuUsage, 1) + "%");
-
-          // Disco
-          var diskUsage = data.disk_usage_percent || 0;
-          $("#disk-progress").attr('value', diskUsage);
-          $("#disk-progress-label-text").text("Disco: " + formatNumber(diskUsage, 1) + "% (" + data.disk_usage_string + ")");
-
-          // RAM
-          var ramUsage = data.ram_usage_percent || 0;
-          $("#ram-progress").attr('value', ramUsage);
-          $("#ram-progress-label-text").text("RAM: " + formatNumber(ramUsage, 1) + "% (" + data.ram_usage_string + ")");
-
-          // Detalles Pantalla
-          $("#num_registros_pantalla").val(data.num_registros_pantalla !== null ? data.num_registros_pantalla : 'N/A');
-          $("#signals_ok_pantalla").val(data.signals_ok_pantalla !== null ? data.signals_ok_pantalla : 'N/A');
-          $("#media_diff_pantalla").val(formatNumber(data.media_diff_pantalla));
-          $("#max_diff_pantalla").val(formatNumber(data.max_diff_pantalla));
-          $("#min_diff_pantalla").val(formatNumber(data.min_diff_pantalla));
-
-          // Detalles Batería
-          $("#num_registros_bateria").val(data.num_registros_bateria !== null ? data.num_registros_bateria : 'N/A');
-          $("#signals_ok_bateria").val(data.signals_ok_bateria !== null ? data.signals_ok_bateria : 'N/A');
-          $("#media_diff_bateria").val(formatNumber(data.media_diff_bateria));
-          $("#max_diff_bateria").val(formatNumber(data.max_diff_bateria));
-          $("#min_diff_bateria").val(formatNumber(data.min_diff_bateria));
-
-        }).fail(function () {
-          $("#pantalla-progress-label-text").text("Error datos pantalla.");
-          $("#bateria-progress-label-text").text("Error datos batería.");
-          $("#cpu-progress-label-text").text("Error CPU.");
-          $("#disk-progress-label-text").text("Error disco.");
-          $("#ram-progress-label-text").text("Error RAM.");
-        });
-      }
-
-      fetchRobotData();
-      setInterval(fetchRobotData, 1000);
-    });
-  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32x32.png') }}">
+  <meta name="mobile-web-app-capable" content="yes">
+  <style>body { margin: 0; background: #0a0e1a; }</style>
 </head>
+<body>
+  <div id="root"></div>
 
-<body class="min-h-screen bg-base-100">
+  <script id="flask-data" type="application/json">
+  { "name": {{ name | tojson }} }
+  </script>
 
-  <!-- Navbar -->
-  <div class="navbar bg-base-300 sticky top-0 z-40 shadow-md">
-    <div class="navbar-start">
-      <button class="btn btn-ghost btn-sm" onclick="history.back()">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-        </svg>
-      </button>
-    </div>
-    <div class="navbar-center">
-      <span class="text-lg font-bold uppercase">{{ name }}</span>
-    </div>
-    <div class="navbar-end pr-2">
-      <span class="text-xs text-base-content/50 font-mono" id="current_time">--:--:--</span>
-    </div>
-  </div>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@mui/material@5/umd/material-ui.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <div class="p-4 max-w-2xl mx-auto space-y-4">
+  <script type="text/babel">{% raw %}
+  const {
+    createTheme, ThemeProvider, CssBaseline,
+    AppBar, Toolbar, Typography, Box,
+    Card, CardContent, LinearProgress,
+    Button, IconButton, Grid, Stack, Divider, Chip
+  } = MaterialUI;
 
-    <!-- Calidad de señal -->
-    <div class="card bg-base-200">
-      <div class="card-body p-4 space-y-3">
-        <h3 class="card-title text-base">Calidad de Señal</h3>
+  const theme = createTheme({
+    palette: {
+      mode: 'dark',
+      primary:    { main: '#5c6bc0' },
+      secondary:  { main: '#ab47bc' },
+      warning:    { main: '#ffa726' },
+      info:       { main: '#29b6f6' },
+      background: { default: '#0a0e1a', paper: '#141929' },
+    },
+    shape: { borderRadius: 12 },
+    typography: { fontFamily: 'Roboto, sans-serif' },
+  });
 
-        <div>
-          <div class="flex justify-between text-xs text-base-content/70 mb-1">
-            <span class="font-semibold">Pantalla</span>
-          </div>
-          <progress id="pantalla-progress" class="progress progress-primary w-full" value="0" max="100"></progress>
-          <p id="pantalla-progress-label-text" class="text-xs text-base-content/60 mt-1 font-mono">Cargando...</p>
-        </div>
+  const D = JSON.parse(document.getElementById('flask-data').textContent);
 
-        <div>
-          <div class="flex justify-between text-xs text-base-content/70 mb-1">
-            <span class="font-semibold">Batería</span>
-          </div>
-          <progress id="bateria-progress" class="progress progress-secondary w-full" value="0" max="100"></progress>
-          <p id="bateria-progress-label-text" class="text-xs text-base-content/60 mt-1 font-mono">Cargando...</p>
-        </div>
-      </div>
-    </div>
+  function fmt(n, d = 2) {
+    return typeof n === 'number' && !isNaN(n) ? n.toFixed(d) : 'N/A';
+  }
 
-    <!-- Uso del sistema -->
-    <div class="card bg-base-200">
-      <div class="card-body p-4 space-y-3">
-        <h3 class="card-title text-base">Uso del Sistema</h3>
+  const EMPTY = {
+    current_time: '--',
+    num_registros_pantalla: 0, signals_ok_pantalla: 0,
+    media_diff_pantalla: null, max_diff_pantalla: null, min_diff_pantalla: null,
+    num_registros_bateria: 0, signals_ok_bateria: 0,
+    media_diff_bateria: null, max_diff_bateria: null, min_diff_bateria: null,
+    cpu_usage_percent: 0, disk_usage_percent: 0, ram_usage_percent: 0,
+    disk_usage_string: '—', ram_usage_string: '—',
+  };
 
-        <div>
-          <progress id="cpu-progress" class="progress progress-warning w-full" value="0" max="100"></progress>
-          <p id="cpu-progress-label-text" class="text-xs text-base-content/60 mt-1 font-mono">Cargando...</p>
-        </div>
-        <div>
-          <progress id="disk-progress" class="progress progress-info w-full" value="0" max="100"></progress>
-          <p id="disk-progress-label-text" class="text-xs text-base-content/60 mt-1 font-mono">Cargando...</p>
-        </div>
-        <div>
-          <progress id="ram-progress" class="progress progress-accent w-full" value="0" max="100"></progress>
-          <p id="ram-progress-label-text" class="text-xs text-base-content/60 mt-1 font-mono">Cargando...</p>
-        </div>
-      </div>
-    </div>
+  // ── Signal quality bar ────────────────────────────────────────────────────
 
-    <!-- Detalles por evento -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+  function SignalBar({ label, total, ok, media, max, color }) {
+    const pct = total > 0 ? (ok / total) * 100 : 0;
+    return (
+      <Box>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+          <Typography variant="caption" sx={{ fontWeight: 600 }}>{label}</Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+            {total > 0
+              ? `${ok}/${total} · ${fmt(pct, 1)}% · ${fmt(media, 1)}ms avg · ${fmt(max, 1)}ms max`
+              : 'Sin datos'}
+          </Typography>
+        </Box>
+        <LinearProgress
+          variant="determinate"
+          value={Math.min(pct, 100)}
+          color={color}
+          sx={{ height: 8, borderRadius: 4 }}
+        />
+      </Box>
+    );
+  }
 
-      <div class="card bg-base-200">
-        <div class="card-body p-4">
-          <h3 class="card-title text-sm">Pantalla</h3>
-          <div class="space-y-1">
-            <div class="flex justify-between text-xs">
-              <span class="text-base-content/60">Registros</span>
-              <input type="text" id="num_registros_pantalla" readonly class="input input-xs input-ghost w-20 text-right font-mono" />
-            </div>
-            <div class="flex justify-between text-xs">
-              <span class="text-base-content/60">OK &lt;25ms</span>
-              <input type="text" id="signals_ok_pantalla" readonly class="input input-xs input-ghost w-20 text-right font-mono" />
-            </div>
-            <div class="flex justify-between text-xs">
-              <span class="text-base-content/60">Media</span>
-              <input type="text" id="media_diff_pantalla" readonly class="input input-xs input-ghost w-20 text-right font-mono" placeholder="ms" />
-            </div>
-            <div class="flex justify-between text-xs">
-              <span class="text-base-content/60">Máx</span>
-              <input type="text" id="max_diff_pantalla" readonly class="input input-xs input-ghost w-20 text-right font-mono" placeholder="ms" />
-            </div>
-            <div class="flex justify-between text-xs">
-              <span class="text-base-content/60">Mín</span>
-              <input type="text" id="min_diff_pantalla" readonly class="input input-xs input-ghost w-20 text-right font-mono" placeholder="ms" />
-            </div>
-          </div>
-        </div>
-      </div>
+  // ── System usage bar ──────────────────────────────────────────────────────
 
-      <div class="card bg-base-200">
-        <div class="card-body p-4">
-          <h3 class="card-title text-sm">Batería</h3>
-          <div class="space-y-1">
-            <div class="flex justify-between text-xs">
-              <span class="text-base-content/60">Registros</span>
-              <input type="text" id="num_registros_bateria" readonly class="input input-xs input-ghost w-20 text-right font-mono" />
-            </div>
-            <div class="flex justify-between text-xs">
-              <span class="text-base-content/60">OK &lt;25ms</span>
-              <input type="text" id="signals_ok_bateria" readonly class="input input-xs input-ghost w-20 text-right font-mono" />
-            </div>
-            <div class="flex justify-between text-xs">
-              <span class="text-base-content/60">Media</span>
-              <input type="text" id="media_diff_bateria" readonly class="input input-xs input-ghost w-20 text-right font-mono" placeholder="ms" />
-            </div>
-            <div class="flex justify-between text-xs">
-              <span class="text-base-content/60">Máx</span>
-              <input type="text" id="max_diff_bateria" readonly class="input input-xs input-ghost w-20 text-right font-mono" placeholder="ms" />
-            </div>
-            <div class="flex justify-between text-xs">
-              <span class="text-base-content/60">Mín</span>
-              <input type="text" id="min_diff_bateria" readonly class="input input-xs input-ghost w-20 text-right font-mono" placeholder="ms" />
-            </div>
-          </div>
-        </div>
-      </div>
+  function UsageBar({ label, value, detail, color }) {
+    return (
+      <Box>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+          <Typography variant="caption" sx={{ fontWeight: 600 }}>{label}</Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+            {fmt(value, 1)}%{detail ? ` · ${detail}` : ''}
+          </Typography>
+        </Box>
+        <LinearProgress
+          variant="determinate"
+          value={Math.min(value || 0, 100)}
+          color={color}
+          sx={{ height: 8, borderRadius: 4 }}
+        />
+      </Box>
+    );
+  }
 
-    </div>
+  // ── Detail row ────────────────────────────────────────────────────────────
 
-    <!-- Acciones -->
-    <button id="btn-limpia" class="btn btn-outline btn-sm w-full">Borrar datos debug</button>
+  function DetailRow({ label, value }) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.25 }}>
+        <Typography variant="caption" color="text.secondary">{label}</Typography>
+        <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{value}</Typography>
+      </Box>
+    );
+  }
 
-  </div>
+  // ── Root App ──────────────────────────────────────────────────────────────
 
+  function App() {
+    const [data,    setData]    = React.useState(EMPTY);
+    const [healthy, setHealthy] = React.useState(null); // null=checking, true=ok, false=fail
+
+    React.useEffect(() => {
+      const tick = () => {
+        fetch('/robot_data')
+          .then(r => r.json())
+          .then(d => setData(d))
+          .catch(() => {});
+      };
+      tick();
+      const id = setInterval(tick, 1000);
+      return () => clearInterval(id);
+    }, []);
+
+    React.useEffect(() => {
+      const check = () => {
+        fetch('/api/health', { signal: AbortSignal.timeout(3000) })
+          .then(r => r.ok ? r.json() : Promise.reject())
+          .then(() => setHealthy(true))
+          .catch(() => setHealthy(false));
+      };
+      check();
+      const id = setInterval(check, 5000);
+      return () => clearInterval(id);
+    }, []);
+
+    const handleLimpia = () => {
+      fetch('/limpia', { method: 'POST' }).then(() => setData(EMPTY));
+    };
+
+    const p = data;
+
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+
+        {/* ── AppBar ─────────────────────────────────────────────────── */}
+        <AppBar position="sticky" elevation={0}
+          sx={{ bgcolor: 'background.paper', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+          <Toolbar variant="dense">
+            <IconButton edge="start" color="inherit" onClick={() => history.back()} sx={{ mr: 1 }}>
+              <span className="material-icons">arrow_back</span>
+            </IconButton>
+            <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 700, textTransform: 'uppercase' }}>
+              {D.name}
+            </Typography>
+            <Chip
+              size="small"
+              label={healthy === null ? 'Checking…' : healthy ? 'OK' : 'Sin respuesta'}
+              color={healthy === null ? 'default' : healthy ? 'success' : 'error'}
+              icon={healthy === null
+                ? <span className="material-icons" style={{fontSize:14}}>pending</span>
+                : healthy
+                  ? <span className="material-icons" style={{fontSize:14}}>check_circle</span>
+                  : <span className="material-icons" style={{fontSize:14}}>error</span>}
+              sx={{ mr: 1, fontWeight: 600 }}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+              {p.current_time}
+            </Typography>
+          </Toolbar>
+        </AppBar>
+
+        <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+
+          {/* ── Calidad señal ─────────────────────────────────────────── */}
+          <Card>
+            <CardContent>
+              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
+                Calidad de Señal
+              </Typography>
+              <Stack spacing={2}>
+                <SignalBar
+                  label="Pantalla"
+                  total={p.num_registros_pantalla} ok={p.signals_ok_pantalla}
+                  media={p.media_diff_pantalla} max={p.max_diff_pantalla}
+                  color="primary"
+                />
+                <SignalBar
+                  label="Batería"
+                  total={p.num_registros_bateria} ok={p.signals_ok_bateria}
+                  media={p.media_diff_bateria} max={p.max_diff_bateria}
+                  color="secondary"
+                />
+              </Stack>
+            </CardContent>
+          </Card>
+
+          {/* ── Uso del sistema ───────────────────────────────────────── */}
+          <Card>
+            <CardContent>
+              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
+                Uso del Sistema
+              </Typography>
+              <Stack spacing={2}>
+                <UsageBar label="CPU"   value={p.cpu_usage_percent}  color="warning" />
+                <UsageBar label="Disco" value={p.disk_usage_percent} detail={p.disk_usage_string} color="info" />
+                <UsageBar label="RAM"   value={p.ram_usage_percent}  detail={p.ram_usage_string}  color="secondary" />
+              </Stack>
+            </CardContent>
+          </Card>
+
+          {/* ── Detalles ─────────────────────────────────────────────── */}
+          <Grid container spacing={2}>
+            <Grid item xs={6}>
+              <Card sx={{ height: '100%' }}>
+                <CardContent>
+                  <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 600 }}>
+                    Pantalla
+                  </Typography>
+                  <DetailRow label="Registros"  value={p.num_registros_pantalla ?? 'N/A'} />
+                  <DetailRow label="OK &lt;25ms" value={p.signals_ok_pantalla ?? 'N/A'} />
+                  <Divider sx={{ my: 0.75 }} />
+                  <DetailRow label="Media"  value={`${fmt(p.media_diff_pantalla)} ms`} />
+                  <DetailRow label="Máx"    value={`${fmt(p.max_diff_pantalla)} ms`} />
+                  <DetailRow label="Mín"    value={`${fmt(p.min_diff_pantalla)} ms`} />
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={6}>
+              <Card sx={{ height: '100%' }}>
+                <CardContent>
+                  <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 600 }}>
+                    Batería
+                  </Typography>
+                  <DetailRow label="Registros"  value={p.num_registros_bateria ?? 'N/A'} />
+                  <DetailRow label="OK &lt;25ms" value={p.signals_ok_bateria ?? 'N/A'} />
+                  <Divider sx={{ my: 0.75 }} />
+                  <DetailRow label="Media"  value={`${fmt(p.media_diff_bateria)} ms`} />
+                  <DetailRow label="Máx"    value={`${fmt(p.max_diff_bateria)} ms`} />
+                  <DetailRow label="Mín"    value={`${fmt(p.min_diff_bateria)} ms`} />
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+
+          {/* ── Acciones ─────────────────────────────────────────────── */}
+          <Button
+            variant="outlined"
+            color="error"
+            fullWidth
+            onClick={handleLimpia}
+            startIcon={<span className="material-icons">delete_sweep</span>}
+          >
+            Borrar datos debug
+          </Button>
+
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  {% endraw %}</script>
 </body>
 </html>
