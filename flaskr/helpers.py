@@ -6,6 +6,8 @@ import json
 IPS = [
     {'ip': '192.168.0.3', 'name': 'obdulia'},
     {'ip': '192.168.0.4', 'name': 'carmen'},
+    {'ip': '192.168.0.10', 'name': 'vocoder'},
+    {'ip': '192.168.0.20', 'name': 'guitarra'},
 ]
 
 def check_service_status(service_name):

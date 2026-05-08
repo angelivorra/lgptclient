@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/angel/**)",
+      "Bash(ls -la /home/angel/lgptclient/bin/cliente*/)"
+    ]
+  }
+}
