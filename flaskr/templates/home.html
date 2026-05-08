@@ -41,7 +41,8 @@
     List, ListItem, ListItemIcon, ListItemText,
     Alert, AlertTitle,
     TextField, Switch, FormControlLabel,
-    Grid, Stack, Divider
+    Grid, Stack, Divider,
+    ToggleButtonGroup, ToggleButton
   } = MaterialUI;
 
   const theme = createTheme({
@@ -73,9 +74,9 @@
     const [tab,        setTab]        = React.useState(0);
     const [fullLoad,   setFullLoad]   = React.useState(false);
     const [btMsg,      setBtMsg]      = React.useState(null);
-    const [formDelay,  setFormDelay]  = React.useState(String(D.config?.delay ?? ''));
-    const [formDebug,  setFormDebug]  = React.useState(!!D.config?.debug);
-    const [formRuido,  setFormRuido]  = React.useState(!!D.config?.ruido);
+    const [formDebug,    setFormDebug]    = React.useState(!!D.config?.debug);
+    const [formRuido,    setFormRuido]    = React.useState(!!D.config?.ruido);
+    const [formPantalla, setFormPantalla] = React.useState(!!D.config?.pantalla);
 
     return (
       <ThemeProvider theme={theme}>
@@ -106,9 +107,9 @@
         <Box sx={{ pb: 9 }}>
           {tab === 0 && <RobotsTab setFullLoad={setFullLoad} btMsg={btMsg} setBtMsg={setBtMsg} />}
           {tab === 1 && <ConfigTab
-            formDelay={formDelay} setFormDelay={setFormDelay}
-            formDebug={formDebug} setFormDebug={setFormDebug}
-            formRuido={formRuido} setFormRuido={setFormRuido}
+            formDebug={formDebug}       setFormDebug={setFormDebug}
+            formRuido={formRuido}       setFormRuido={setFormRuido}
+            formPantalla={formPantalla} setFormPantalla={setFormPantalla}
             setFullLoad={setFullLoad}
           />}
           {tab === 2 && <ServidorTab />}
@@ -132,6 +133,7 @@
   function RobotsTab({ setFullLoad, btMsg, setBtMsg }) {
     const [btLoading,    setBtLoading]    = React.useState(false);
     const [devHealth,    setDevHealth]    = React.useState({});
+    const [tcpClients,   setTcpClients]   = React.useState([]);
 
     React.useEffect(() => {
       fetch('/api/devices-health')
@@ -141,6 +143,10 @@
           list.forEach(d => { map[d.ip] = d.available; });
           setDevHealth(map);
         })
+        .catch(() => {});
+      fetch('/api/service-status')
+        .then(r => r.json())
+        .then(s => setTcpClients(s.clients || []))
         .catch(() => {});
     }, []);
 
@@ -158,8 +164,9 @@
       <Box sx={{ p: 2 }}>
         <Grid container spacing={2} sx={{ mb: 2 }}>
           {D.devices.map(dev => {
-            const available = devHealth[dev.ip];
-            const checked   = dev.ip in devHealth;
+            const available  = devHealth[dev.ip];
+            const checked    = dev.ip in devHealth;
+            const tcpConnected = tcpClients.some(c => c.ip === dev.ip);
             return (
               <Grid item xs={6} key={dev.ip}>
                 <Card sx={{ height: '100%', opacity: checked && !available ? 0.5 : 1 }}>
@@ -167,7 +174,7 @@
                     disabled={checked && !available}
                     onClick={() => window.location.href = `http://${dev.ip}:8080/robot`}
                     sx={{ display: 'flex', flexDirection: 'column', height: '100%', p: 1 }}>
-                    <Box sx={{ position: 'relative', display: 'flex', justifyContent: 'center', pt: 1 }}>
+                    <Box sx={{ position: 'relative', display: 'flex', justifyContent: 'center', pt: 1, width: '100%' }}>
                       <img
                         src={`/static/${dev.name.toLowerCase()}.png`}
                         alt={dev.name}
@@ -182,13 +189,19 @@
                         </Box>
                       )}
                     </Box>
-                    <CardContent sx={{ textAlign: 'center', py: 1, px: 0 }}>
+                    <CardContent sx={{ textAlign: 'center', py: 1, px: 0, position: 'relative', width: '100%' }}>
                       <Typography variant="subtitle2" sx={{ textTransform: 'capitalize' }}>
                         {dev.name}
                       </Typography>
                       <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
                         {dev.ip}
                       </Typography>
+                      <Box sx={{ position: 'absolute', bottom: 4, right: 4 }}>
+                        <span className="material-icons"
+                          style={{ fontSize: 13, color: tcpConnected ? '#66bb6a' : '#555' }}>
+                          {tcpConnected ? 'lan' : 'lan'}
+                        </span>
+                      </Box>
                     </CardContent>
                   </CardActionArea>
                 </Card>
@@ -233,23 +246,23 @@
 
   // ── Tab: Config ───────────────────────────────────────────────────────────
 
-  function ConfigTab({ formDelay, setFormDelay, formDebug, setFormDebug,
-                       formRuido, setFormRuido, setFullLoad }) {
+  function ConfigTab({ formDebug, setFormDebug,
+                       formRuido, setFormRuido, formPantalla, setFormPantalla,
+                       setFullLoad }) {
     const [formError, setFormError] = React.useState(null);
 
     const handleSubmit = e => {
       e.preventDefault();
       setFormError(null);
       setFullLoad(true);
-      post('/', { delay: formDelay, debug: formDebug ? 'on' : '' })
+      post('/', {
+        debug:    String(formDebug),
+        ruido:    String(formRuido),
+        pantalla: String(formPantalla),
+      })
         .then(r => { if (r.ok) window.location.reload(); else throw new Error(); })
         .catch(() => setFormError('Error al aplicar configuración'))
         .finally(() => setFullLoad(false));
-    };
-
-    const handleRuido = e => {
-      setFormRuido(e.target.checked);
-      post('/ruido', { ruido: e.target.checked });
     };
 
     return (
@@ -258,51 +271,61 @@
         <Card>
           <CardContent>
             <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
-              Configuración
+              Servidor MIDI
             </Typography>
             {formError && <Alert severity="error" sx={{ mb: 2 }}>{formError}</Alert>}
             <form onSubmit={handleSubmit}>
               <Stack spacing={2}>
-                <TextField
-                  label="Delay (ms)"
-                  value={formDelay}
-                  onChange={e => setFormDelay(e.target.value)}
-                  size="small"
-                  fullWidth
-                />
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={formDebug}
-                      onChange={e => setFormDebug(e.target.checked)}
-                      color="primary"
+
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                    Modo
+                  </Typography>
+                  <ToggleButtonGroup
+                    value={formDebug ? 'debug' : 'produccion'}
+                    exclusive
+                    onChange={(_, v) => { if (v !== null) setFormDebug(v === 'debug'); }}
+                    size="small"
+                    fullWidth
+                  >
+                    <ToggleButton value="produccion" sx={{ flex: 1 }}>
+                      <span className="material-icons" style={{ fontSize: 16, mr: 0.5 }}>play_circle</span>
+                      &nbsp;Producción
+                    </ToggleButton>
+                    <ToggleButton value="debug" sx={{ flex: 1 }}>
+                      <span className="material-icons" style={{ fontSize: 16 }}>bug_report</span>
+                      &nbsp;Debug
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                </Box>
+
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                    Activar en clientes
+                  </Typography>
+                  <Stack direction="row" spacing={1}>
+                    <FormControlLabel
+                      control={
+                        <Switch checked={formRuido} onChange={e => setFormRuido(e.target.checked)} color="secondary" />
+                      }
+                      label="Motores"
                     />
-                  }
-                  label="Debug"
-                />
-                <Button type="submit" variant="contained" fullWidth>
-                  Aplicar
+                    <FormControlLabel
+                      control={
+                        <Switch checked={formPantalla} onChange={e => setFormPantalla(e.target.checked)} color="secondary" />
+                      }
+                      label="Pantallas"
+                    />
+                  </Stack>
+                </Box>
+
+                <Button type="submit" variant="contained" fullWidth
+                  startIcon={<span className="material-icons">send</span>}>
+                  Aplicar y reiniciar servidor
                 </Button>
+
               </Stack>
             </form>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent>
-            <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
-              Motores
-            </Typography>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={formRuido}
-                  onChange={handleRuido}
-                  color="secondary"
-                />
-              }
-              label="Ruido motores"
-            />
           </CardContent>
         </Card>
 

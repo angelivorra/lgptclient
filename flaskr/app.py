@@ -246,12 +246,13 @@ def create_app():
     @app.route('/', methods=(['POST']))
     def restart():
         app.logger.info('Restart')
-        delay = request.form.get('delay', type=int, default=0)
-        debug = request.form.get('debug', type=bool, default=False)
-        save_config_value("delay", delay)
-        save_config_value("debug", debug)
-        #subprocess.run(['sudo', 'pkill', '-f', 'lgpt.rpi-exe'])        
-        restart_service("lgpt")
+        debug    = request.form.get('debug',    type=str, default='false').lower() == 'true'
+        ruido    = request.form.get('ruido',    type=str, default='false').lower() == 'true'
+        pantalla = request.form.get('pantalla', type=str, default='false').lower() == 'true'
+        save_config_value("debug",    debug)
+        save_config_value("ruido",    ruido)
+        save_config_value("pantalla", pantalla)
+        restart_service("servidor")
         time.sleep(2)
         return jsonify({"status": "ok"})
 

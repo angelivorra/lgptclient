@@ -143,10 +143,10 @@ class MIDIClient:
         msg_type = parts[0]
         
         try:
-            if msg_type == 'CONFIG' and len(parts) >= 5:
-                debug = parts[2].lower() in ('1', 'true', 't', 'yes', 'y')
-                ruido = parts[3].lower() in ('1', 'true', 't', 'yes', 'y')
-                pantalla = parts[4].lower() in ('1', 'true', 't', 'yes', 'y')
+            if msg_type == 'CONFIG' and len(parts) >= 4:
+                debug    = parts[1].lower() in ('1', 'true', 't', 'yes', 'y')
+                ruido    = parts[2].lower() in ('1', 'true', 't', 'yes', 'y')
+                pantalla = parts[3].lower() in ('1', 'true', 't', 'yes', 'y')
                 logger.info(f"⚙️  CONFIG: debug={debug}, ruido={ruido}, pantalla={pantalla}")
                 
             elif msg_type == 'SYNC' and len(parts) >= 2:

@@ -140,7 +140,7 @@ async def handle_client(reader, writer):
     with open('/home/angel/lgptclient/bin/config.json') as f:
         config = json.load(f)
     
-    config_message = f"CONFIG,{config['delay']},{config['debug']},{config['ruido']},{config['pantalla']}\n"
+    config_message = f"CONFIG,{config['debug']},{config['ruido']},{config['pantalla']}\n"
     writer.write(config_message.encode())
     logger.info(f"{config_message.strip()}")
     # Enviar un SYNC inmediato para que el cliente pueda calibrar offset al inicio

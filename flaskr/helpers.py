@@ -84,10 +84,10 @@ def save_config(config, file_path='/home/angel/lgptclient/bin/config.json'):
 
 def save_config_value(key, value):
         config = read_config()
-        if "error" not in config:
-            config[key] = value
-            return save_config(config)
-        return {"error": "Unable to read config"}
+        if "error" in config:
+            config = {}
+        config[key] = value
+        return save_config(config)
 
 def restart_service(service_name):
     try:

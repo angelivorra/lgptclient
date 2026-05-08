@@ -15,7 +15,8 @@
       "Bash(python3)",
       "Bash(grep -n \"health\\\\|ping\\\\|available\\\\|is_active\\\\|devices\" /home/angel/lgptclient/flaskr/*.py)",
       "Bash(sed -n '155,200p' /home/angel/lgptclient/flaskr/app.py)",
-      "Bash(sed -n '330,360p' /home/angel/lgptclient/flaskr/app.py)"
+      "Bash(sed -n '330,360p' /home/angel/lgptclient/flaskr/app.py)",
+      "Bash(ls -la /home/angel/lgptclient/bin/config*.json)"
     ]
   }
 }
