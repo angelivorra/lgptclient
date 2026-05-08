@@ -102,6 +102,18 @@ async def handle_local_client(reader, writer):
                         await send_data(count=count, channels=[3, 4, 5], persecond=10)
                     except ValueError:
                         logger.error("Invalid count value for generate-data command")
+            elif message == "clients":
+                client_list = []
+                for c in clients:
+                    try:
+                        peername = c.get_extra_info('peername')
+                        if peername:
+                            client_list.append({"ip": peername[0], "port": peername[1]})
+                    except Exception:
+                        pass
+                response = json.dumps({"clients": client_list, "count": len(client_list)})
+                writer.write(response.encode())
+                await writer.drain()
     except Exception as e:
         logger.error(f"Error in local client handler: {e}")
     finally:

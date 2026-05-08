@@ -6,7 +6,7 @@ from collections import deque
 import threading
 
 from flask import Flask, redirect, render_template, current_app # Added current_app
-from helpers import check_service_status, get_devices, restart_service, save_config, read_config, save_config_value
+from helpers import check_service_status, get_devices, restart_service, save_config, read_config, save_config_value, get_midi_clients
 from flask import request
 from flask import jsonify
 import socket
@@ -328,4 +328,15 @@ def create_app():
             current_app.logger.error(f"Error in /robot_data endpoint: {str(e)}", exc_info=True)
             return jsonify({"error": "Internal server error", "message": str(e)}), 500
     
+    @app.route('/api/service-status', methods=['GET'])
+    def api_service_status():
+        is_active, _ = check_service_status("servidor")
+        midi_clients = get_midi_clients()
+        return jsonify({"is_active": is_active, "clients": midi_clients})
+
+    @app.route('/api/errors', methods=['GET'])
+    def api_errors():
+        _, error_logs = check_service_status("servidor", errors_only=True)
+        return jsonify({"errors": error_logs})
+
     return app

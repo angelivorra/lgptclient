@@ -2,6 +2,16 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Flask - Dev Server",
+      "type": "shell",
+      "command": "cd ${workspaceFolder}/flaskr && /home/angel/venvflask/bin/flask --app app run --host=0.0.0.0 --debug",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
       "label": "Stop servidor service",
       "type": "shell",
       "command": "sudo systemctl stop servidor.service",

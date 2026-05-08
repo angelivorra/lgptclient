@@ -10,22 +10,43 @@ IPS = [
     {'ip': '192.168.0.20', 'name': 'guitarra'},
 ]
 
-def check_service_status(service_name):
+def check_service_status(service_name, errors_only=False):
     try:
-        # Check if the service is active
         status_cmd = f'systemctl is-active {service_name}'
         status_result = subprocess.run(status_cmd.split(), capture_output=True, text=True)
         service_active = status_result.stdout.strip() == 'active'
-        
-        # Get the last lines of the service's log
-        log_cmd = f'sudo journalctl -u {service_name} -n 10 --no-pager'
+
+        if errors_only:
+            log_cmd = f'journalctl -u {service_name} -p err -n 20 --no-pager'
+        else:
+            log_cmd = f'journalctl -u {service_name} -n 10 --no-pager'
         log_result = subprocess.run(log_cmd.split(), capture_output=True, text=True)
         log_output = log_result.stdout.strip()
+
+        if errors_only and not log_output:
+            log_output = ""
 
         return service_active, log_output
 
     except Exception as e:
         return False, str(e)
+
+
+def get_midi_clients(socket_path='/tmp/copilot.sock'):
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(2.0)
+            s.connect(socket_path)
+            s.sendall(b"clients")
+            chunks = []
+            while True:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+        return json.loads(b"".join(chunks).decode()).get("clients", [])
+    except Exception:
+        return []
 
 
 def send_command_locally(cmd_data, socket_path='/tmp/copilot.sock'):
@@ -60,20 +81,19 @@ def save_config(config, file_path='/home/angel/lgptclient/bin/config.json'):
         return True
     except Exception as e:
         return {"error": str(e)}
-    
+
 def save_config_value(key, value):
         config = read_config()
         if "error" not in config:
             config[key] = value
             return save_config(config)
         return {"error": "Unable to read config"}
-    
+
 def restart_service(service_name):
     try:
-        # Restart the service
         restart_cmd = f'sudo systemctl restart {service_name}'
         restart_result = subprocess.run(restart_cmd.split(), capture_output=True, text=True)
-        
+
         if restart_result.returncode == 0:
             return True, "Service restarted successfully"
         else:
@@ -90,4 +110,4 @@ def get_devices():
     for row in r:
         extra_data = get_extra_device_data(row)
         row.update(extra_data)
-        return r
+    return r

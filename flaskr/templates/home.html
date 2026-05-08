@@ -1,194 +1,339 @@
 <!doctype html>
-<html lang="en">
+<html lang="es" data-theme="night">
 
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark" />
-  <link rel="stylesheet" href="{{ url_for('static', filename='pico.indigo.min.css') }}">
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
   <script src="{{ url_for('static', filename='jquery-3.7.1.min.js') }}"></script>
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32x32.png') }}">
   <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon-16x16.png') }}">
   <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='static.css') }}">
   <meta name="mobile-web-app-capable" content="yes">
-  <title>{{name}}</title>
+  <title>{{ name }}</title>
   <script>
     $(document).ready(function () {
-      const $form = $('#controlForm');
-      const $loadingIndicator = $('#loadingIndicator');
-      const $errorMessage = $('#error-message');
-      const $mainContent = $('main > section:not(#loadingIndicator)');
 
-      $loadingIndicator.hide();
-
-      $("#ruido").change(function() {
-        $.post("/ruido", { ruido: $(this).is(":checked") }, function() {
-          //location.reload();
-        });            
+      // --- Tabs ---
+      $('input[name="main-tabs"]').on('change', function () {
+        if ($(this).attr('id') === 'tab-servidor') {
+          loadServidor();
+        }
       });
 
+      // --- Ruido toggle ---
+      $("#ruido").change(function () {
+        $.post("/ruido", { ruido: $(this).is(":checked") });
+      });
+
+      // --- Velocidad test ---
       $('.velocidad-button').on('click', function () {
-        $mainContent.hide();
-        $loadingIndicator.show();
+        showLoading();
         $.post('/generadatos', { data: $('#envios').val() }, function () {
           location.href = '/testvelocidad/' + $('#envios').val();
         });
       });
+
+      // --- Device buttons ---
       $('.device-button').on('click', function () {
-        var deviceIp = $(this).data('ip');
-        //alert('Device IP: ' + deviceIp);
-        location.href = 'http://' + deviceIp + ':8080/robot';
+        location.href = 'http://' + $(this).data('ip') + ':8080/robot';
       });
 
+      // --- Bluetooth ---
       $('#bluetoothBtn').on('click', function () {
         var $btn = $(this);
         var $msg = $('#bluetooth-message');
-        
-        $btn.prop('disabled', true).attr('aria-busy', 'true').text('Conectando...');
-        $msg.hide();
-        
+        $btn.prop('disabled', true).addClass('loading');
+        $msg.addClass('hidden');
+
         $.ajax({
           url: '/bluetooth',
           method: 'POST',
           success: function (response) {
-            $msg.css('color', 'green').text(response.message || 'Conectado correctamente').show();
-            $btn.prop('disabled', false).removeAttr('aria-busy').text('Conectar Mando Bluetooth');
+            $msg.removeClass('hidden alert-error').addClass('alert-success')
+              .find('span').text(response.message || 'Conectado correctamente');
+            $msg.removeClass('hidden');
           },
           error: function (xhr) {
-            var errorMsg = 'Error al conectar';
-            if (xhr.responseJSON && xhr.responseJSON.message) {
-              errorMsg = xhr.responseJSON.message;
-            }
-            $msg.css('color', 'red').text(errorMsg).show();
-            $btn.prop('disabled', false).removeAttr('aria-busy').text('Conectar Mando Bluetooth');
+            var errorMsg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Error al conectar';
+            $msg.removeClass('hidden alert-success').addClass('alert-error')
+              .find('span').text(errorMsg);
+            $msg.removeClass('hidden');
+          },
+          complete: function () {
+            $btn.prop('disabled', false).removeClass('loading');
           }
         });
       });
 
-      $form.on('submit', function (e) {
+      // --- Config form ---
+      $('#controlForm').on('submit', function (e) {
         e.preventDefault();
-        console.log('Form submitted'); // Debug log
-
-        // Hide all sections except loading
-        $('section:not(#loadingIndicator)').hide();
-        $loadingIndicator.show();
-        console.log('Loading shown'); // Debug log        
-
+        showLoading();
         $.ajax({
           url: $(this).attr('action'),
           method: 'POST',
           data: $(this).serialize(),
-          success: function () {
-            location.reload();
-          },
+          success: function () { location.reload(); },
           error: function (xhr, status, error) {
-            $errorMessage.text(error).show();
-            $('section').show();
-            $loadingIndicator.hide();
+            hideLoading();
+            $('#form-error').text(error).removeClass('hidden');
           }
         });
       });
+
+      // --- Servidor tab data ---
+      function loadServidor() {
+        $('#servidor-loading').removeClass('hidden');
+        $('#servidor-content').addClass('hidden');
+
+        $.getJSON('/api/service-status', function (data) {
+          var $badge = $('#servidor-badge');
+          if (data.is_active) {
+            $badge.text('Activo').removeClass('badge-error').addClass('badge-success');
+          } else {
+            $badge.text('Inactivo').removeClass('badge-success').addClass('badge-error');
+          }
+
+          var $list = $('#clients-list');
+          $list.empty();
+          if (data.clients.length === 0) {
+            $list.append('<li class="text-base-content/50 text-sm">Sin clientes conectados</li>');
+          } else {
+            data.clients.forEach(function (c) {
+              $list.append(
+                '<li class="flex items-center gap-2 py-1">' +
+                '<span class="badge badge-success badge-xs"></span>' +
+                '<span class="font-mono text-sm">' + c.ip + ':' + c.port + '</span>' +
+                '</li>'
+              );
+            });
+          }
+        }).always(function () {
+          $.getJSON('/api/errors', function (data) {
+            if (data.errors) {
+              $('#error-log').text(data.errors);
+              $('#error-panel').removeClass('hidden');
+            } else {
+              $('#error-panel').addClass('hidden');
+            }
+          }).always(function () {
+            $('#servidor-loading').addClass('hidden');
+            $('#servidor-content').removeClass('hidden');
+          });
+        });
+      }
+
+      function showLoading() {
+        $('#loading-overlay').removeClass('hidden');
+      }
+      function hideLoading() {
+        $('#loading-overlay').addClass('hidden');
+      }
 
     });
   </script>
 </head>
 
-<body>
-  <header class="container">
-    <hgroup>
+<body class="min-h-screen bg-base-100">
+
+  <!-- Loading overlay -->
+  <div id="loading-overlay" class="hidden fixed inset-0 bg-base-300/80 flex items-center justify-center z-50">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <span class="ml-3 text-lg">Procesando...</span>
+  </div>
+
+  <!-- Navbar -->
+  <div class="navbar bg-base-300 sticky top-0 z-40 shadow-md">
+    <div class="navbar-start">
+      <span class="text-xl font-bold tracking-wide">{{ name }}</span>
+    </div>
+    <div class="navbar-end pr-2">
       {% if is_active %}
-      <h1>Movida</h1>
+      <span class="badge badge-success gap-1">
+        <span class="w-2 h-2 rounded-full bg-success-content inline-block"></span>
+        Online
+      </span>
       {% else %}
-      <h1>Error</h1>
+      <span class="badge badge-error gap-1">
+        <span class="w-2 h-2 rounded-full bg-error-content inline-block"></span>
+        Error
+      </span>
       {% endif %}
-      <p>Control remoto robots.</p>
-    </hgroup>
-  </header>
-  <main class="container">
+    </div>
+  </div>
 
-    <section id="loadingIndicator">      
-      <article aria-busy="true">Procesando</article>
-    </section>
+  <!-- Tabs -->
+  <div class="sticky top-14 z-30 bg-base-200 border-b border-base-300">
+    <div class="tabs tabs-bordered w-full justify-around">
+      <input type="radio" name="main-tabs" id="tab-robots" class="tab" aria-label="Robots" checked />
+      <input type="radio" name="main-tabs" id="tab-config" class="tab" aria-label="Config" />
+      <input type="radio" name="main-tabs" id="tab-servidor" class="tab" aria-label="Servidor" />
+    </div>
+  </div>
 
-    {% if devices %}
-    <section id="devices">
-      <p class="grid">
+  <!-- Tab content wrapper -->
+  <div class="p-4 max-w-2xl mx-auto">
+
+    <!-- TAB: Robots -->
+    <div class="tab-content" id="content-robots">
+
+      {% if devices %}
+      <div class="grid grid-cols-2 gap-3 mb-4">
         {% for device in devices %}
-        <button type="button" class="device-button" data-ip="{{ device.ip }}" title="{{ device.name }}" style="padding: 0.5rem;">
-          <img src="{{ url_for('static', filename=device.name + '.png') }}" alt="{{ device.name }}" style="width: 180px; height: 180px; object-fit: contain; display: block; margin: auto;">
-        </button>
+        <div class="card bg-base-200 cursor-pointer hover:bg-base-300 transition-colors device-button" data-ip="{{ device.ip }}">
+          <figure class="pt-4 px-4">
+            <img src="{{ url_for('static', filename=device.name + '.png') }}" alt="{{ device.name }}"
+              class="w-28 h-28 object-contain mx-auto" />
+          </figure>
+          <div class="card-body items-center text-center p-3 pt-2">
+            <h2 class="card-title text-sm capitalize">{{ device.name }}</h2>
+            <p class="text-xs text-base-content/50 font-mono">{{ device.ip }}</p>
+          </div>
+        </div>
         {% endfor %}
-      </p>
-    </section>
-    {% else %}
-    <section id="vacio">
-      <p>No hay na.</p>
-    </section>
-    {% endif %}
+      </div>
+      {% else %}
+      <div class="alert alert-warning mb-4">
+        <span>No hay dispositivos configurados.</span>
+      </div>
+      {% endif %}
 
-    <section id="bluetooth">
-      <h2>Bluetooth</h2>
-      <button type="button" class="bluetooth-button" id="bluetoothBtn">Conectar Mando Bluetooth</button>
-      <div id="bluetooth-message" style="margin-top: 1rem; display: none;"></div>
-    </section>
+      <!-- Bluetooth -->
+      <div class="card bg-base-200">
+        <div class="card-body p-4">
+          <h3 class="card-title text-base">Bluetooth</h3>
+          <button type="button" id="bluetoothBtn" class="btn btn-outline btn-sm w-full">
+            Conectar Mando
+          </button>
+          <div id="bluetooth-message" class="alert hidden mt-2">
+            <span></span>
+          </div>
+        </div>
+      </div>
 
-    <section id="control">
-      <h2>Configuración</h2>
+    </div>
 
-      <div id="error-message" class="error-message" style="display: none; color: red;"></div>
+    <!-- TAB: Config -->
+    <div class="tab-content hidden" id="content-config">
 
-      <form id="controlForm" action="{{ url_for('home') }}" method="post">
-        <fieldset>
-          <label for="delay">Delay (ms)
-            <input type="text" id="delay" name="delay" value="{{ config.delay }}" />
+      <div class="card bg-base-200 mb-4">
+        <div class="card-body p-4">
+          <h3 class="card-title text-base">Configuración</h3>
+          <div id="form-error" class="alert alert-error hidden mb-2"><span></span></div>
+
+          <form id="controlForm" action="{{ url_for('home') }}" method="post" class="space-y-3">
+            <div class="form-control">
+              <label class="label pb-1" for="delay">
+                <span class="label-text">Delay (ms)</span>
+              </label>
+              <input type="text" id="delay" name="delay" value="{{ config.delay }}"
+                class="input input-bordered input-sm w-full" />
+            </div>
+
+            <div class="form-control">
+              <label class="label cursor-pointer justify-start gap-3">
+                <input type="checkbox" role="switch" id="debug" name="debug"
+                  class="toggle toggle-sm toggle-primary" {% if config.debug %}checked{% endif %} />
+                <span class="label-text">Debug</span>
+              </label>
+            </div>
+
+            <button type="submit" id="submitBtn" class="btn btn-primary btn-sm w-full">Aplicar</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card bg-base-200 mb-4">
+        <div class="card-body p-4">
+          <h3 class="card-title text-base">Motores</h3>
+          <label class="label cursor-pointer justify-start gap-3">
+            <input type="checkbox" role="switch" id="ruido" name="ruido"
+              class="toggle toggle-sm toggle-secondary" {% if config.ruido %}checked{% endif %} />
+            <span class="label-text">Ruido motores</span>
           </label>
-          <label for="debug">
-            <input type="checkbox" role="switch" id="debug" name="debug" {% if config.debug %} checked {% endif %} />
-            Debug
-          </label>
-        </fieldset>
+        </div>
+      </div>
 
-        <input type="submit" value="Aplicar" id="submitBtn">
-      </form>
+      <div class="card bg-base-200">
+        <div class="card-body p-4">
+          <h3 class="card-title text-base">Sistema</h3>
+          <div class="text-sm text-base-content/70 font-mono">{{ current_time }}</div>
+          {% if audio %}
+          <div class="divider my-2 text-xs">Audio</div>
+          <pre class="text-xs bg-base-300 rounded p-2 overflow-x-auto whitespace-pre-wrap">{{ audio }}</pre>
+          {% endif %}
+        </div>
+      </div>
 
-      
-    </section>
+    </div>
 
-    <section id="test-ruido">
-      <h2>Motores</h2>
-      <fieldset>
-        <label for="ruido">Ruido
-          <input type="checkbox" role="switch" id="ruido" name="ruido" {% if config.ruido %} checked {% endif %} />
-        <script>
-          
-        </script>
-        </label>
-    </section>
+    <!-- TAB: Servidor -->
+    <div class="tab-content hidden" id="content-servidor">
 
-    <section id="fecha">
-      <fieldset>
-        <label for="fecha">Fecha
-          <input type="text" id="fecha" name="fecha" value="{{current_time}}" readonly/>
-        </label>
-    </section>
+      <!-- Loading skeleton -->
+      <div id="servidor-loading" class="space-y-3">
+        <div class="skeleton h-20 w-full rounded-xl"></div>
+        <div class="skeleton h-32 w-full rounded-xl"></div>
+      </div>
 
-    <section id="audio">
-      <h2>Audio</h2>
-      <article>
-        <pre>{{audio}}</pre>
-      </article>
-    </section>
+      <!-- Content (hidden until loaded) -->
+      <div id="servidor-content" class="hidden space-y-4">
 
-    <section id="servicio">
-      <h2>Servicio</h2>
-      <article>
-        <pre>{{logs}}</pre>
-      </article>
-    </section>
+        <!-- Estado del servicio -->
+        <div class="card bg-base-200">
+          <div class="card-body p-4">
+            <div class="flex items-center justify-between">
+              <h3 class="card-title text-base">server-midi</h3>
+              <span id="servidor-badge" class="badge badge-lg">--</span>
+            </div>
+          </div>
+        </div>
 
-  </main>
-  <footer></footer>
+        <!-- Clientes conectados -->
+        <div class="card bg-base-200">
+          <div class="card-body p-4">
+            <h3 class="card-title text-base mb-2">Clientes TCP</h3>
+            <ul id="clients-list" class="space-y-1">
+              <li class="text-base-content/50 text-sm">Cargando...</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Panel de errores (solo si hay errores) -->
+        <div id="error-panel" class="hidden">
+          <div class="alert alert-error">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+            <div class="w-full overflow-x-auto">
+              <p class="font-semibold text-sm mb-1">Errores del servicio</p>
+              <pre id="error-log" class="text-xs whitespace-pre-wrap font-mono"></pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Refresh -->
+        <button type="button" class="btn btn-outline btn-sm w-full"
+          onclick="$('input[name=main-tabs]#tab-servidor').trigger('change')">
+          Actualizar
+        </button>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Tab switching JS (CSS-only tabs need JS to show/hide content panels) -->
+  <script>
+    $('input[name="main-tabs"]').on('change', function () {
+      var id = $(this).attr('id').replace('tab-', 'content-');
+      $('.tab-content').addClass('hidden');
+      $('#' + id).removeClass('hidden');
+    });
+  </script>
+
 </body>
-
 </html>

@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Read(//home/angel/**)",
-      "Bash(ls -la /home/angel/lgptclient/bin/cliente*/)"
+      "Bash(ls -la /home/angel/lgptclient/bin/cliente*/)",
+      "Bash(/home/angel/venvflask/bin/flask --app app run --host=0.0.0.0 --debug --port 5001)",
+      "Bash(curl -s http://localhost:5001/ -o /dev/null -w \"%{http_code}\")",
+      "Bash(kill %1)"
     ]
   }
 }
