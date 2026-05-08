@@ -20,9 +20,12 @@ Protocolo de mensajes (ASCII, terminados en \\n):
   END,<server_ts_ms>
 """
 import asyncio
+import json
 import os
 import logging
 from pathlib import Path
+
+STATUS_FILE = "/tmp/cliente_status.json"
 
 # Configuración del servidor
 SERVER_HOST = os.environ.get("SERVER_HOST", "192.168.0.2")
@@ -96,6 +99,19 @@ class MIDIClient:
             base_delay_ms=1000
         )
     
+    def _write_status(self, debug: bool, ruido: bool, pantalla: bool):
+        """Escribe el estado actual en /tmp/cliente_status.json para que Flask lo lea."""
+        try:
+            with open(STATUS_FILE, 'w') as f:
+                json.dump({
+                    "nombre":   self.config.nombre,
+                    "debug":    debug,
+                    "ruido":    ruido,
+                    "pantalla": pantalla,
+                }, f)
+        except Exception as e:
+            logger.warning(f"No se pudo escribir estado: {e}")
+
     async def synchronize_system_time(self):
         """Sincroniza el reloj del sistema con el servidor usando ntpdate."""
         if not ENABLE_NTP_SYNC:
@@ -148,6 +164,9 @@ class MIDIClient:
                 ruido    = parts[2].lower() in ('1', 'true', 't', 'yes', 'y')
                 pantalla = parts[3].lower() in ('1', 'true', 't', 'yes', 'y')
                 logger.info(f"⚙️  CONFIG: debug={debug}, ruido={ruido}, pantalla={pantalla}")
+                logging.getLogger().setLevel(logging.DEBUG if debug else logging.INFO)
+                self.orchestrator.apply_config(debug, ruido, pantalla)
+                self._write_status(debug, ruido, pantalla)
                 
             elif msg_type == 'SYNC' and len(parts) >= 2:
                 logger.debug("SYNC ignorado")

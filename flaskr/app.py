@@ -1,4 +1,5 @@
 import csv
+import json
 import os
 import subprocess
 import time
@@ -344,6 +345,41 @@ def create_app():
     def api_health():
         name = subprocess.run(['hostname'], capture_output=True, text=True).stdout.strip()
         return jsonify({"status": "ok", "name": name, "timestamp": time.time()})
+
+    @app.route('/api/status', methods=['GET'])
+    def api_status():
+        try:
+            with open('/tmp/cliente_status.json') as f:
+                return jsonify(json.load(f))
+        except Exception:
+            return jsonify({"nombre": "", "debug": False, "ruido": True, "pantalla": True})
+
+    @app.route('/api/client-errors', methods=['GET'])
+    def api_client_errors():
+        is_active, _ = check_service_status("cliente")
+        # Logs solo de la invocación actual (desde el último arranque)
+        try:
+            inv_id = subprocess.run(
+                ['systemctl', 'show', 'cliente', '-p', 'InvocationID', '--value'],
+                capture_output=True, text=True
+            ).stdout.strip()
+            if inv_id:
+                result = subprocess.run(
+                    ['journalctl', f'_SYSTEMD_INVOCATION_ID={inv_id}',
+                     '-p', 'err', '--no-pager', '-n', '30'],
+                    capture_output=True, text=True
+                )
+                errors = result.stdout.strip()
+            else:
+                errors = ""
+        except Exception as e:
+            errors = str(e)
+        return jsonify({"is_active": is_active, "errors": errors})
+
+    @app.route('/restart-cliente', methods=['POST'])
+    def restart_cliente():
+        ok, msg = restart_service("cliente")
+        return jsonify({"ok": ok, "message": msg})
 
     @app.route('/api/devices-health', methods=['GET'])
     def api_devices_health():
