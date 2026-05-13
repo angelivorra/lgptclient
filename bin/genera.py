@@ -1,6 +1,7 @@
 import argparse
-import argparse
 import logging
+import random
+import colorsys
 import time
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -45,18 +46,24 @@ if not logger.handlers:
 logger.setLevel(logging.INFO)
 
 # -----------------------------------------------------------
+# Rutas relativas al repositorio (compatible Linux y Windows)
+# -----------------------------------------------------------
+_REPO_DIR = Path(__file__).resolve().parent.parent
+OUTPUT_BASE = _REPO_DIR / 'img_output'
+HELP_BASE = _REPO_DIR / 'ayuda_imagenes'
+ANIM_CONFIG_FILENAME = 'anim.cfg'
+
+# -----------------------------------------------------------
 # Configuración específica por terminal (extensible)
 # -----------------------------------------------------------
 DATOS_TERMINAL: Dict[str, Dict[str, Any]] = {
     "sombrilla": {"invert": True},
     "maleta": {"invert": False},
+    "ordenador": {"invert": False, "html": True},
 }
 
 # Config en uso durante la ejecución (se setea en main)
 CURRENT_CONFIG: Dict[str, Any] = {}
-OUTPUT_BASE = Path('/home/angel/lgptclient/img_output')  # Salida principal solicitada
-HELP_BASE = Path('/home/angel/lgptclient/ayuda_imagenes')  # Thumbnails + markdown
-ANIM_CONFIG_FILENAME = 'anim.cfg'  # Archivo esperado dentro de cada carpeta de animación
 
 
 class Cartera(Enum):  # alias semántico (evita conflicto con folder) (unused but placeholder)
@@ -164,6 +171,25 @@ def png_to_bin(img: Image.Image, bin_path: Path, width: int = 800, height: int =
         f.write(data)
 
 
+def _color_aleatorio_blanco() -> tuple:
+    """Devuelve un color RGB cercano al blanco con variación aleatoria de tono."""
+    h = random.random()
+    s = random.uniform(0, 0.30)
+    v = random.uniform(0.82, 1.0)
+    r, g, b = colorsys.hsv_to_rgb(h, s, v)
+    return (int(r * 255), int(g * 255), int(b * 255))
+
+
+def _dec_stem_a_hex(stem: str) -> str:
+    try:
+        n = int(stem)
+        if 0 <= n <= 255:
+            return f"{n:02X}"
+        return f"{n:X}"
+    except ValueError:
+        return stem
+
+
 # -----------------------------------------------------------
 # Detección de tipo de carpeta (extensible)
 # -----------------------------------------------------------
@@ -206,6 +232,10 @@ def detectar_tipo_carpeta(path: Path) -> CarpetaTipo:
 # -----------------------------------------------------------
 # Procesadores por tipo
 # -----------------------------------------------------------
+def _necesita_thumbs() -> bool:
+    return bool(CURRENT_CONFIG.get('markdown') or CURRENT_CONFIG.get('html'))
+
+
 def procesa_textos(path: Path) -> Dict:
     """Genera imágenes de texto usando fondo.png & fuente.ttf.
     Lista de palabras fija de ejemplo (puede venir de archivo 'textos')."""
@@ -220,22 +250,21 @@ def procesa_textos(path: Path) -> Dict:
         raise FileNotFoundError("Faltan fondo.png o fuente.ttf para textos")
     bg = Image.open(fondo).convert('RGBA')
     W, H = bg.size
-    
+
     out_dir = OUTPUT_BASE / CURRENT_CONFIG.get('terminal', 'default') / path.name
     vacia_carpeta(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     thumbs_dir = None
-    if CURRENT_CONFIG.get('markdown'):
+    if _necesita_thumbs():
         thumbs_dir = HELP_BASE / path.name
         if thumbs_dir.exists():
             vacia_carpeta(thumbs_dir)
         thumbs_dir.mkdir(parents=True, exist_ok=True)
-    margin_ratio = 0.1
-    max_w = W * (1 - 2 * margin_ratio)
-    max_h = H * (1 - 2 * margin_ratio)
     invert = bool(CURRENT_CONFIG.get("invert"))
-    # Ya no se empaquetan textos (solo animaciones requieren pack único)
     for idx, palabra in enumerate(palabras):
+        margin_ratio = 0.03 if len(palabra) > 7 else 0.1
+        max_w = W * (1 - 2 * margin_ratio)
+        max_h = H * (1 - 2 * margin_ratio)
         font_size = int(min(max_w, max_h))
         while font_size > 1:
             font = ImageFont.truetype(str(fuente), font_size)
@@ -262,12 +291,13 @@ def procesa_textos(path: Path) -> Dict:
         glow.putalpha(alpha)
         canvas = Image.alpha_composite(canvas, glow)
         draw2 = ImageDraw.Draw(canvas)
-        draw2.text((x, y), palabra, font=font, fill='white')
+        # Cada carácter con un color aleatorio cercano al blanco
+        for i, char in enumerate(palabra):
+            offset_x = int(draw2.textlength(palabra[:i], font=font))
+            draw2.text((x + offset_x, y), char, font=font, fill=_color_aleatorio_blanco())
         if invert:
             canvas = canvas.transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
-        # Numeración ascendente normal empezando en 000
         filename = f"{idx:03d}.png"
-        # Generar bin paralelo (no guardamos PNG en output)
         try:
             bin_path = out_dir / f"{filename.split('.')[0]}.bin"
             png_to_bin(canvas, bin_path)
@@ -296,12 +326,11 @@ def procesa_imagenes(path: Path) -> Dict:
     png_dir = path / 'png'
     if not png_dir.exists():
         return {"procesadas": 0, "razon": "No existe png/"}
-    # Salida: /home/angel/img_output/<terminal>/<XXX>/
     out_dir = OUTPUT_BASE / CURRENT_CONFIG.get('terminal', 'default') / path.name
     vacia_carpeta(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     thumbs_dir = None
-    if CURRENT_CONFIG.get('markdown'):
+    if _necesita_thumbs():
         thumbs_dir = HELP_BASE / path.name
         if thumbs_dir.exists():
             vacia_carpeta(thumbs_dir)
@@ -312,7 +341,6 @@ def procesa_imagenes(path: Path) -> Dict:
     procesadas = 0
     existentes = 0
     invert = bool(CURRENT_CONFIG.get("invert"))
-    # No se empaquetan imágenes individuales; solo animaciones
     for i in range(1, 1000):
         src = png_dir / f"{i:03d}.png"
         if not src.exists():
@@ -333,7 +361,6 @@ def procesa_imagenes(path: Path) -> Dict:
             if invert:
                 lienzo = lienzo.transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
             bin_dest = out_dir / f"{i:03d}.bin"
-            # Generar bin
             try:
                 png_to_bin(lienzo, bin_dest)
             except Exception as e:
@@ -358,12 +385,11 @@ def procesa_animaciones(path: Path) -> Dict:
     """Cada subcarpeta => animación, frames *.png -> se exportan centrados en canvas 800x480 si posible."""
     subdirs = [d for d in path.iterdir() if d.is_dir()]
     configs_copiados = 0
-    # Salida: /home/angel/img_output/<terminal>/<XXX>/animaciones/<animacion>/
     base_out = OUTPUT_BASE / CURRENT_CONFIG.get('terminal', 'default') / path.name
     vacia_carpeta(base_out)
     base_out.mkdir(parents=True, exist_ok=True)
     thumbs_root = None
-    if CURRENT_CONFIG.get('markdown'):
+    if _necesita_thumbs():
         thumbs_root = HELP_BASE / path.name
         if thumbs_root.exists():
             vacia_carpeta(thumbs_root)
@@ -382,7 +408,6 @@ def procesa_animaciones(path: Path) -> Dict:
         if thumbs_root is not None:
             anim_thumbs = thumbs_root / d.name
             anim_thumbs.mkdir(parents=True, exist_ok=True)
-        # Copiar archivo de config si existe
         cfg_src = d / ANIM_CONFIG_FILENAME
         if cfg_src.exists() and cfg_src.is_file():
             try:
@@ -397,8 +422,7 @@ def procesa_animaciones(path: Path) -> Dict:
                 img = img.resize((800, 480))
                 if invert:
                     img = img.transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
-                # Numeración desde 000
-                frame_num = idx  # 0-based -> 000,001,...
+                frame_num = idx
                 bin_dest = anim_dir / f"{frame_num:03d}.bin"
                 png_to_bin(img, bin_dest)
                 bin_paths.append(bin_dest)
@@ -412,13 +436,11 @@ def procesa_animaciones(path: Path) -> Dict:
                         prev.save(anim_thumbs / f"{frame_num:03d}.png")
                     except Exception as e_prev:
                         logger.warning(f"Miniatura frame fallo {frame_num:03d}: {e_prev}")
-                # Progreso (humano) 1-based para legibilidad
                 if (idx + 1) % 25 == 0 or (idx + 1) == len(frames):
                     logger.debug(f"Anim {d.name}: frame {idx + 1}/{len(frames)} (archivo {frame_num:03d}.bin)")
                 frames_total += 1
             except Exception as e:
                 logger.error(f"Frame {frame} error: {e}")
-        # Crear pack
         if bin_paths:
             crear_pack(bin_paths, anim_dir, pack_name='pack.bin')
     return {"animaciones": animaciones, "frames": frames_total, "configs": configs_copiados, "out": str(base_out)}
@@ -460,42 +482,40 @@ def recorrer_images(root: Path) -> List[ProcesamientoResultado]:
 def main():
     parser = argparse.ArgumentParser(description='Generador nuevo estructura por terminal')
     parser.add_argument('terminal', help=f"Terminal destino ({', '.join(DATOS_TERMINAL.keys())})")
-    parser.add_argument('--images-root', default='/home/angel/lgptclient/images', help='Ruta base images/')
-    parser.add_argument('--debug', action='store_true')    
+    parser.add_argument('--images-root', default=str(_REPO_DIR / 'images'), help='Ruta base images/')
+    parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
     terminal = args.terminal.lower()
     if terminal not in DATOS_TERMINAL:
         raise SystemExit(f"Terminal desconocido: {terminal}. Opciones: {', '.join(DATOS_TERMINAL)}")
     global CURRENT_CONFIG
-    CURRENT_CONFIG = dict(DATOS_TERMINAL[terminal])  # copia
+    CURRENT_CONFIG = dict(DATOS_TERMINAL[terminal])
     CURRENT_CONFIG['terminal'] = terminal
     if args.debug:
         logger.setLevel(logging.DEBUG)
-    # Propagar flag markdown para que los procesadores generen miniaturas
     if terminal == 'maleta':
         CURRENT_CONFIG['markdown'] = True
-    else:
-        logger.info("--markdown ignorado: solo se generan markdowns para terminal 'maleta'")
-    # Empaquetado de animaciones siempre activo, no necesita flag
-    images_root = Path(args.images_root)
-    if not images_root.exists():
-        raise SystemExit(f"No existe: {images_root}")
-    # Limpiar carpeta de salida del terminal antes de generar
-    terminal_output_dir = Path('/home/angel/img_output') / terminal
+    elif not CURRENT_CONFIG.get('html'):
+        logger.info("Sin generación de ayuda para este terminal")
+    terminal_output_dir = OUTPUT_BASE / terminal
     if terminal_output_dir.exists():
         logger.info(f"Vaciando salida previa: {terminal_output_dir}")
         vacia_carpeta(terminal_output_dir)
     terminal_output_dir.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Procesando root: {images_root} para terminal '{terminal}' (invert={CURRENT_CONFIG.get('invert')})")
+    logger.info(f"Procesando root: {args.images_root} para terminal '{terminal}' (invert={CURRENT_CONFIG.get('invert')})")
     logger.debug(f"CONFIG ACTUAL: {CURRENT_CONFIG}")
     t0 = time.perf_counter()
-    resultados = recorrer_images(images_root)
-    # Generar markdown si se solicita
+    resultados = recorrer_images(Path(args.images_root))
     if CURRENT_CONFIG.get('markdown') and terminal == 'maleta':
         try:
             generar_markdown_ayuda(resultados)
         except Exception as e:
             logger.error(f"Error generando markdown de ayuda: {e}")
+    if CURRENT_CONFIG.get('html'):
+        try:
+            generar_html_ayuda(resultados)
+        except Exception as e:
+            logger.error(f"Error generando HTML de ayuda: {e}")
     total = time.perf_counter() - t0
     logger.info("Resumen:")
     for r in resultados:
@@ -506,22 +526,10 @@ def main():
 
 
 # -----------------------------------------------------------
-# Markdown de ayuda
+# Markdown de ayuda (terminal: maleta)
 # -----------------------------------------------------------
 def generar_markdown_ayuda(resultados: List[ProcesamientoResultado]):
-    """Genera 001.md, 002.md, ... usando miniaturas previamente creadas en HELP_BASE.
-    No copia ni recrea PNGs; simplemente referencia las miniaturas.
-    Para IMAGENES / TEXTOS: thumbnails en HELP_BASE/<carpeta>/xxx.png (300px de ancho aprox).
-    Para ANIMACIONES: thumbnails en HELP_BASE/<carpeta>/<anim>/<frame>.png
-    """
-    def dec_stem_a_hex(stem: str) -> str:
-        try:
-            n = int(stem)
-            if 0 <= n <= 255:
-                return f"{n:02X}"          # 0..255 -> 00..FF
-            return f"{n:X}"                # fuera de rango: hex sin padding
-        except ValueError:
-            return stem                     # no numérico, deja igual
+    """Genera 001.md, 002.md, ... usando miniaturas previamente creadas en HELP_BASE."""
     ayuda_root = HELP_BASE
     ayuda_root.mkdir(parents=True, exist_ok=True)
     for res in resultados:
@@ -565,7 +573,7 @@ def generar_markdown_ayuda(resultados: List[ProcesamientoResultado]):
             for anim in sorted(anims):
                 carpeta_hex = f"{int(carpeta_id):02X}"
                 stem_hex = f"{int(anim.name):02X}"
-                etiqueta = f"{carpeta_hex}{stem_hex}" 
+                etiqueta = f"{carpeta_hex}{stem_hex}"
                 secciones.append(f"\n## {etiqueta}")
                 frames = sorted(anim.glob('*.png'))
                 if not frames:
@@ -575,7 +583,7 @@ def generar_markdown_ayuda(resultados: List[ProcesamientoResultado]):
                 columnas = 8
                 row = []
                 for frame in frames:
-                    etiqueta = dec_stem_a_hex(frame.stem)
+                    etiqueta = _dec_stem_a_hex(frame.stem)
                     rel = f"{carpeta_id}/{anim.name}/{frame.name}"
                     row.append(
                         f"<td style='padding:2px;font-size:12px;font-family:monospace'>{etiqueta}<br>"
@@ -594,6 +602,112 @@ def generar_markdown_ayuda(resultados: List[ProcesamientoResultado]):
         md_path.write_text('\n\n'.join(secciones), encoding='utf-8')
         logger.info(f"Markdown ayuda generado: {md_path}")
 
+
+# -----------------------------------------------------------
+# HTML de ayuda (terminal: ordenador)
+# -----------------------------------------------------------
+def generar_html_ayuda(resultados: List[ProcesamientoResultado]):
+    """Genera index.html en HELP_BASE con miniaturas visuales para el terminal ordenador."""
+    ayuda_root = HELP_BASE
+    ayuda_root.mkdir(parents=True, exist_ok=True)
+
+    nav_links = []
+    sections = []
+
+    for res in resultados:
+        carpeta_id = res.carpeta.name
+        thumbs_dir = ayuda_root / carpeta_id
+        if not thumbs_dir.exists():
+            logger.warning(f"No hay miniaturas para {carpeta_id}, se omite en HTML")
+            continue
+
+        carpeta_hex = f"{int(carpeta_id):02X}"
+        nav_links.append(f'<a href="#c{carpeta_id}">{carpeta_id} ({carpeta_hex})</a>')
+
+        sec = [f'<section id="c{carpeta_id}">',
+               f'<h2>{carpeta_id} &mdash; {carpeta_hex} &mdash; {res.tipo.name}</h2>']
+
+        if res.tipo in (CarpetaTipo.IMAGENES, CarpetaTipo.TEXTOS):
+            pngs = sorted(thumbs_dir.glob('*.png'))
+            sec.append('<div class="grid">')
+            for png in pngs:
+                stem_hex = f"{int(png.stem):02X}"
+                etiqueta = f"{carpeta_hex}{stem_hex}"
+                rel = f"{carpeta_id}/{png.name}"
+                sec.append(
+                    f'<div class="cell">'
+                    f'<span class="label">{etiqueta}</span>'
+                    f'<img src="{rel}" width="300"/>'
+                    f'</div>'
+                )
+            sec.append('</div>')
+
+        elif res.tipo == CarpetaTipo.ANIMACIONES:
+            anims = sorted(d for d in thumbs_dir.iterdir() if d.is_dir())
+            for anim in anims:
+                anim_hex = f"{int(anim.name):02X}"
+                anim_etiqueta = f"{carpeta_hex}{anim_hex}"
+                sec.append(f'<h3>{anim_etiqueta}</h3>')
+                frames = sorted(anim.glob('*.png'))
+                if not frames:
+                    sec.append('<p>(Sin frames)</p>')
+                    continue
+                sec.append('<div class="grid">')
+                for frame in frames:
+                    f_hex = _dec_stem_a_hex(frame.stem)
+                    rel = f"{carpeta_id}/{anim.name}/{frame.name}"
+                    sec.append(
+                        f'<div class="cell small">'
+                        f'<span class="label">{f_hex}</span>'
+                        f'<img src="{rel}" width="120"/>'
+                        f'</div>'
+                    )
+                sec.append('</div>')
+
+        sec.append('</section>')
+        sections.append('\n'.join(sec))
+
+    html = """\
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ayuda imágenes — ordenador</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: monospace; background: #111; color: #ddd; padding: 24px; }
+  h1 { color: #fff; font-size: 1.6em; margin-bottom: 16px; }
+  h2 { color: #9cf; font-size: 1.2em; border-bottom: 1px solid #333;
+       padding-bottom: 6px; margin: 32px 0 12px; }
+  h3 { color: #7af; font-size: 1em; margin: 20px 0 8px; }
+  nav { margin-bottom: 28px; line-height: 2; }
+  nav a { color: #6bf; margin-right: 14px; text-decoration: none; }
+  nav a:hover { color: #fff; }
+  .grid { display: flex; flex-wrap: wrap; gap: 10px; }
+  .cell { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 6px;
+          padding: 8px; text-align: center; }
+  .cell.small { padding: 4px; }
+  .label { display: block; font-size: 13px; color: #aaa; margin-bottom: 4px; }
+  .cell.small .label { font-size: 11px; }
+  img { display: block; border-radius: 3px; }
+  section { margin-bottom: 20px; }
+</style>
+</head>
+<body>
+<h1>Ayuda Imágenes &mdash; ordenador</h1>
+<nav>
+""" + '\n'.join(nav_links) + """
+</nav>
+""" + '\n\n'.join(sections) + """
+</body>
+</html>
+"""
+
+    html_path = ayuda_root / 'index.html'
+    html_path.write_text(html, encoding='utf-8')
+    logger.info(f"HTML ayuda generado: {html_path}")
+
+
 if __name__ == '__main__':
     main()
-

@@ -17,7 +17,8 @@
       "Bash(sed -n '155,200p' /home/angel/lgptclient/flaskr/app.py)",
       "Bash(sed -n '330,360p' /home/angel/lgptclient/flaskr/app.py)",
       "Bash(ls -la /home/angel/lgptclient/bin/config*.json)",
-      "Bash(file /home/angel/lgptclient/images/003/003/*.bin)"
+      "Bash(file /home/angel/lgptclient/images/003/003/*.bin)",
+      "PowerShell(& \"C:\\\\Users\\\\angel\\\\lgptclient\\\\midi_monitor\\\\venv\\\\Scripts\\\\python.exe\" -c \"import PIL; print\\(PIL.__version__\\)\")"
     ]
   }
 }

@@ -60,6 +60,28 @@
         "reveal": "always",
         "panel": "new"
       }
+    },
+    {
+      "label": "Genera Imágenes",
+      "type": "shell",
+      "command": "${workspaceFolder}/venv/bin/python ${workspaceFolder}/bin/genera.py ${input:terminal}",
+      "windows": {
+        "command": "& \"${workspaceFolder}\\midi_monitor\\venv\\Scripts\\python.exe\" \"${workspaceFolder}\\bin\\genera.py\" ${input:terminal}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "terminal",
+      "type": "pickString",
+      "description": "Terminal destino",
+      "options": ["ordenador", "maleta", "sombrilla"],
+      "default": "ordenador"
     }
   ]
 }
