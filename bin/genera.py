@@ -59,7 +59,7 @@ ANIM_CONFIG_FILENAME = 'anim.cfg'
 DATOS_TERMINAL: Dict[str, Dict[str, Any]] = {
     "sombrilla": {"invert": True},
     "maleta": {"invert": False},
-    "ordenador": {"invert": False, "html": True},
+    "ordenador": {"invert": False},
 }
 
 # Config en uso durante la ejecución (se setea en main)
@@ -233,7 +233,7 @@ def detectar_tipo_carpeta(path: Path) -> CarpetaTipo:
 # Procesadores por tipo
 # -----------------------------------------------------------
 def _necesita_thumbs() -> bool:
-    return bool(CURRENT_CONFIG.get('markdown') or CURRENT_CONFIG.get('html'))
+    return bool(CURRENT_CONFIG.get('markdown'))
 
 
 def procesa_textos(path: Path) -> Dict:
@@ -493,10 +493,8 @@ def main():
     CURRENT_CONFIG['terminal'] = terminal
     if args.debug:
         logger.setLevel(logging.DEBUG)
-    if terminal == 'maleta':
+    if terminal in ('maleta', 'ordenador'):
         CURRENT_CONFIG['markdown'] = True
-    elif not CURRENT_CONFIG.get('html'):
-        logger.info("Sin generación de ayuda para este terminal")
     terminal_output_dir = OUTPUT_BASE / terminal
     if terminal_output_dir.exists():
         logger.info(f"Vaciando salida previa: {terminal_output_dir}")
@@ -506,16 +504,11 @@ def main():
     logger.debug(f"CONFIG ACTUAL: {CURRENT_CONFIG}")
     t0 = time.perf_counter()
     resultados = recorrer_images(Path(args.images_root))
-    if CURRENT_CONFIG.get('markdown') and terminal == 'maleta':
+    if CURRENT_CONFIG.get('markdown'):
         try:
             generar_markdown_ayuda(resultados)
         except Exception as e:
             logger.error(f"Error generando markdown de ayuda: {e}")
-    if CURRENT_CONFIG.get('html'):
-        try:
-            generar_html_ayuda(resultados)
-        except Exception as e:
-            logger.error(f"Error generando HTML de ayuda: {e}")
     total = time.perf_counter() - t0
     logger.info("Resumen:")
     for r in resultados:
@@ -601,113 +594,6 @@ def generar_markdown_ayuda(resultados: List[ProcesamientoResultado]):
                 secciones.append('</table>')
         md_path.write_text('\n\n'.join(secciones), encoding='utf-8')
         logger.info(f"Markdown ayuda generado: {md_path}")
-
-
-# -----------------------------------------------------------
-# HTML de ayuda (terminal: ordenador)
-# -----------------------------------------------------------
-def generar_html_ayuda(resultados: List[ProcesamientoResultado]):
-    """Genera index.html en HELP_BASE con miniaturas visuales para el terminal ordenador."""
-    ayuda_root = HELP_BASE
-    ayuda_root.mkdir(parents=True, exist_ok=True)
-
-    nav_links = []
-    sections = []
-
-    for res in resultados:
-        carpeta_id = res.carpeta.name
-        thumbs_dir = ayuda_root / carpeta_id
-        if not thumbs_dir.exists():
-            logger.warning(f"No hay miniaturas para {carpeta_id}, se omite en HTML")
-            continue
-
-        carpeta_hex = f"{int(carpeta_id):02X}"
-        nav_links.append(f'<a href="#c{carpeta_id}">{carpeta_id} ({carpeta_hex})</a>')
-
-        sec = [f'<section id="c{carpeta_id}">',
-               f'<h2>{carpeta_id} &mdash; {carpeta_hex} &mdash; {res.tipo.name}</h2>']
-
-        if res.tipo in (CarpetaTipo.IMAGENES, CarpetaTipo.TEXTOS):
-            pngs = sorted(thumbs_dir.glob('*.png'))
-            sec.append('<div class="grid">')
-            for png in pngs:
-                stem_hex = f"{int(png.stem):02X}"
-                etiqueta = f"{carpeta_hex}{stem_hex}"
-                rel = f"{carpeta_id}/{png.name}"
-                sec.append(
-                    f'<div class="cell">'
-                    f'<span class="label">{etiqueta}</span>'
-                    f'<img src="{rel}" width="300"/>'
-                    f'</div>'
-                )
-            sec.append('</div>')
-
-        elif res.tipo == CarpetaTipo.ANIMACIONES:
-            anims = sorted(d for d in thumbs_dir.iterdir() if d.is_dir())
-            for anim in anims:
-                anim_hex = f"{int(anim.name):02X}"
-                anim_etiqueta = f"{carpeta_hex}{anim_hex}"
-                sec.append(f'<h3>{anim_etiqueta}</h3>')
-                frames = sorted(anim.glob('*.png'))
-                if not frames:
-                    sec.append('<p>(Sin frames)</p>')
-                    continue
-                sec.append('<div class="grid">')
-                for frame in frames:
-                    f_hex = _dec_stem_a_hex(frame.stem)
-                    rel = f"{carpeta_id}/{anim.name}/{frame.name}"
-                    sec.append(
-                        f'<div class="cell small">'
-                        f'<span class="label">{f_hex}</span>'
-                        f'<img src="{rel}" width="120"/>'
-                        f'</div>'
-                    )
-                sec.append('</div>')
-
-        sec.append('</section>')
-        sections.append('\n'.join(sec))
-
-    html = """\
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ayuda imágenes — ordenador</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: monospace; background: #111; color: #ddd; padding: 24px; }
-  h1 { color: #fff; font-size: 1.6em; margin-bottom: 16px; }
-  h2 { color: #9cf; font-size: 1.2em; border-bottom: 1px solid #333;
-       padding-bottom: 6px; margin: 32px 0 12px; }
-  h3 { color: #7af; font-size: 1em; margin: 20px 0 8px; }
-  nav { margin-bottom: 28px; line-height: 2; }
-  nav a { color: #6bf; margin-right: 14px; text-decoration: none; }
-  nav a:hover { color: #fff; }
-  .grid { display: flex; flex-wrap: wrap; gap: 10px; }
-  .cell { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 6px;
-          padding: 8px; text-align: center; }
-  .cell.small { padding: 4px; }
-  .label { display: block; font-size: 13px; color: #aaa; margin-bottom: 4px; }
-  .cell.small .label { font-size: 11px; }
-  img { display: block; border-radius: 3px; }
-  section { margin-bottom: 20px; }
-</style>
-</head>
-<body>
-<h1>Ayuda Imágenes &mdash; ordenador</h1>
-<nav>
-""" + '\n'.join(nav_links) + """
-</nav>
-""" + '\n\n'.join(sections) + """
-</body>
-</html>
-"""
-
-    html_path = ayuda_root / 'index.html'
-    html_path.write_text(html, encoding='utf-8')
-    logger.info(f"HTML ayuda generado: {html_path}")
-
 
 if __name__ == '__main__':
     main()
