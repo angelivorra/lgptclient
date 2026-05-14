@@ -200,7 +200,11 @@ class MIDIClient:
             elif msg_type == 'END' and len(parts) >= 2:
                 server_ts_ms = int(parts[1])
                 self.orchestrator.handle_end(server_ts_ms)
-                
+
+            elif msg_type == 'BPM' and len(parts) >= 3:
+                bpm = float(parts[2])
+                logger.info(f"🎵 BPM: {bpm}")
+
             else:
                 logger.debug(f"Mensaje desconocido o incompleto: {line}")
                 
