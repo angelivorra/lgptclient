@@ -32,12 +32,10 @@ Respuesta a: "¿Qué puerto le pongo a LGPT?"
 from __future__ import annotations
 
 import asyncio
-import collections
 import contextlib
 import csv
 import os
 import socket
-import time
 import logging
 from datetime import datetime
 import json
@@ -52,6 +50,7 @@ from alsa_midi import (
     StopEvent,
     StartEvent,
     ControlChangeEvent,
+    ProgramChangeEvent,
     ClockEvent,
     PortSubscribedEvent,
     PortUnsubscribedEvent,
@@ -80,11 +79,6 @@ logging.basicConfig(
 )
 
 clients: list[asyncio.StreamWriter] = []
-
-# BPM calculation from MIDI Clock (24 pulses per beat)
-_clock_mono_ts: collections.deque = collections.deque(maxlen=49)  # 48 intervals = 2 beats
-_current_bpm: float | None = None
-_BPM_THRESHOLD = 0.5  # minimum BPM change to broadcast
 
 def initialize_csv(filename):
     """Initialize CSV file with headers if it doesn't exist."""
@@ -272,44 +266,7 @@ def auto_connect_source(port):
             logger.warning(f"Fallo autoconexión fallback Midi Through: {e}")
     logger.info("No se realizó autoconexión (sin source, pattern ni fallback válido)")
 
-async def broadcast_bpm(ts: int, bpm: float):
-    msg = f"BPM,{ts},{bpm:.1f}\n"
-    logger.info(f"TX {msg.strip()}")
-    dead = []
-    for c in clients:
-        try:
-            c.write(msg.encode())
-            await c.drain()
-        except Exception:
-            dead.append(c)
-    for d in dead:
-        if d in clients:
-            clients.remove(d)
-
-
-async def on_clock_event():
-    global _current_bpm
-    now_mono = time.monotonic() * 1000
-    # Si hay un salto largo entre pulsos (>2s), LGPT reinició — descartamos la ventana
-    if _clock_mono_ts and (now_mono - _clock_mono_ts[-1]) > 2000:
-        _clock_mono_ts.clear()
-        _current_bpm = None
-    _clock_mono_ts.append(now_mono)
-    if len(_clock_mono_ts) < 25:  # necesitamos al menos 24 intervalos (1 beat)
-        return
-    intervals = [_clock_mono_ts[i] - _clock_mono_ts[i - 1] for i in range(1, len(_clock_mono_ts))]
-    avg_ms = sum(intervals) / len(intervals)
-    if avg_ms <= 0:
-        return
-    bpm = round(60_000.0 / (avg_ms * 24), 1)
-    if _current_bpm is None or abs(bpm - _current_bpm) >= _BPM_THRESHOLD:
-        _current_bpm = bpm
-        ts = int(datetime.now().timestamp() * 1000)
-        await broadcast_bpm(ts, bpm)
-
-
 async def broadcast_event(event):
-    global _current_bpm
     ts = int(datetime.now().timestamp() * 1000)
     msg = None
     if isinstance(event, NoteOnEvent):
@@ -319,12 +276,11 @@ async def broadcast_event(event):
     elif isinstance(event, ControlChangeEvent):
         if event.param != 7:
             msg = f"CC,{ts},{event.value},{event.channel},{event.param}\n"  # valor, canal, controlador
+    elif isinstance(event, ProgramChangeEvent):
+        msg = f"BPM,{ts},{event.value}\n"
     elif isinstance(event, StartEvent):
-        bpm_field = f",{int(_current_bpm)}" if _current_bpm is not None else ""
-        msg = f"START,{ts}{bpm_field}\n"
+        msg = f"START,{ts}\n"
     elif isinstance(event, StopEvent):
-        _clock_mono_ts.clear()
-        _current_bpm = None
         msg = f"END,{ts}\n"
     if not msg:
         return
@@ -414,12 +370,11 @@ async def main():
                 if isinstance(event, ClockEvent):
                     if os.environ.get("LOG_CLOCK") == "1":
                         logger.debug(f"ClockEvent")
-                    await on_clock_event()
                     continue
                 # Solo log útil
                 logger.debug(f"RX {event.__class__.__name__}: {event!r}")
 
-                if isinstance(event, (NoteOnEvent, ControlChangeEvent, StartEvent, StopEvent)):
+                if isinstance(event, (NoteOnEvent, ControlChangeEvent, ProgramChangeEvent, StartEvent, StopEvent)):
                     await broadcast_event(event)
         finally:
             hb.cancel()
