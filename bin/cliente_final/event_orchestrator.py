@@ -23,9 +23,11 @@ from status_screen import StatusScreenRunner
 
 logger = logging.getLogger("cliente.orchestrator")
 
-# Animación mostrada en idle de producción (CC y value dentro de /images/)
-PRODUCTION_IDLE_CC    = 3
-PRODUCTION_IDLE_VALUE = 1
+# Modos de pantalla (CC = carpeta, VALUE = subcarpeta dentro de /images/)
+IDLE_CC           = 3  # Conectado, no reproduciendo  → 003/003
+IDLE_VALUE        = 3
+DISCONNECTED_CC   = 3  # Sin conexión al servidor     → 003/001
+DISCONNECTED_VALUE = 1
 
 
 class EventOrchestrator:
@@ -52,7 +54,11 @@ class EventOrchestrator:
         self._ruido    = True   # False → no activar GPIO
         self._pantalla = True   # False → no actualizar display
 
-        # Estado del bucle de animación idle de producción
+        # Estado de conexión y reproducción
+        self._connected = False  # True → conectado al servidor
+        self._playing   = False  # True → reproduciendo una canción (entre START y STOP/END)
+
+        # Estado del bucle de animación idle
         self._idle_thread: Optional[threading.Thread] = None
         self._idle_stop   = threading.Event()
 
@@ -91,21 +97,31 @@ class EventOrchestrator:
         logger.info(f"⚙️  Config aplicada: debug={debug}, ruido={ruido}, pantalla={pantalla}")
 
     def set_connection_status(self, connected: bool, host: str = "", port: int = 0):
-        """Actualiza el estado de conexión en la pantalla de estado."""
+        """Actualiza el estado de conexión y cambia la animación idle si no se está reproduciendo."""
         self.status_runner.set_connection_status(connected, host, port)
+        if connected != self._connected:
+            self._connected = connected
+            if not self._playing:
+                self._show_idle()
 
     # ── Gestión de idle ───────────────────────────────────────────────────────
 
     def _show_idle(self):
-        """Muestra la pantalla idle según el modo activo."""
+        """Muestra la pantalla según el modo activo:
+        - debug=True       → pantalla de estado
+        - connected=True   → animación idle (003/003)
+        - connected=False  → animación desconectado (003/001)
+        """
         self._stop_production_idle()
         if self._debug:
             self.start_status_screen()
+        elif self._connected:
+            self._start_idle_animation(IDLE_CC, IDLE_VALUE, "idle")
         else:
-            self._start_production_idle()
+            self._start_idle_animation(DISCONNECTED_CC, DISCONNECTED_VALUE, "desconectado")
 
-    def _start_production_idle(self):
-        """Arranca el bucle de animación idle de producción."""
+    def _start_idle_animation(self, cc: int, value: int, mode_name: str):
+        """Arranca el bucle de animación idle para el modo dado."""
         if not self._pantalla:
             return
 
@@ -115,12 +131,10 @@ class EventOrchestrator:
             self.status_runner.stop()
             self.display_executor.resume()
 
-        anim_config = self.media_manager.get_animation(
-            PRODUCTION_IDLE_CC, PRODUCTION_IDLE_VALUE
-        )
+        anim_config = self.media_manager.get_animation(cc, value)
         if anim_config is None:
             logger.warning(
-                f"⚠️  Animación de producción {PRODUCTION_IDLE_CC:03d}/{PRODUCTION_IDLE_VALUE:03d} "
+                f"⚠️  Animación {mode_name} {cc:03d}/{value:03d} "
                 "no encontrada — usando pantalla de estado"
             )
             self.start_status_screen()
@@ -136,10 +150,7 @@ class EventOrchestrator:
 
         self._idle_thread = threading.Thread(target=_loop, daemon=True, name="idle-anim")
         self._idle_thread.start()
-        logger.info(
-            f"🎬 Animación idle de producción activa "
-            f"(CC {PRODUCTION_IDLE_CC:03d}/{PRODUCTION_IDLE_VALUE:03d})"
-        )
+        logger.info(f"🎬 Animación {mode_name} activa ({cc:03d}/{value:03d})")
 
     def _stop_production_idle(self):
         """Detiene el bucle de animación idle de producción."""
@@ -271,6 +282,7 @@ class EventOrchestrator:
 
     def handle_start(self, server_ts_ms: int):
         logger.info(f"▶️  START recibido (ts={server_ts_ms}) - Iniciando canción")
+        self._playing = True
         self._stop_production_idle()
         if self._status_screen_active:
             self.stop_status_screen()
@@ -283,10 +295,12 @@ class EventOrchestrator:
             f"⏹️  STOP recibido (ts={server_ts_ms}) - "
             f"Cola limpiada: {cancelled} eventos cancelados"
         )
+        self._playing = False
         self._show_idle()
 
     def handle_end(self, server_ts_ms: int):
         logger.info(f"⏹️  END recibido (ts={server_ts_ms}) - Canción terminada")
+        self._playing = False
         self._show_idle()
 
     def cleanup(self):

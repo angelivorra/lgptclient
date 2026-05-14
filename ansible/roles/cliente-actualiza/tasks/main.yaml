@@ -1,19 +1,12 @@
 ---
-- name: Stop cliente service
+- name: Stop services
   become: true
   service:
-    name: cliente
+    name: "{{ item }}"
     state: stopped
     enabled: no
+  loop: [cliente, display]
   ignore_errors: yes
-
-- name: Stop display service
-  become: true
-  service:
-    name: display
-    state: stopped
-    enabled: no
-  ignore_errors: yes  
 
 - name: Remove existing venv directory
   file:
@@ -39,28 +32,16 @@
   pip:
     requirements: /home/angel/requirements.txt
     virtualenv: /home/angel/venv
+    extra_args: "--cache-dir /home/angel/.pip-cache"
   when: entorno_python | default(false) | bool
 
-- name: Remove bin directory
-  become: true
-  file:
-    path: /home/angel/bin/
-    state: absent
-
-- name: Create bin directory
-  file:
-    path: /home/angel/bin/
-    state: directory
-    owner: angel
-    group: angel
-    mode: '0755'
-
-- name: Copy client files
-  ansible.builtin.copy:
+- name: Sync client files
+  synchronize:
     src: /home/angel/lgptclient/bin/cliente_final/
     dest: /home/angel/bin/
-    owner: angel
-    group: angel
+    delete: yes
+    rsync_opts:
+      - "--chown=angel:angel"
 
 - name: Copy client configuration
   ansible.builtin.copy:
@@ -69,34 +50,19 @@
     owner: angel
     group: angel
 
-- name: Remove images directory
-  file:
-    path: /home/angel/images/
-    state: absent
-    owner: angel
-    group: angel
-  when: imagenes | default(false) | bool
-
-- name: Create images directory
-  ansible.builtin.file:
-    state: directory
-    path: /home/angel/images/
-    owner: angel
-    group: angel
-  when: imagenes | default(false) | bool
-
 - name: Generate image binary files locally
   ansible.builtin.command:
     cmd: "/home/angel/lgptclient/venv/bin/python /home/angel/lgptclient/bin/genera.py {{ inventory_hostname }}"
   delegate_to: localhost
   when: imagenes | default(false) | bool
 
-- name: Copy image binary files
-  copy:
-    src: "/home/angel/lgptclient/img_output/{{inventory_hostname}}/"
+- name: Sync image binary files
+  synchronize:
+    src: "/home/angel/lgptclient/img_output/{{ inventory_hostname }}/"
     dest: /home/angel/images/
-    owner: angel
-    group: angel
+    delete: yes
+    rsync_opts:
+      - "--chown=angel:angel"
   when: imagenes | default(false) | bool
 
 - name: Configure cliente service
