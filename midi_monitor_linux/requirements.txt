@@ -1,0 +1,20 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# MIDI Monitor Linux/Kirigami — dependencias Python
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# Dependencia de SISTEMA requerida (no está en PyPI):
+#   Kirigami QML module (KDE Frameworks 6)
+#
+#   Ubuntu/Debian 24.04+:  sudo apt install qml6-module-org-kde-kirigami
+#   Arch Linux:            sudo pacman -S kirigami
+#   Fedora:                sudo dnf install kf6-kirigami
+#   openSUSE:              sudo zypper install kirigami2
+#
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Qt for Python (Qt 6) — incluye QtQml, QtCore, QtGui
+PySide6>=6.8.2
+
+# I/O MIDI
+mido>=1.3.3
+python-rtmidi>=1.5.8

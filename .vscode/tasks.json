@@ -30,18 +30,38 @@
       "problemMatcher": []
     },
     {
+      "label": "LGPT",
+      "type": "shell",
+      "command": "/home/angel/LGPT/bin/lgpt.x64",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
       "label": "Ansible - Actualiza",
       "type": "shell",
       "command": "${workspaceFolder}/venv/bin/ansible-playbook ${workspaceFolder}/ansible/actualiza.yaml -i ${workspaceFolder}/ansible/inventario",
       "problemMatcher": []
     },
     {
-      "label": "MIDI Monitor",
+      "label": "MIDI Monitor (tkinter)",
       "type": "shell",
       "command": "${workspaceFolder}/midi_monitor/venv/bin/python ${workspaceFolder}/midi_monitor/main.py",
       "windows": {
         "command": "${workspaceFolder}\\midi_monitor\\venv\\Scripts\\python.exe ${workspaceFolder}\\midi_monitor\\main.py"
       },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "MIDI Monitor Linux (Kirigami)",
+      "type": "shell",
+      "command": "${workspaceFolder}/midi_monitor_linux/venv/bin/python ${workspaceFolder}/midi_monitor_linux/main.py",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
