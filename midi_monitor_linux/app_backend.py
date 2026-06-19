@@ -10,6 +10,7 @@ from datetime import datetime
 from PySide6.QtCore import QObject, Signal, Slot, QTimer
 
 from midi_handler import MidiHandler, MidiMessage
+from srt_recorder import SrtRecorder, TEXT_CC
 from config import BATERIA_CONFIG_FILE, IMAGES_DIR
 
 
@@ -27,6 +28,8 @@ class MidiBackend(QObject):
         super().__init__(parent)
         self._connected = False
         self._bateria_config = self._load_bateria_config()
+
+        self.srt = SrtRecorder()
 
         self.midi = MidiHandler()
         self.midi.add_listener(self._on_midi)
@@ -67,6 +70,20 @@ class MidiBackend(QObject):
         if msg.type == "control_change" and 0 <= msg.channel <= 5 and msg.control != 7:
             image_path = self._find_image(msg.control, msg.value)
             self.visualChanged.emit(image_path, msg.channel, msg.control, msg.value)
+            # Banco 002 (CC nº 2): registrar el texto como subtítulo si estamos grabando.
+            if msg.control == TEXT_CC:
+                self.srt.add_text(msg.value)
+
+        # Transporte MIDI: 'start' inicia la grabación de subtítulos; 'stop' la vuelca a .srt.
+        if msg.type == "start":
+            self.srt.start()
+            self.midiEvent.emit(timestamp, "▶ Grabando subtítulos (banco 002)...", "success")
+        elif msg.type == "stop":
+            path = self.srt.stop()
+            if path:
+                self.midiEvent.emit(timestamp, f"■ Subtítulos guardados: {path}", "success")
+            else:
+                self.midiEvent.emit(timestamp, "■ Grabación detenida (sin subtítulos)", "warning")
 
     # ------------------------------------------------------------------ image lookup
 
