@@ -23,16 +23,22 @@ Item {
         spacing: 8
 
         RowLayout {
+            spacing: 6
+            Kirigami.Icon {
+                source: "audio-midi"
+                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                Layout.preferredHeight: Kirigami.Units.iconSizes.small
+            }
             Controls.Label {
                 text: "Visualización de Batería"
                 font.italic: true
                 color: Kirigami.Theme.disabledTextColor
             }
             Item { Layout.fillWidth: true }
-            Controls.Label {
-                text: "Canal MIDI: " + midiBackend.getBateriaChannel()
-                font.pixelSize: 11
-                color: Kirigami.Theme.disabledTextColor
+            Kirigami.Chip {
+                text: "Canal MIDI " + midiBackend.getBateriaChannel()
+                closable: false
+                checkable: false
             }
         }
 

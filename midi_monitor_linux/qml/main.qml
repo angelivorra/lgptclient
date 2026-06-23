@@ -14,6 +14,7 @@ Kirigami.ApplicationWindow {
     property bool connected: false
     property string statusText: "Desconectado"
     property var availablePorts: []
+    property real bpm: 0.0
 
     Component.onCompleted: {
         availablePorts = midiBackend.getPorts()
@@ -40,6 +41,10 @@ Kirigami.ApplicationWindow {
 
         function onVisualChanged(imagePath, channel, cc, value) {
             visualesPage.updateVisual(imagePath, channel, cc, value)
+        }
+
+        function onBpmChanged(value) {
+            root.bpm = value
         }
     }
 
@@ -68,6 +73,16 @@ Kirigami.ApplicationWindow {
             }
 
             Item { Layout.fillWidth: true }
+
+            Kirigami.Chip {
+                id: bpmChip
+                text: root.bpm > 0
+                    ? "♩ = " + Math.round(root.bpm) + " BPM"
+                    : "♩ = -- BPM"
+                closable: false
+                checkable: false
+                enabled: root.bpm > 0
+            }
         }
 
         // ── Panel de conexión ────────────────────────────────────────────
@@ -101,7 +116,8 @@ Kirigami.ApplicationWindow {
                 }
 
                 Controls.Button {
-                    text: "↻"
+                    icon.name: "view-refresh"
+                    display: Controls.AbstractButton.IconOnly
                     enabled: !root.connected
                     onClicked: root.refreshPorts()
 
@@ -112,7 +128,8 @@ Kirigami.ApplicationWindow {
                 }
 
                 Controls.Button {
-                    text: root.connected ? "■  Desconectar" : "▶  Conectar"
+                    text: root.connected ? "Desconectar" : "Conectar"
+                    icon.name: root.connected ? "network-disconnect" : "network-connect"
                     highlighted: !root.connected
                     onClicked: {
                         if (root.connected) {
@@ -137,9 +154,28 @@ Kirigami.ApplicationWindow {
             id: tabBar
             Layout.fillWidth: true
 
-            Controls.TabButton { text: "Log" }
-            Controls.TabButton { text: "Batería" }
-            Controls.TabButton { text: "Visuales" }
+            component BigTab: Controls.TabButton {
+                display: Controls.AbstractButton.TextBesideIcon
+                implicitHeight: Kirigami.Units.gridUnit * 3
+                padding: Kirigami.Units.largeSpacing
+                icon.width: Kirigami.Units.iconSizes.medium
+                icon.height: Kirigami.Units.iconSizes.medium
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.3
+                font.bold: checked
+            }
+
+            BigTab {
+                text: "Log"
+                icon.name: "view-list-text"
+            }
+            BigTab {
+                text: "Batería"
+                icon.name: "audio-midi"
+            }
+            BigTab {
+                text: "Visuales"
+                icon.name: "image-x-generic"
+            }
         }
 
         StackLayout {

@@ -32,6 +32,9 @@ def main():
     log_model = LogModel()
 
     backend.midiEvent.connect(log_model.addEntry)
+    # Cierre limpio del hilo MIDI antes de finalizar el intérprete (evita el
+    # fallo "PyGILState_Release" al cerrar el programa).
+    app.aboutToQuit.connect(backend.shutdown)
 
     ctx = engine.rootContext()
     ctx.setContextProperty("midiBackend", backend)

@@ -35,10 +35,18 @@ Item {
         anchors.fill: parent
         spacing: 6
 
-        Controls.Label {
-            text: "Log de todos los eventos MIDI recibidos"
-            font.italic: true
-            color: Kirigami.Theme.disabledTextColor
+        RowLayout {
+            spacing: 6
+            Kirigami.Icon {
+                source: "view-list-text"
+                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                Layout.preferredHeight: Kirigami.Units.iconSizes.small
+            }
+            Controls.Label {
+                text: "Log de todos los eventos MIDI recibidos"
+                font.italic: true
+                color: Kirigami.Theme.disabledTextColor
+            }
         }
 
         // ── Área de log ──────────────────────────────────────────────────
@@ -109,6 +117,7 @@ Item {
 
             Controls.Button {
                 text: "Limpiar"
+                icon.name: "edit-clear-all"
                 onClicked: {
                     logModel.clear()
                     root.eventCount = 0

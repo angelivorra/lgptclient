@@ -7,7 +7,8 @@ Modelo de uso (controlado desde app_backend a partir de eventos MIDI):
                                     junto al instante relativo al inicio.
     - MIDI 'stop'   -> stop()    : vuelca el .srt y devuelve la ruta.
 
-Cada subtítulo dura hasta que llega el siguiente; el último usa una duración fija.
+Cada subtítulo dura como mucho MAX_SUBTITLE_SECONDS; si el siguiente texto llega
+antes, se acorta para no solaparse.
 """
 
 import os
@@ -23,8 +24,9 @@ SUBTITULOS_DIR = os.path.join(WORKSPACE_DIR, "subtitulos")
 
 # Número de CC del banco de textos (banco "002").
 TEXT_CC = 2
-# Duración del último subtítulo (no hay un "siguiente" que lo cierre), en segundos.
-LAST_SUBTITLE_SECONDS = 3.0
+# Duración máxima de un subtítulo, en segundos. Si el siguiente texto llega antes,
+# el subtítulo se acorta hasta ese instante.
+MAX_SUBTITLE_SECONDS = 1.0
 # Duración mínima de un subtítulo para evitar entradas de 0 ms, en segundos.
 MIN_SUBTITLE_SECONDS = 0.3
 
@@ -95,10 +97,10 @@ class SrtRecorder:
         with open(path, "w", encoding="utf-8") as f:
             total = len(self._events)
             for i, (start, text) in enumerate(self._events):
+                # Como mucho 1 segundo; si el siguiente texto llega antes, acortar.
+                end = start + MAX_SUBTITLE_SECONDS
                 if i + 1 < total:
-                    end = self._events[i + 1][0]
-                else:
-                    end = start + LAST_SUBTITLE_SECONDS
+                    end = min(end, self._events[i + 1][0])
                 if end - start < MIN_SUBTITLE_SECONDS:
                     end = start + MIN_SUBTITLE_SECONDS
                 f.write(f"{i + 1}\n")

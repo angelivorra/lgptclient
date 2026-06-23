@@ -62,6 +62,8 @@ class EventOrchestrator:
         self._idle_thread: Optional[threading.Thread] = None
         self._idle_stop   = threading.Event()
 
+        self.current_bpm: float = 0.0
+
         self.stats = {
             'notas_recibidas': 0,
             'notas_mapeadas': 0,
@@ -70,6 +72,7 @@ class EventOrchestrator:
             'cc_recibidos': 0,
             'stops_recibidos': 0,
             'tareas_canceladas': 0,
+            'bpm_recibidos': 0,
         }
 
         # Crear runner de pantalla de estado
@@ -297,6 +300,11 @@ class EventOrchestrator:
         )
         self._playing = False
         self._show_idle()
+
+    def handle_bpm(self, server_ts_ms: int, bpm: float):
+        self.current_bpm = bpm
+        self.stats['bpm_recibidos'] += 1
+        logger.info(f"🎵 BPM: {bpm:.2f}")
 
     def handle_end(self, server_ts_ms: int):
         logger.info(f"⏹️  END recibido (ts={server_ts_ms}) - Canción terminada")

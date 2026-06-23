@@ -34,6 +34,13 @@ Item {
         // ── Info de evento CC ─────────────────────────────────────────────
         RowLayout {
             Layout.fillWidth: true
+            spacing: 6
+
+            Kirigami.Icon {
+                source: "image-x-generic"
+                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                Layout.preferredHeight: Kirigami.Units.iconSizes.small
+            }
 
             Controls.Label {
                 text: root.ccInfo

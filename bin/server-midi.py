@@ -5,6 +5,8 @@ import csv
 import os
 import socket
 import random
+import time
+from collections import deque
 from alsa_midi import (
     AsyncSequencerClient,
     READ_PORT,
@@ -50,6 +52,57 @@ logging.basicConfig(
 )
 
 clients = []
+
+# BPM tracking desde MIDI Clock (24 pulsos = 1 negra).
+# Medimos la duración de cada negra COMPLETA (24 pulsos): el groove/swing de LGPT
+# es periódico dentro de la negra, así que una negra entera dura siempre lo mismo
+# y el groove se anula. La negra suelta aún tiene jitter (±2 BPM), así que:
+#   1) suavizamos con un filtro EMA,
+#   2) si el cambio supera JUMP_THRESHOLD adoptamos el valor al instante,
+#   3) reportamos un entero con histéresis para que no oscile ±1.
+PULSES_PER_BEAT = 24
+EMA_ALPHA = 0.2           # 0..1; menor = más suave pero más lento
+JUMP_THRESHOLD_BPM = 7.0  # salto mayor a esto → adopción inmediata
+HYSTERESIS_BPM = 0.75     # margen para cambiar el entero reportado
+_clock_times: deque = deque(maxlen=PULSES_PER_BEAT + 1)
+_pulse_count: int = 0
+_bpm_ema: float = 0.0     # estimación suavizada interna
+_last_bpm: float = 0.0    # último entero difundido
+
+
+def _process_clock_pulse() -> float | None:
+    """Registra un pulso de MIDI Clock y devuelve el BPM a difundir, o None.
+
+    Solo evalúa al completar una negra (24 pulsos). Aplica EMA + adopción rápida
+    ante saltos e histéresis sobre el entero; devuelve el valor cuando cambia.
+    """
+    global _pulse_count, _bpm_ema, _last_bpm
+    _clock_times.append(time.monotonic())
+    _pulse_count += 1
+
+    if _pulse_count % PULSES_PER_BEAT != 0:
+        return None
+    if len(_clock_times) <= PULSES_PER_BEAT:
+        return None
+
+    beat_dur = _clock_times[-1] - _clock_times[-1 - PULSES_PER_BEAT]
+    if beat_dur <= 0:
+        return None
+    beat_bpm = 60.0 / beat_dur
+
+    # 1) EMA, con adopción inmediata si el salto es grande (cambio de tempo)
+    if _bpm_ema == 0.0 or abs(beat_bpm - _bpm_ema) > JUMP_THRESHOLD_BPM:
+        _bpm_ema = beat_bpm
+    else:
+        _bpm_ema += EMA_ALPHA * (beat_bpm - _bpm_ema)
+
+    # 2) Entero con histéresis: difundir solo cuando cambia el tempo redondeado
+    if _last_bpm == 0.0 or abs(_bpm_ema - _last_bpm) >= HYSTERESIS_BPM:
+        new_bpm = float(round(_bpm_ema))
+        if new_bpm != _last_bpm:
+            _last_bpm = new_bpm
+            return new_bpm
+    return None
 
 def initialize_csv(filename):
     """Initialize CSV file with headers if it doesn't exist."""
@@ -188,6 +241,20 @@ async def broadcast_event(event, timestamp, csv_logging):
             if d in clients:
                 clients.remove(d)
     
+async def broadcast_bpm(timestamp: int, bpm: float):
+    message = f"BPM,{timestamp},{bpm:.2f}\n"
+    logger.info(f"Broadcast TX: {message.strip()}")
+    dead = []
+    for client in clients:
+        try:
+            client.write(message.encode())
+            await client.drain()
+        except Exception:
+            dead.append(client)
+    for d in dead:
+        if d in clients:
+            clients.remove(d)
+
 async def heartbeat_task(interval: float):
     """Envia periódicamente un latido de sincronización de reloj a todos los clientes."""
     while True:
@@ -253,8 +320,10 @@ async def main():
                 
                 # Log de todos los eventos crudos (ClockEvent opcional)
                 if isinstance(event, ClockEvent):
-                    if os.environ.get("LOG_CLOCK") == "1":
-                        logger.info(f"RAW event type={event.__class__.__name__} repr={event!r}")
+                    bpm = _process_clock_pulse()
+                    if bpm is not None:
+                        ts = int(datetime.now().timestamp() * 1000)
+                        await broadcast_bpm(ts, bpm)
                     continue
                 else:
                     logger.info(f"RAW event type={event.__class__.__name__} repr={event!r}")

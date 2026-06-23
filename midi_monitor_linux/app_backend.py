@@ -23,10 +23,14 @@ class MidiBackend(QObject):
     padHit = Signal(str)
     # image_path (vacío si no existe), channel, cc, value
     visualChanged = Signal(str, int, int, int)
+    # bpm actual (0 = parado)
+    bpmChanged = Signal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._connected = False
+        self._last_bpm = 0.0
+        self._playing = False  # entre 'start' y 'stop' del transporte MIDI
         self._bateria_config = self._load_bateria_config()
 
         self.srt = SrtRecorder()
@@ -35,8 +39,18 @@ class MidiBackend(QObject):
         self.midi.add_listener(self._on_midi)
 
         self._timer = QTimer(self)
-        self._timer.timeout.connect(self.midi.process_messages)
+        self._timer.timeout.connect(self._on_tick)
         self._timer.start(10)
+
+    def _on_tick(self) -> None:
+        """Procesa mensajes MIDI pendientes y refresca el BPM si ha cambiado."""
+        self.midi.process_messages()
+        # Solo mostramos BPM mientras la canción está sonando. LGPT sigue
+        # emitiendo MIDI Clock al parar, así que nos guiamos por el transporte.
+        bpm = self.midi.get_bpm() if self._playing else 0.0
+        if abs(bpm - self._last_bpm) >= 0.5:
+            self._last_bpm = bpm
+            self.bpmChanged.emit(bpm)
 
     # ------------------------------------------------------------------ config
 
@@ -76,9 +90,15 @@ class MidiBackend(QObject):
 
         # Transporte MIDI: 'start' inicia la grabación de subtítulos; 'stop' la vuelca a .srt.
         if msg.type == "start":
+            self._playing = True
+            self.midi.reset_bpm()
             self.srt.start()
             self.midiEvent.emit(timestamp, "▶ Grabando subtítulos (banco 002)...", "success")
         elif msg.type == "stop":
+            self._playing = False
+            self.midi.reset_bpm()
+            self.bpmChanged.emit(0.0)
+            self._last_bpm = 0.0
             path = self.srt.stop()
             if path:
                 self.midiEvent.emit(timestamp, f"■ Subtítulos guardados: {path}", "success")
@@ -157,6 +177,17 @@ class MidiBackend(QObject):
     @Slot(result=bool)
     def isConnected(self) -> bool:
         return self._connected
+
+    @Slot(result=float)
+    def getBpm(self) -> float:
+        return self.midi.get_bpm()
+
+    @Slot()
+    def shutdown(self) -> None:
+        """Para el timer y el hilo MIDI limpiamente antes de salir."""
+        if self._timer.isActive():
+            self._timer.stop()
+        self.midi.disconnect()
 
     # -- batería config helpers
 
