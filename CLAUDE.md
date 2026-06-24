@@ -41,6 +41,26 @@ LGPT (tracker) → MIDI → servidores Python → GPIO / animaciones / audio
 - **Hardware**: Raspberry Pi, GPIO, IQaudIODAC
 - **Despliegue**: Ansible
 
+## Monitores de desarrollo
+
+Los monitores (`midi_monitor_linux/`, `tcp_monitor_linux/`) **se ejecutan en este PC**, no en el servidor.
+
+## Despliegue del servidor (`bin/server-midi.py`)
+
+El servidor corre en la Raspberry Pi **192.168.0.2** como `servidor.service`.  
+**No se ejecuta en este equipo.** El flujo para aplicar cambios es siempre:
+
+```bash
+# 1. Subir cambios al remoto
+git push
+
+# 2. Actualizar el repo en el servidor
+ssh angel@192.168.0.2 'git -C /home/angel/lgptclient pull'
+
+# 3. Reiniciar el servicio
+ssh angel@192.168.0.2 'sudo systemctl restart servidor.service && systemctl is-active servidor.service'
+```
+
 ## Notas de desarrollo
 
 - El mapeado MIDI → acción está documentado en `NOTAS.md` (instrumentos 80–81 para imágenes/animaciones)
