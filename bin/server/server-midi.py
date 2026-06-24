@@ -91,6 +91,14 @@ _bpm_ema: float     = 0.0
 _last_bpm: float    = 0.0
 
 
+def _reset_bpm() -> None:
+    global _pulse_count, _bpm_ema, _last_bpm
+    _clock_times.clear()
+    _pulse_count = 0
+    _bpm_ema = 0.0
+    _last_bpm = 0.0
+
+
 def _process_clock_pulse() -> float | None:
     global _pulse_count, _bpm_ema, _last_bpm
     _clock_times.append(time.monotonic())
@@ -414,6 +422,8 @@ async def main():
                 # Solo log útil
                 logger.debug(f"RX {event.__class__.__name__}: {event!r}")
 
+                if isinstance(event, (StartEvent, StopEvent)):
+                    _reset_bpm()
                 if isinstance(event, (NoteOnEvent, ControlChangeEvent, ProgramChangeEvent, StartEvent, StopEvent)):
                     await broadcast_event(event)
         finally:
