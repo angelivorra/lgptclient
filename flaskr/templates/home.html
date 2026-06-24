@@ -29,8 +29,13 @@
   <script crossorigin src="{{ url_for('static', filename='react-dom.development.js') }}"></script>
   <script src="{{ url_for('static', filename='material-ui.development.js') }}"></script>
   <script src="{{ url_for('static', filename='babel.min.js') }}"></script>
+  <script>
+    Babel.registerPreset('react-classic', {
+      presets: [[Babel.availablePresets['react'], { runtime: 'classic' }]]
+    });
+  </script>
 
-  <script type="text/babel">{% raw %}
+  <script type="text/babel" data-presets="react-classic">{% raw %}
   const {
     createTheme, ThemeProvider, CssBaseline,
     AppBar, Toolbar, Typography, Chip, Box, Paper,
