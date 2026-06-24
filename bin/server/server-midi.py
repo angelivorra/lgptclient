@@ -89,6 +89,7 @@ _clock_times: deque = deque(maxlen=PULSES_PER_BEAT + 1)
 _pulse_count: int   = 0
 _bpm_ema: float     = 0.0
 _last_bpm: float    = 0.0
+_playing: bool      = False
 
 
 def _reset_bpm() -> None:
@@ -367,6 +368,7 @@ async def heartbeat_task(interval: float):
         await asyncio.sleep(interval)
 
 async def main():
+    global _playing
     if CSV_LOG:
         initialize_csv(CSV_FILENAME)
 
@@ -415,14 +417,19 @@ async def main():
                 if isinstance(event, ClockEvent):
                     if os.environ.get("LOG_CLOCK") == "1":
                         logger.debug("ClockEvent")
-                    bpm = _process_clock_pulse()
-                    if bpm is not None:
-                        await broadcast_event(type('BpmEvent', (), {'bpm': bpm})())
+                    if _playing:
+                        bpm = _process_clock_pulse()
+                        if bpm is not None:
+                            await broadcast_event(type('BpmEvent', (), {'bpm': bpm})())
                     continue
                 # Solo log útil
                 logger.debug(f"RX {event.__class__.__name__}: {event!r}")
 
-                if isinstance(event, (StartEvent, StopEvent)):
+                if isinstance(event, StartEvent):
+                    _playing = True
+                    _reset_bpm()
+                elif isinstance(event, StopEvent):
+                    _playing = False
                     _reset_bpm()
                 if isinstance(event, (NoteOnEvent, ControlChangeEvent, ProgramChangeEvent, StartEvent, StopEvent)):
                     await broadcast_event(event)
