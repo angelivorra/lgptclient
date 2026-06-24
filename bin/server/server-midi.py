@@ -37,6 +37,8 @@ import csv
 import os
 import socket
 import logging
+import time
+from collections import deque
 from datetime import datetime
 import json
 import re
@@ -77,6 +79,41 @@ logging.basicConfig(
     level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S'
 )
+
+# BPM tracking desde MIDI Clock (24 pulsos = 1 negra).
+PULSES_PER_BEAT   = 24
+EMA_ALPHA         = 0.2
+JUMP_THRESHOLD_BPM = 7.0
+HYSTERESIS_BPM    = 0.75
+_clock_times: deque = deque(maxlen=PULSES_PER_BEAT + 1)
+_pulse_count: int   = 0
+_bpm_ema: float     = 0.0
+_last_bpm: float    = 0.0
+
+
+def _process_clock_pulse() -> float | None:
+    global _pulse_count, _bpm_ema, _last_bpm
+    _clock_times.append(time.monotonic())
+    _pulse_count += 1
+    if _pulse_count % PULSES_PER_BEAT != 0:
+        return None
+    if len(_clock_times) <= PULSES_PER_BEAT:
+        return None
+    beat_dur = _clock_times[-1] - _clock_times[-1 - PULSES_PER_BEAT]
+    if beat_dur <= 0:
+        return None
+    beat_bpm = 60.0 / beat_dur
+    if _bpm_ema == 0.0 or abs(beat_bpm - _bpm_ema) > JUMP_THRESHOLD_BPM:
+        _bpm_ema = beat_bpm
+    else:
+        _bpm_ema += EMA_ALPHA * (beat_bpm - _bpm_ema)
+    if _last_bpm == 0.0 or abs(_bpm_ema - _last_bpm) >= HYSTERESIS_BPM:
+        new_bpm = float(round(_bpm_ema))
+        if new_bpm != _last_bpm:
+            _last_bpm = new_bpm
+            return new_bpm
+    return None
+
 
 clients: list[asyncio.StreamWriter] = []
 
@@ -276,8 +313,8 @@ async def broadcast_event(event):
     elif isinstance(event, ControlChangeEvent):
         if event.param != 7:
             msg = f"CC,{ts},{event.value},{event.channel},{event.param}\n"  # valor, canal, controlador
-    elif isinstance(event, ProgramChangeEvent):
-        msg = f"BPM,{ts},{event.value}\n"
+    elif hasattr(event, 'bpm'):
+        msg = f"BPM,{ts},{event.bpm:.1f}\n"
     elif isinstance(event, StartEvent):
         msg = f"START,{ts}\n"
     elif isinstance(event, StopEvent):
@@ -369,7 +406,10 @@ async def main():
                 # Eventos de reloj
                 if isinstance(event, ClockEvent):
                     if os.environ.get("LOG_CLOCK") == "1":
-                        logger.debug(f"ClockEvent")
+                        logger.debug("ClockEvent")
+                    bpm = _process_clock_pulse()
+                    if bpm is not None:
+                        await broadcast_event(type('BpmEvent', (), {'bpm': bpm})())
                     continue
                 # Solo log útil
                 logger.debug(f"RX {event.__class__.__name__}: {event!r}")
