@@ -82,6 +82,16 @@
       }
     },
     {
+      "label": "TCP Monitor Linux",
+      "type": "shell",
+      "command": "${workspaceFolder}/tcp_monitor_linux/run.sh",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
       "label": "Genera Imágenes",
       "type": "shell",
       "command": "${workspaceFolder}/venv/bin/python ${workspaceFolder}/bin/genera.py ${input:terminal}",
