@@ -1,0 +1,6 @@
+---
+- name: Actualizar vocoder
+  hosts: vocoder
+  gather_facts: no
+  roles:
+    - role: vocoder-actualiza

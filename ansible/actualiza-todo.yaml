@@ -1,4 +1,5 @@
 ---
-# Actualiza todo el sistema: primero el sintetizador, luego las maletas.
+# Actualiza todo el sistema: sintetizador, maletas y vocoder.
 - import_playbook: actualiza-sinte.yaml
 - import_playbook: actualiza-maletas.yaml
+- import_playbook: actualiza-vocoder.yaml

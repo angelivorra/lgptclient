@@ -1,0 +1,33 @@
+---
+- name: Sincronizar la app flask del vocoder
+  ansible.posix.synchronize:
+    src: /home/angel/lgptclient/vocoder/flask/
+    dest: "{{ vocoder_dest }}/flask/"
+    delete: yes
+    checksum: true
+    times: false
+    perms: false
+    rsync_opts:
+      - "--exclude=__pycache__"
+      - "--chown=patch:patch"
+  register: flask_sync
+
+- name: Copiar el parche de Carla (template01.carxp)
+  ansible.builtin.copy:
+    src: /home/angel/lgptclient/vocoder/prod/template01.carxp
+    dest: "{{ vocoder_dest }}/prod/template01.carxp"
+    owner: patch
+    group: patch
+  register: carxp_copy
+
+# Servicio de usuario: se reinicia como el propio usuario patch (sin become),
+# fijando XDG_RUNTIME_DIR para alcanzar el systemd --user. Reinicia Carla con
+# el patch nuevo. Solo si algo cambió.
+- name: Reiniciar la app flask del vocoder (solo si cambió)
+  ansible.builtin.systemd:
+    name: "{{ vocoder_service }}"
+    state: restarted
+    scope: user
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ vocoder_uid }}"
+  when: flask_sync.changed or carxp_copy.changed

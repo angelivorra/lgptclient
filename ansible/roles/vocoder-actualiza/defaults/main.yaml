@@ -1,0 +1,10 @@
+---
+# Equipo vocoder: la app y el patch viven en este directorio (rutas
+# hardcodeadas en flask/app.py y en pivocoder-flask.service).
+vocoder_dest: /home/patch/pivocoder
+
+# Servicio de usuario (systemd --user) que sirve la app flask y lanza Carla.
+vocoder_service: pivocoder-flask.service
+
+# UID del usuario patch (para XDG_RUNTIME_DIR al manejar el servicio de usuario).
+vocoder_uid: 1000

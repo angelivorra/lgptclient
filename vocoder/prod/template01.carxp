@@ -1,0 +1,1867 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE CARLA-PROJECT>
+<CARLA-PROJECT VERSION='2.5'>
+ <EngineSettings>
+  <ForceStereo>false</ForceStereo>
+  <PreferPluginBridges>false</PreferPluginBridges>
+  <PreferUiBridges>false</PreferUiBridges>
+  <UIsAlwaysOnTop>false</UIsAlwaysOnTop>
+  <MaxParameters>200</MaxParameters>
+  <UIBridgesTimeout>4000</UIBridgesTimeout>
+ </EngineSettings>
+
+ <Transport>
+  <BeatsPerMinute>120</BeatsPerMinute>
+ </Transport>
+
+ <!-- Calf Filter -->
+ <Plugin>
+  <Info>
+   <Type>LV2</Type>
+   <Name>Calf Filter</Name>
+   <URI>http://calf.sourceforge.net/plugins/Filter</URI>
+  </Info>
+
+  <Data>
+   <Active>Yes</Active>
+   <ControlChannel>1</ControlChannel>
+   <Options>0x3f1</Options>
+
+   <Parameter>
+    <Index>0</Index>
+    <Name>Frequency</Name>
+    <Symbol>freq</Symbol>
+    <Value>100</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>1</Index>
+    <Name>Resonance</Name>
+    <Symbol>res</Symbol>
+    <Value>0.707000017166138</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>2</Index>
+    <Name>Mode</Name>
+    <Symbol>mode</Symbol>
+    <Value>3</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>3</Index>
+    <Name>Inertia</Name>
+    <Symbol>inertia</Symbol>
+    <Value>20</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>4</Index>
+    <Name>Bypass</Name>
+    <Symbol>bypass</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>5</Index>
+    <Name>Input Gain</Name>
+    <Symbol>level_in</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>6</Index>
+    <Name>Output Gain</Name>
+    <Symbol>level_out</Symbol>
+    <Value>1</Value>
+   </Parameter>
+  </Data>
+ </Plugin>
+
+ <!-- Calf Gate -->
+ <Plugin>
+  <Info>
+   <Type>LV2</Type>
+   <Name>Calf Gate</Name>
+   <URI>http://calf.sourceforge.net/plugins/Gate</URI>
+  </Info>
+
+  <Data>
+   <Active>Yes</Active>
+   <ControlChannel>1</ControlChannel>
+   <Options>0x3f1</Options>
+
+   <Parameter>
+    <Index>0</Index>
+    <Name>Bypass</Name>
+    <Symbol>bypass</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>1</Index>
+    <Name>Input</Name>
+    <Symbol>level_in</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>6</Index>
+    <Name>Max Gain Reduction</Name>
+    <Symbol>range</Symbol>
+    <Value>0.00781250093132257</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>7</Index>
+    <Name>Threshold</Name>
+    <Symbol>threshold</Symbol>
+    <Value>0.125</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>8</Index>
+    <Name>Ratio</Name>
+    <Symbol>ratio</Symbol>
+    <Value>2</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>9</Index>
+    <Name>Attack</Name>
+    <Symbol>attack</Symbol>
+    <Value>5.05272006988525</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>10</Index>
+    <Name>Release</Name>
+    <Symbol>release</Symbol>
+    <Value>174.110107421875</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>11</Index>
+    <Name>Makeup Gain</Name>
+    <Symbol>makeup</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>12</Index>
+    <Name>Knee</Name>
+    <Symbol>knee</Symbol>
+    <Value>2.82842993736267</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>13</Index>
+    <Name>Detection</Name>
+    <Symbol>detection</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>14</Index>
+    <Name>Stereo Link</Name>
+    <Symbol>stereo_link</Symbol>
+    <Value>0</Value>
+   </Parameter>
+  </Data>
+ </Plugin>
+
+ <!-- Vocoder -->
+ <Plugin>
+  <Info>
+   <Type>LV2</Type>
+   <Name>Vocoder</Name>
+   <URI>http://home.gna.org/lv2vocoder/1</URI>
+  </Info>
+
+  <Data>
+   <Active>Yes</Active>
+   <Volume>0.9288685</Volume>
+   <ControlChannel>1</ControlChannel>
+   <Options>0x0</Options>
+
+   <Parameter>
+    <Index>0</Index>
+    <Name>Number of active bands</Name>
+    <Symbol>active</Symbol>
+    <Value>16</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>1</Index>
+    <Name>Level of band 150 Hz</Name>
+    <Symbol>level_150</Symbol>
+    <Value>0.149999991059303</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>2</Index>
+    <Name>Level of band 255 Hz</Name>
+    <Symbol>level_255</Symbol>
+    <Value>0.259999990463257</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>3</Index>
+    <Name>Level of band 360 Hz</Name>
+    <Symbol>level_360</Symbol>
+    <Value>0.469999998807907</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>4</Index>
+    <Name>Level of band 465 Hz</Name>
+    <Symbol>level_465</Symbol>
+    <Value>0.417061597108841</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>5</Index>
+    <Name>Level of band 600 Hz</Name>
+    <Symbol>level_600</Symbol>
+    <Value>0.449999988079071</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>6</Index>
+    <Name>Level of band 738 Hz</Name>
+    <Symbol>level_738</Symbol>
+    <Value>0.289099514484406</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>7</Index>
+    <Name>Level of band 907 Hz</Name>
+    <Symbol>level_907</Symbol>
+    <Value>0.229999989271164</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>8</Index>
+    <Name>Level of band 1.1 KHz</Name>
+    <Symbol>level_1k1</Symbol>
+    <Value>0.819999992847443</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>9</Index>
+    <Name>Level of band 1.3 KHz</Name>
+    <Symbol>level_1k3</Symbol>
+    <Value>0.910995244979858</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>10</Index>
+    <Name>Level of band 1.6 KHz</Name>
+    <Symbol>level_1k6</Symbol>
+    <Value>0.899999976158142</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>11</Index>
+    <Name>Level of band 2 KHz</Name>
+    <Symbol>level_2k</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>12</Index>
+    <Name>Level of band 2.5 KHz</Name>
+    <Symbol>level_2k5</Symbol>
+    <Value>0.849999964237213</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>13</Index>
+    <Name>Level of band 3.1 KHz</Name>
+    <Symbol>level_3k1</Symbol>
+    <Value>0.89573460817337</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>14</Index>
+    <Name>Level of band 3.8 KHz</Name>
+    <Symbol>level_3k8</Symbol>
+    <Value>0.890995264053345</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>15</Index>
+    <Name>Level of band 4.7 KHz</Name>
+    <Symbol>level_4k7</Symbol>
+    <Value>0.930000007152557</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>16</Index>
+    <Name>Level of band 5.8 KHz</Name>
+    <Symbol>level_5k8</Symbol>
+    <Value>1</Value>
+   </Parameter>
+  </Data>
+ </Plugin>
+
+ <!-- Temper -->
+ <Plugin>
+  <Info>
+   <Type>LV2</Type>
+   <Name>Temper</Name>
+   <URI>https://github.com/creativeintent/temper</URI>
+  </Info>
+
+  <Data>
+   <Active>Yes</Active>
+   <Volume>1.27</Volume>
+   <ControlChannel>1</ControlChannel>
+   <Options>0x4</Options>
+
+   <Parameter>
+    <Index>1</Index>
+    <Name>Curve</Name>
+    <Symbol>curve</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>2</Index>
+    <Name>Cutoff</Name>
+    <Symbol>cutoff</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>3</Index>
+    <Name>Drive</Name>
+    <Symbol>drive</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>4</Index>
+    <Name>Feedback</Name>
+    <Symbol>feedback</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>5</Index>
+    <Name>Level</Name>
+    <Symbol>level</Symbol>
+    <Value>0.879999995231628</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>6</Index>
+    <Name>Resonance</Name>
+    <Symbol>resonance</Symbol>
+    <MidiChannel>1</MidiChannel>
+    <MappedControlIndex>15</MappedControlIndex>
+    <MappedMinimum>0</MappedMinimum>
+    <MappedMaximum>1</MappedMaximum>
+    <MidiCC>15</MidiCC>
+    <Value>0.4251968562603</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>7</Index>
+    <Name>Saturation</Name>
+    <Symbol>saturation</Symbol>
+    <MidiChannel>1</MidiChannel>
+    <MappedControlIndex>15</MappedControlIndex>
+    <MappedMinimum>0</MappedMinimum>
+    <MappedMaximum>1</MappedMaximum>
+    <MidiCC>15</MidiCC>
+    <Value>0.4251968562603</Value>
+   </Parameter>
+  </Data>
+ </Plugin>
+
+ <!-- Calf Reverb -->
+ <Plugin>
+  <Info>
+   <Type>LV2</Type>
+   <Name>Calf Reverb</Name>
+   <URI>http://calf.sourceforge.net/plugins/Reverb</URI>
+  </Info>
+
+  <Data>
+   <Active>Yes</Active>
+   <ControlChannel>1</ControlChannel>
+   <Options>0x3f1</Options>
+
+   <Parameter>
+    <Index>3</Index>
+    <Name>Decay time</Name>
+    <Symbol>decay_time</Symbol>
+    <Value>1.05921530723572</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>4</Index>
+    <Name>High Frq Damp</Name>
+    <Symbol>hf_damp</Symbol>
+    <Value>5000</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>5</Index>
+    <Name>Room size</Name>
+    <Symbol>room_size</Symbol>
+    <Value>4</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>6</Index>
+    <Name>Diffusion</Name>
+    <Symbol>diffusion</Symbol>
+    <Value>0.5</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>7</Index>
+    <Name>Wet Amount</Name>
+    <Symbol>amount</Symbol>
+    <MidiChannel>1</MidiChannel>
+    <MappedControlIndex>30</MappedControlIndex>
+    <MappedMinimum>0</MappedMinimum>
+    <MappedMaximum>1</MappedMaximum>
+    <MidiCC>30</MidiCC>
+    <Value>0.244094491004944</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>8</Index>
+    <Name>Dry Amount</Name>
+    <Symbol>dry</Symbol>
+    <Value>0.877821803092957</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>9</Index>
+    <Name>Pre Delay</Name>
+    <Symbol>predelay</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>10</Index>
+    <Name>Bass Cut</Name>
+    <Symbol>bass_cut</Symbol>
+    <Value>300</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>11</Index>
+    <Name>Treble Cut</Name>
+    <Symbol>treble_cut</Symbol>
+    <Value>5000</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>12</Index>
+    <Name>Active</Name>
+    <Symbol>on</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>13</Index>
+    <Name>Input Gain</Name>
+    <Symbol>level_in</Symbol>
+    <Value>0.846745252609253</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>14</Index>
+    <Name>Output Gain</Name>
+    <Symbol>level_out</Symbol>
+    <Value>1</Value>
+   </Parameter>
+  </Data>
+ </Plugin>
+
+ <!-- EQ10Q Mono -->
+ <Plugin>
+  <Info>
+   <Type>LV2</Type>
+   <Name>EQ10Q Mono</Name>
+   <URI>http://eq10q.sourceforge.net/eq/eq10qm</URI>
+  </Info>
+
+  <Data>
+   <Active>Yes</Active>
+   <ControlChannel>1</ControlChannel>
+   <Options>0x0</Options>
+
+   <Parameter>
+    <Index>0</Index>
+    <Name>Bypass</Name>
+    <Symbol>bypass</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>1</Index>
+    <Name>Input Gain</Name>
+    <Symbol>input_gain</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>2</Index>
+    <Name>Output Gain</Name>
+    <Symbol>output_gain</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>3</Index>
+    <Name>Filter 1 Gain</Name>
+    <Symbol>filter1_gain</Symbol>
+    <Value>-10.8000001907349</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>4</Index>
+    <Name>Filter 2 Gain</Name>
+    <Symbol>filter2_gain</Symbol>
+    <Value>-8.80000114440918</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>5</Index>
+    <Name>Filter 3 Gain</Name>
+    <Symbol>filter3_gain</Symbol>
+    <Value>-6.80000066757202</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>6</Index>
+    <Name>Filter 4 Gain</Name>
+    <Symbol>filter4_gain</Symbol>
+    <Value>-6.80000066757202</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>7</Index>
+    <Name>Filter 5 Gain</Name>
+    <Symbol>filter5_gain</Symbol>
+    <Value>-3.20000100135803</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>8</Index>
+    <Name>Filter 6 Gain</Name>
+    <Symbol>filter6_gain</Symbol>
+    <Value>2.39999866485596</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>9</Index>
+    <Name>Filter 7 Gain</Name>
+    <Symbol>filter7_gain</Symbol>
+    <Value>7.03703689575195</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>10</Index>
+    <Name>Filter 8 Gain</Name>
+    <Symbol>filter8_gain</Symbol>
+    <Value>1.59999871253967</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>11</Index>
+    <Name>Filter 9 Gain</Name>
+    <Symbol>filter9_gain</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>12</Index>
+    <Name>Filter 10 Gain</Name>
+    <Symbol>filter10_gain</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>13</Index>
+    <Name>Filter 1 Freq</Name>
+    <Symbol>filter1_freq</Symbol>
+    <Value>30.539005279541</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>14</Index>
+    <Name>Filter 2 Freq</Name>
+    <Symbol>filter2_freq</Symbol>
+    <Value>62.0287399291992</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>15</Index>
+    <Name>Filter 3 Freq</Name>
+    <Symbol>filter3_freq</Symbol>
+    <Value>120</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>16</Index>
+    <Name>Filter 4 Freq</Name>
+    <Symbol>filter4_freq</Symbol>
+    <Value>240</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>17</Index>
+    <Name>Filter 5 Freq</Name>
+    <Symbol>filter5_freq</Symbol>
+    <Value>480</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>18</Index>
+    <Name>Filter 6 Freq</Name>
+    <Symbol>filter6_freq</Symbol>
+    <Value>960</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>19</Index>
+    <Name>Filter 7 Freq</Name>
+    <Symbol>filter7_freq</Symbol>
+    <Value>1916.17858886719</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>20</Index>
+    <Name>Filter 8 Freq</Name>
+    <Symbol>filter8_freq</Symbol>
+    <Value>3840</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>21</Index>
+    <Name>Filter 9 Freq</Name>
+    <Symbol>filter9_freq</Symbol>
+    <Value>7680</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>22</Index>
+    <Name>Filter 10 Freq</Name>
+    <Symbol>filter10_freq</Symbol>
+    <Value>15350.1025390625</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>23</Index>
+    <Name>Filter 1 Q</Name>
+    <Symbol>filter1_q</Symbol>
+    <Value>0.699999988079071</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>24</Index>
+    <Name>Filter 2 Q</Name>
+    <Symbol>filter2_q</Symbol>
+    <Value>0.699999988079071</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>25</Index>
+    <Name>Filter 3 Q</Name>
+    <Symbol>filter3_q</Symbol>
+    <Value>2</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>26</Index>
+    <Name>Filter 4 Q</Name>
+    <Symbol>filter4_q</Symbol>
+    <Value>2</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>27</Index>
+    <Name>Filter 5 Q</Name>
+    <Symbol>filter5_q</Symbol>
+    <Value>2</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>28</Index>
+    <Name>Filter 6 Q</Name>
+    <Symbol>filter6_q</Symbol>
+    <Value>2</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>29</Index>
+    <Name>Filter 7 Q</Name>
+    <Symbol>filter7_q</Symbol>
+    <Value>2</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>30</Index>
+    <Name>Filter 8 Q</Name>
+    <Symbol>filter8_q</Symbol>
+    <Value>2</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>31</Index>
+    <Name>Filter 9 Q</Name>
+    <Symbol>filter9_q</Symbol>
+    <Value>0.699999988079071</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>32</Index>
+    <Name>Filter 10 Q</Name>
+    <Symbol>filter10_q</Symbol>
+    <Value>0.699999988079071</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>33</Index>
+    <Name>Filter 1 Type</Name>
+    <Symbol>filter1_type</Symbol>
+    <Value>6</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>34</Index>
+    <Name>Filter 2 Type</Name>
+    <Symbol>filter2_type</Symbol>
+    <Value>9</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>35</Index>
+    <Name>Filter 3 Type</Name>
+    <Symbol>filter3_type</Symbol>
+    <Value>11</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>36</Index>
+    <Name>Filter 4 Type</Name>
+    <Symbol>filter4_type</Symbol>
+    <Value>11</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>37</Index>
+    <Name>Filter 5 Type</Name>
+    <Symbol>filter5_type</Symbol>
+    <Value>11</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>38</Index>
+    <Name>Filter 6 Type</Name>
+    <Symbol>filter6_type</Symbol>
+    <Value>11</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>39</Index>
+    <Name>Filter 7 Type</Name>
+    <Symbol>filter7_type</Symbol>
+    <Value>11</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>40</Index>
+    <Name>Filter 8 Type</Name>
+    <Symbol>filter8_type</Symbol>
+    <Value>11</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>41</Index>
+    <Name>Filter 9 Type</Name>
+    <Symbol>filter9_type</Symbol>
+    <Value>10</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>42</Index>
+    <Name>Filter 10 Type</Name>
+    <Symbol>filter10_type</Symbol>
+    <Value>2</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>43</Index>
+    <Name>Filter 1 Enable</Name>
+    <Symbol>filter1_enable</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>44</Index>
+    <Name>Filter 2 Enable</Name>
+    <Symbol>filter2_enable</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>45</Index>
+    <Name>Filter 3 Enable</Name>
+    <Symbol>filter3_enable</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>46</Index>
+    <Name>Filter 4 Enable</Name>
+    <Symbol>filter4_enable</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>47</Index>
+    <Name>Filter 5 Enable</Name>
+    <Symbol>filter5_enable</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>48</Index>
+    <Name>Filter 6 Enable</Name>
+    <Symbol>filter6_enable</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>49</Index>
+    <Name>Filter 7 Enable</Name>
+    <Symbol>filter7_enable</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>50</Index>
+    <Name>Filter 8 Enable</Name>
+    <Symbol>filter8_enable</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>51</Index>
+    <Name>Filter 9 Enable</Name>
+    <Symbol>filter9_enable</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>52</Index>
+    <Name>Filter 10 Enable</Name>
+    <Symbol>filter10_enable</Symbol>
+    <Value>1</Value>
+   </Parameter>
+  </Data>
+ </Plugin>
+
+ <!-- Calf Vintage Delay -->
+ <Plugin>
+  <Info>
+   <Type>LV2</Type>
+   <Name>Calf Vintage Delay</Name>
+   <URI>http://calf.sourceforge.net/plugins/VintageDelay</URI>
+  </Info>
+
+  <Data>
+   <Active>Yes</Active>
+   <ControlChannel>1</ControlChannel>
+   <Options>0x3f1</Options>
+
+   <Parameter>
+    <Index>0</Index>
+    <Name>Active</Name>
+    <Symbol>on</Symbol>
+    <MidiChannel>1</MidiChannel>
+    <MappedControlIndex>90</MappedControlIndex>
+    <MappedMinimum>0</MappedMinimum>
+    <MappedMaximum>1</MappedMaximum>
+    <MidiCC>90</MidiCC>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>1</Index>
+    <Name>Input Gain</Name>
+    <Symbol>level_in</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>2</Index>
+    <Name>Output Gain</Name>
+    <Symbol>level_out</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>11</Index>
+    <Name>Subdivide</Name>
+    <Symbol>subdiv</Symbol>
+    <Value>4</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>12</Index>
+    <Name>Time L</Name>
+    <Symbol>time_l</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>13</Index>
+    <Name>Time R</Name>
+    <Symbol>time_r</Symbol>
+    <Value>4</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>14</Index>
+    <Name>Feedback</Name>
+    <Symbol>feedback</Symbol>
+    <Value>0.5</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>15</Index>
+    <Name>Wet</Name>
+    <Symbol>amount</Symbol>
+    <MidiChannel>1</MidiChannel>
+    <MappedControlIndex>31</MappedControlIndex>
+    <MappedMinimum>0</MappedMinimum>
+    <MappedMaximum>1</MappedMaximum>
+    <MidiCC>31</MidiCC>
+    <Value>0.25</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>16</Index>
+    <Name>Mix mode</Name>
+    <Symbol>mix_mode</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>17</Index>
+    <Name>Medium</Name>
+    <Symbol>medium</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>18</Index>
+    <Name>Dry</Name>
+    <Symbol>dry</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>19</Index>
+    <Name>Stereo Width</Name>
+    <Symbol>width</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>20</Index>
+    <Name>Fragmentation</Name>
+    <Symbol>fragmentation</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>21</Index>
+    <Name>Pattern Beats</Name>
+    <Symbol>pbeats</Symbol>
+    <Value>4</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>22</Index>
+    <Name>Pattern Fragmentation</Name>
+    <Symbol>pfrag</Symbol>
+    <Value>4</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>23</Index>
+    <Name>Timing</Name>
+    <Symbol>timing</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>24</Index>
+    <Name>BPM</Name>
+    <Symbol>bpm</Symbol>
+    <Value>125.22225189209</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>25</Index>
+    <Name>ms</Name>
+    <Symbol>ms</Symbol>
+    <Value>500</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>26</Index>
+    <Name>Frequency</Name>
+    <Symbol>hz</Symbol>
+    <Value>2</Value>
+   </Parameter>
+  </Data>
+ </Plugin>
+
+ <!-- Noize Mak3r -->
+ <Plugin>
+  <Info>
+   <Type>LV2</Type>
+   <Name>Noize Mak3r</Name>
+   <URI>http://kunz.corrupt.ch/products/tal-noisemaker</URI>
+  </Info>
+
+  <Data>
+   <Active>Yes</Active>
+   <ControlChannel>1</ControlChannel>
+   <Options>0x3f0</Options>
+
+   <Parameter>
+    <Index>1</Index>
+    <Name>unused</Name>
+    <Symbol>unused</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>2</Index>
+    <Name>volume</Name>
+    <Symbol>volume</Symbol>
+    <Value>0.360000014305115</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>3</Index>
+    <Name>filtertype</Name>
+    <Symbol>filtertype</Symbol>
+    <Value>0.181818187236786</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>4</Index>
+    <Name>cutoff</Name>
+    <Symbol>cutoff</Symbol>
+    <Value>0.356000006198883</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>5</Index>
+    <Name>resonance</Name>
+    <Symbol>resonance</Symbol>
+    <Value>0.376000016927719</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>6</Index>
+    <Name>keyfollow</Name>
+    <Symbol>keyfollow</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>7</Index>
+    <Name>filtercontour</Name>
+    <Symbol>filtercontour</Symbol>
+    <Value>0.508000016212463</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>8</Index>
+    <Name>filterattack</Name>
+    <Symbol>filterattack</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>9</Index>
+    <Name>filterdecay</Name>
+    <Symbol>filterdecay</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>10</Index>
+    <Name>filtersustain</Name>
+    <Symbol>filtersustain</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>11</Index>
+    <Name>filterrelease</Name>
+    <Symbol>filterrelease</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>12</Index>
+    <Name>ampattack</Name>
+    <Symbol>ampattack</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>13</Index>
+    <Name>ampdecay</Name>
+    <Symbol>ampdecay</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>14</Index>
+    <Name>ampsustain</Name>
+    <Symbol>ampsustain</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>15</Index>
+    <Name>amprelease</Name>
+    <Symbol>amprelease</Symbol>
+    <Value>0.260000020265579</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>16</Index>
+    <Name>osc1volume</Name>
+    <Symbol>osc1volume</Symbol>
+    <Value>0.744000017642975</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>17</Index>
+    <Name>osc2volume</Name>
+    <Symbol>osc2volume</Symbol>
+    <Value>0.812000036239624</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>18</Index>
+    <Name>osc3volume</Name>
+    <Symbol>osc3volume</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>19</Index>
+    <Name>oscmastertune</Name>
+    <Symbol>oscmastertune</Symbol>
+    <Value>0.5</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>20</Index>
+    <Name>osc1tune</Name>
+    <Symbol>osc1tune</Symbol>
+    <Value>0.25</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>21</Index>
+    <Name>osc2tune</Name>
+    <Symbol>osc2tune</Symbol>
+    <Value>0.244000017642975</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>22</Index>
+    <Name>osc1finetune</Name>
+    <Symbol>osc1finetune</Symbol>
+    <Value>0.5</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>23</Index>
+    <Name>osc2finetune</Name>
+    <Symbol>osc2finetune</Symbol>
+    <Value>0.41200003027916</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>24</Index>
+    <Name>osc1waveform</Name>
+    <Symbol>osc1waveform</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>25</Index>
+    <Name>osc2waveform</Name>
+    <Symbol>osc2waveform</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>26</Index>
+    <Name>oscsync</Name>
+    <Symbol>oscsync</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>27</Index>
+    <Name>lfo1waveform</Name>
+    <Symbol>lfo1waveform</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>28</Index>
+    <Name>lfo2waveform</Name>
+    <Symbol>lfo2waveform</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>29</Index>
+    <Name>lfo1rate</Name>
+    <Symbol>lfo1rate</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>30</Index>
+    <Name>lfo2rate</Name>
+    <Symbol>lfo2rate</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>31</Index>
+    <Name>lfo1amount</Name>
+    <Symbol>lfo1amount</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>32</Index>
+    <Name>lfo2amount</Name>
+    <Symbol>lfo2amount</Symbol>
+    <Value>0.924000024795532</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>33</Index>
+    <Name>lfo1destination</Name>
+    <Symbol>lfo1destination</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>34</Index>
+    <Name>lfo2destination</Name>
+    <Symbol>lfo2destination</Symbol>
+    <MidiChannel>1</MidiChannel>
+    <MappedControlIndex>14</MappedControlIndex>
+    <MappedMinimum>0</MappedMinimum>
+    <MappedMaximum>1</MappedMaximum>
+    <MidiCC>14</MidiCC>
+    <Value>0.637795269489288</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>35</Index>
+    <Name>lfo1phase</Name>
+    <Symbol>lfo1phase</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>36</Index>
+    <Name>lfo2phase</Name>
+    <Symbol>lfo2phase</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>37</Index>
+    <Name>osc2fm</Name>
+    <Symbol>osc2fm</Symbol>
+    <Value>0.32600000500679</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>38</Index>
+    <Name>osc2phase</Name>
+    <Symbol>osc2phase</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>39</Index>
+    <Name>osc1pw</Name>
+    <Symbol>osc1pw</Symbol>
+    <Value>0.516000032424927</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>40</Index>
+    <Name>osc1phase</Name>
+    <Symbol>osc1phase</Symbol>
+    <Value>0.5</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>41</Index>
+    <Name>transpose</Name>
+    <Symbol>transpose</Symbol>
+    <Value>0.864000022411346</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>42</Index>
+    <Name>freeadattack</Name>
+    <Symbol>freeadattack</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>43</Index>
+    <Name>freeaddecay</Name>
+    <Symbol>freeaddecay</Symbol>
+    <Value>0.800000011920929</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>44</Index>
+    <Name>freeadamount</Name>
+    <Symbol>freeadamount</Symbol>
+    <Value>0.716000020503998</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>45</Index>
+    <Name>freeaddestination</Name>
+    <Symbol>freeaddestination</Symbol>
+    <Value>0.400000005960464</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>46</Index>
+    <Name>lfo1sync</Name>
+    <Symbol>lfo1sync</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>47</Index>
+    <Name>lfo1keytrigger</Name>
+    <Symbol>lfo1keytrigger</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>48</Index>
+    <Name>lfo2sync</Name>
+    <Symbol>lfo2sync</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>49</Index>
+    <Name>lfo2keytrigger</Name>
+    <Symbol>lfo2keytrigger</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>50</Index>
+    <Name>portamento</Name>
+    <Symbol>portamento</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>51</Index>
+    <Name>portamentomode</Name>
+    <Symbol>portamentomode</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>52</Index>
+    <Name>voices</Name>
+    <Symbol>voices</Symbol>
+    <Value>0.200000002980232</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>53</Index>
+    <Name>velocityvolume</Name>
+    <Symbol>velocityvolume</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>54</Index>
+    <Name>velocitycontour</Name>
+    <Symbol>velocitycontour</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>55</Index>
+    <Name>velocitycutoff</Name>
+    <Symbol>velocitycutoff</Symbol>
+    <Value>0.508000016212463</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>56</Index>
+    <Name>pitchwheelcutoff</Name>
+    <Symbol>pitchwheelcutoff</Symbol>
+    <Value>0.220000013709068</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>57</Index>
+    <Name>pitchwheelpitch</Name>
+    <Symbol>pitchwheelpitch</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>58</Index>
+    <Name>ringmodulation</Name>
+    <Symbol>ringmodulation</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>59</Index>
+    <Name>chorus1enable</Name>
+    <Symbol>chorus1enable</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>60</Index>
+    <Name>chorus2enable</Name>
+    <Symbol>chorus2enable</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>61</Index>
+    <Name>reverbwet</Name>
+    <Symbol>reverbwet</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>62</Index>
+    <Name>reverbdecay</Name>
+    <Symbol>reverbdecay</Symbol>
+    <Value>0.452000021934509</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>63</Index>
+    <Name>reverbpredelay</Name>
+    <Symbol>reverbpredelay</Symbol>
+    <Value>0.0360000021755695</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>64</Index>
+    <Name>reverbhighcut</Name>
+    <Symbol>reverbhighcut</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>65</Index>
+    <Name>reverblowcut</Name>
+    <Symbol>reverblowcut</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>66</Index>
+    <Name>oscbitcrusher</Name>
+    <Symbol>oscbitcrusher</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>67</Index>
+    <Name>highpass</Name>
+    <Symbol>highpass</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>68</Index>
+    <Name>detune</Name>
+    <Symbol>detune</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>69</Index>
+    <Name>vintagenoise</Name>
+    <Symbol>vintagenoise</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>70</Index>
+    <Name>Port 70</Name>
+    <Symbol>lv2_port_70</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>71</Index>
+    <Name>unused</Name>
+    <Symbol>unused_2</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>72</Index>
+    <Name>envelopeeditordest1</Name>
+    <Symbol>envelopeeditordest1</Symbol>
+    <Value>0.571428596973419</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>73</Index>
+    <Name>envelopeeditorspeed</Name>
+    <Symbol>envelopeeditorspeed</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>74</Index>
+    <Name>envelopeeditoramount</Name>
+    <Symbol>envelopeeditoramount</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>75</Index>
+    <Name>envelopeoneshot</Name>
+    <Symbol>envelopeoneshot</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>76</Index>
+    <Name>envelopefixtempo</Name>
+    <Symbol>envelopefixtempo</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>77</Index>
+    <Name>Port 77</Name>
+    <Symbol>lv2_port_77</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>78</Index>
+    <Name>Port 78</Name>
+    <Symbol>lv2_port_78</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>79</Index>
+    <Name>Port 79</Name>
+    <Symbol>lv2_port_79</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>80</Index>
+    <Name>Port 80</Name>
+    <Symbol>lv2_port_80</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>81</Index>
+    <Name>Port 81</Name>
+    <Symbol>lv2_port_81</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>82</Index>
+    <Name>filterdrive</Name>
+    <Symbol>filterdrive</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>83</Index>
+    <Name>delaywet</Name>
+    <Symbol>delaywet</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>84</Index>
+    <Name>delaytime</Name>
+    <Symbol>delaytime</Symbol>
+    <Value>0.5</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>85</Index>
+    <Name>delaysync</Name>
+    <Symbol>delaysync</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>86</Index>
+    <Name>delayfactorl</Name>
+    <Symbol>delayfactorl</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>87</Index>
+    <Name>delayfactorr</Name>
+    <Symbol>delayfactorr</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>88</Index>
+    <Name>delayhighshelf</Name>
+    <Symbol>delayhighshelf</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>89</Index>
+    <Name>delaylowshelf</Name>
+    <Symbol>delaylowshelf</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>90</Index>
+    <Name>delayfeedback</Name>
+    <Symbol>delayfeedback</Symbol>
+    <Value>0.5</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>91</Index>
+    <Name>Port 91</Name>
+    <Symbol>lv2_port_91</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>92</Index>
+    <Name>Port 92</Name>
+    <Symbol>lv2_port_92</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <CustomData>
+    <Type>http://lv2plug.in/ns/ext/atom#String</Type>
+    <Key>urn:juce:stateString</Key>
+    <Value>
+&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;
+
+&lt;tal curprogram=&quot;0&quot; version=&quot;1.6999999999999999556&quot;&gt;
+  &lt;programs&gt;
+    &lt;program programname=&quot;LD Noisy Sync Lead TAL&quot; volume=&quot;0.36000001430511474609&quot;
+             filtertype=&quot;0.18181818723678588867&quot; cutoff=&quot;0.35600000619888305664&quot;
+             resonance=&quot;0.37600001692771911621&quot; osc1volume=&quot;0.74400001764297485352&quot;
+             osc2volume=&quot;0.81200003623962402344&quot; osc3volume=&quot;0&quot; osc1waveform=&quot;0&quot;
+             osc2waveform=&quot;0&quot; oscsync=&quot;1&quot; oscmastertune=&quot;0.5&quot; osc1tune=&quot;0.25&quot;
+             osc2tune=&quot;0.24400001764297485352&quot; osc1finetune=&quot;0.5&quot; osc2finetune=&quot;0.4120000302791595459&quot;
+             portamento=&quot;0&quot; keyfollow=&quot;1&quot; filtercontour=&quot;0.50800001621246337891&quot;
+             filterattack=&quot;0&quot; filterdecay=&quot;0&quot; filtersustain=&quot;0&quot; filterrelease=&quot;0&quot;
+             ampattack=&quot;0&quot; ampdecay=&quot;0&quot; ampsustain=&quot;1&quot; amprelease=&quot;0.26000002026557922363&quot;
+             voices=&quot;0.20000000298023223877&quot; portamentomode=&quot;0&quot; lfo1waveform=&quot;0&quot;
+             lfo2waveform=&quot;0&quot; lfo1rate=&quot;0&quot; lfo2rate=&quot;0&quot; lfo1amount=&quot;0&quot; lfo2amount=&quot;0.92400002479553222656&quot;
+             lfo1destination=&quot;0&quot; lfo2destination=&quot;0.63779526948928833008&quot;
+             lfo1phase=&quot;1&quot; lfo2phase=&quot;0&quot; osc1pw=&quot;0.51600003242492675781&quot; osc2fm=&quot;0.32600000500679016113&quot;
+             osc1phase=&quot;0.5&quot; osc2phase=&quot;0&quot; transpose=&quot;0.86400002241134643555&quot;
+             freeadattack=&quot;0&quot; freeaddecay=&quot;0.80000001192092895508&quot; freeadamount=&quot;0.71600002050399780273&quot;
+             freeaddestination=&quot;0.40000000596046447754&quot; lfo1sync=&quot;0&quot; lfo1keytrigger=&quot;0&quot;
+             lfo2sync=&quot;0&quot; lfo2keytrigger=&quot;0&quot; velocityvolume=&quot;0&quot; velocitycontour=&quot;0&quot;
+             velocitycutoff=&quot;0.50800001621246337891&quot; pitchwheelcutoff=&quot;0.22000001370906829834&quot;
+             pitchwheelpitch=&quot;0&quot; highpass=&quot;0&quot; detune=&quot;0&quot; vintagenoise=&quot;0&quot;
+             ringmodulation=&quot;0&quot; chorus1enable=&quot;0&quot; chorus2enable=&quot;0&quot; reverbwet=&quot;0&quot;
+             reverbdecay=&quot;0.45200002193450927734&quot; reverbpredelay=&quot;0.036000002175569534302&quot;
+             reverbhighcut=&quot;0&quot; reverblowcut=&quot;1&quot; oscbitcrusher=&quot;1&quot; filterdrive=&quot;0&quot;
+             delaywet=&quot;0&quot; delaytime=&quot;0.5&quot; delaysync=&quot;0&quot; delayfactorl=&quot;0&quot; delayfactorr=&quot;0&quot;
+             delayhighshelf=&quot;0&quot; delaylowshelf=&quot;0&quot; delayfeedback=&quot;0.5&quot; envelopeeditordest1=&quot;0.57142859697341918945&quot;
+             envelopeeditorspeed=&quot;0&quot; envelopeeditoramount=&quot;0&quot; envelopeoneshot=&quot;0&quot;
+             envelopefixtempo=&quot;0&quot; tab1open=&quot;1&quot; tab2open=&quot;1&quot; tab3open=&quot;0&quot; tab4open=&quot;0&quot;&gt;
+      &lt;splinePoints&gt;
+        &lt;splinePoint isStartPoint=&quot;1&quot; isEndPoint=&quot;0&quot; centerPointX=&quot;0&quot; centerPointY=&quot;0.5&quot;
+                     controlPointLeftX=&quot;0&quot; controlPointLeftY=&quot;0.5&quot; controlPointRightX=&quot;0.10000000149011611938&quot;
+                     controlPointRightY=&quot;0.5&quot;/&gt;
+        &lt;splinePoint isStartPoint=&quot;0&quot; isEndPoint=&quot;1&quot; centerPointX=&quot;1&quot; centerPointY=&quot;0.5&quot;
+                     controlPointLeftX=&quot;0.89999997615814208984&quot; controlPointLeftY=&quot;0.5&quot;
+                     controlPointRightX=&quot;1&quot; controlPointRightY=&quot;0.5&quot;/&gt;
+      &lt;/splinePoints&gt;
+    &lt;/program&gt;
+  &lt;/programs&gt;
+&lt;/tal&gt;
+
+    </Value>
+   </CustomData>
+  </Data>
+ </Plugin>
+
+ <Patchbay>
+  <Connection>
+   <Source>Audio Input:Left</Source>
+   <Target>Calf Filter:In L</Target>
+  </Connection>
+  <Connection>
+   <Source>Midi Input:Capture 1</Source>
+   <Target>Temper:events-in</Target>
+  </Connection>
+  <Connection>
+   <Source>Midi Input:Capture 1</Source>
+   <Target>Calf Reverb:events-in</Target>
+  </Connection>
+  <Connection>
+   <Source>Midi Input:Capture 1</Source>
+   <Target>Calf Vintage Delay:events-in</Target>
+  </Connection>
+  <Connection>
+   <Source>Calf Filter:Out L</Source>
+   <Target>Calf Gate:In L</Target>
+  </Connection>
+  <Connection>
+   <Source>Calf Gate:Out L</Source>
+   <Target>Vocoder:Formant audio input</Target>
+  </Connection>
+  <Connection>
+   <Source>Temper:Audio Output 1</Source>
+   <Target>EQ10Q Mono:Input</Target>
+  </Connection>
+  <Connection>
+   <Source>EQ10Q Mono:Output</Source>
+   <Target>Calf Vintage Delay:In L</Target>
+  </Connection>
+  <Connection>
+   <Source>Calf Vintage Delay:Out L</Source>
+   <Target>Calf Reverb:In L</Target>
+  </Connection>
+  <Connection>
+   <Source>Midi Input:Capture 1</Source>
+   <Target>Noize Mak3r:events-in</Target>
+  </Connection>
+  <Connection>
+   <Source>Noize Mak3r:Audio Output 1</Source>
+   <Target>Vocoder:Carrier audio input</Target>
+  </Connection>
+  <Connection>
+   <Source>Calf Reverb:Out L</Source>
+   <Target>Audio Output:Left</Target>
+  </Connection>
+  <Connection>
+   <Source>Vocoder:Vocoder audio output</Source>
+   <Target>Temper:Audio Input 1</Target>
+  </Connection>
+  <Positions>
+   <Position x1="944" y1="1325" pluginId="7">
+    <Name>Noize Mak3r</Name>
+   </Position>
+   <Position x1="2032" y1="1113" pluginId="6">
+    <Name>Calf Vintage Delay</Name>
+   </Position>
+   <Position x1="1860" y1="1004" pluginId="5">
+    <Name>EQ10Q Mono</Name>
+   </Position>
+   <Position x1="2463" y1="980" pluginId="4">
+    <Name>Calf Reverb</Name>
+   </Position>
+   <Position x1="1608" y1="1155" pluginId="3">
+    <Name>Temper</Name>
+   </Position>
+   <Position x1="1221" y1="1110" pluginId="2">
+    <Name>Vocoder</Name>
+   </Position>
+   <Position x1="1138" y1="967" pluginId="1">
+    <Name>Calf Gate</Name>
+   </Position>
+   <Position x1="832" y1="964" pluginId="0">
+    <Name>Calf Filter</Name>
+   </Position>
+   <Position x1="1440" y1="1221" x2="2382" y2="1249">
+    <Name>Midi Output</Name>
+   </Position>
+   <Position x1="533" y1="1263" x2="1832" y2="1158">
+    <Name>Midi Input</Name>
+   </Position>
+   <Position x1="836" y1="1000" x2="2003" y2="1320">
+    <Name>Audio Output</Name>
+   </Position>
+   <Position x1="1132" y1="893">
+    <Name>Audio Input</Name>
+   </Position>
+  </Positions>
+ </Patchbay>
+
+ <ExternalPatchbay>
+  <Connection>
+   <Source>system:capture_1</Source>
+   <Target>Carla:audio-in1</Target>
+  </Connection>
+  <Connection>
+   <Source>system:capture_1</Source>
+   <Target>Carla:audio-in2</Target>
+  </Connection>
+  <Connection>
+   <Source>system:midi_capture_2</Source>
+   <Target>Carla:events-in</Target>
+  </Connection>
+  <Connection>
+   <Source>Carla:audio-out1</Source>
+   <Target>system:playback_1</Target>
+  </Connection>
+  <Connection>
+   <Source>Carla:audio-out2</Source>
+   <Target>system:playback_2</Target>
+  </Connection>
+  <Positions>
+   <Position x1="1552" y1="1024">
+    <Name>Carla</Name>
+   </Position>
+   <Position x1="836" y1="1000" x2="2017" y2="928">
+    <Name>system</Name>
+   </Position>
+  </Positions>
+ </ExternalPatchbay>
+</CARLA-PROJECT>

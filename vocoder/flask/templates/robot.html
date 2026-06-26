@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>{{ name }} · vocoder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <meta name="mobile-web-app-capable" content="yes">
+  <style>body { margin: 0; background: #0a0e1a; }</style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script id="flask-data" type="application/json">
+  { "name": {{ name | tojson }} }
+  </script>
+
+  <script crossorigin src="{{ url_for('static', filename='react.development.js') }}"></script>
+  <script crossorigin src="{{ url_for('static', filename='react-dom.development.js') }}"></script>
+  <script src="{{ url_for('static', filename='material-ui.development.js') }}"></script>
+  <script src="{{ url_for('static', filename='babel.min.js') }}"></script>
+  <script>
+    Babel.registerPreset('react-classic', {
+      presets: [[Babel.availablePresets['react'], { runtime: 'classic' }]]
+    });
+  </script>
+
+  <script type="text/babel" data-presets="react-classic">{% raw %}
+  const {
+    createTheme, ThemeProvider, CssBaseline,
+    AppBar, Toolbar, Typography, Box,
+    Card, CardContent, LinearProgress,
+    IconButton, Stack, Chip, Skeleton, Button, CircularProgress,
+  } = MaterialUI;
+
+  const theme = createTheme({
+    palette: {
+      mode: 'dark',
+      primary:    { main: '#5c6bc0' },
+      secondary:  { main: '#ab47bc' },
+      warning:    { main: '#ffa726' },
+      info:       { main: '#29b6f6' },
+      background: { default: '#0a0e1a', paper: '#141929' },
+    },
+    shape: { borderRadius: 12 },
+    typography: { fontFamily: 'Roboto, sans-serif' },
+  });
+
+  const D = JSON.parse(document.getElementById('flask-data').textContent);
+
+  function UsageBar({ label, value, detail, color }) {
+    const pct = Math.min(value || 0, 100);
+    const barColor = pct > 90 ? '#ef5350' : pct > 70 ? '#ffa726' : '#29b6f6';
+    return (
+      <Box>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+          <Typography variant="caption" sx={{ fontWeight: 600 }}>{label}</Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+            {pct.toFixed(1)}%{detail ? ` · ${detail}` : ''}
+          </Typography>
+        </Box>
+        <LinearProgress
+          variant="determinate"
+          value={pct}
+          sx={{ height: 8, borderRadius: 4, '& .MuiLinearProgress-bar': { bgcolor: barColor } }}
+        />
+      </Box>
+    );
+  }
+
+  function timeSince(ms) {
+    if (!ms) return null;
+    const diff = Math.floor((Date.now() - ms) / 1000);
+    if (diff < 60)  return `hace ${diff} s`;
+    if (diff < 3600) return `hace ${Math.floor(diff / 60)} min`;
+    return `hace ${Math.floor(diff / 3600)} h`;
+  }
+
+  function App() {
+    const [sysData,    setSysData]    = React.useState(null);
+    const [status,     setStatus]     = React.useState(null);
+    const [svcData,    setSvcData]    = React.useState(null);
+    const [healthy,    setHealthy]    = React.useState(null);
+    const [restarting, setRestarting] = React.useState(false);
+    const [now, setNow] = React.useState(Date.now());
+
+    React.useEffect(() => {
+      const fetchAll = () => {
+        fetch('/robot_data').then(r => r.json()).then(setSysData).catch(() => {});
+        fetch('/api/status').then(r => r.json()).then(setStatus).catch(() => {});
+        fetch('/api/client-errors').then(r => r.json()).then(setSvcData).catch(() => {});
+      };
+      fetchAll();
+      const id = setInterval(fetchAll, 5000);
+      return () => clearInterval(id);
+    }, []);
+
+    React.useEffect(() => {
+      const check = () => {
+        fetch('/api/health', { signal: AbortSignal.timeout(3000) })
+          .then(r => r.ok ? r.json() : Promise.reject())
+          .then(() => setHealthy(true))
+          .catch(() => setHealthy(false));
+      };
+      check();
+      const id = setInterval(check, 5000);
+      return () => clearInterval(id);
+    }, []);
+
+    // Actualizar el "hace X s" del BPM cada segundo
+    React.useEffect(() => {
+      const id = setInterval(() => setNow(Date.now()), 1000);
+      return () => clearInterval(id);
+    }, []);
+
+    const nombre       = D.name;
+    const svcOk        = svcData?.is_active ?? null;
+    const errors       = svcData?.errors || '';
+    const bpm          = sysData?.bpm;
+    const tcpConnected = sysData?.tcp_connected ?? false;
+    const lastSyncMs   = sysData?.last_sync_ms;
+
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+
+        {/* ── AppBar ───────────────────────────────────────────────── */}
+        <AppBar position="sticky" elevation={0}
+          sx={{ bgcolor: 'background.paper', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+          <Toolbar variant="dense">
+            <IconButton edge="start" color="inherit" onClick={() => history.back()} sx={{ mr: 1 }}>
+              <span className="material-icons">arrow_back</span>
+            </IconButton>
+            <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 700, textTransform: 'capitalize' }}>
+              {nombre}
+            </Typography>
+            <Chip
+              size="small"
+              label={healthy === null ? '…' : healthy ? 'Online' : 'Sin respuesta'}
+              color={healthy === null ? 'default' : healthy ? 'success' : 'error'}
+              sx={{ fontWeight: 600 }}
+            />
+          </Toolbar>
+        </AppBar>
+
+        <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+
+          {/* ── Hero: estado ─────────────────────────────────────── */}
+          <Card>
+            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, textTransform: 'capitalize' }}>
+                  {nombre}
+                </Typography>
+                <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                  {status ? (
+                    <Chip
+                      size="small"
+                      label={status.jack ? 'JACK' : 'JACK off'}
+                      color={status.jack ? 'success' : 'error'}
+                      icon={<span className="material-icons" style={{ fontSize: 13 }}>headset</span>}
+                    />
+                  ) : <Skeleton variant="rounded" width={70} height={22} />}
+                  {status ? (
+                    <Chip
+                      size="small"
+                      label={status.carla ? 'Carla' : 'Carla off'}
+                      color={status.carla ? 'success' : 'error'}
+                      icon={<span className="material-icons" style={{ fontSize: 13 }}>graphic_eq</span>}
+                    />
+                  ) : <Skeleton variant="rounded" width={80} height={22} />}
+                  {sysData ? (
+                    <Chip
+                      size="small"
+                      label={tcpConnected ? 'TCP' : 'TCP off'}
+                      color={tcpConnected ? 'success' : 'error'}
+                      icon={<span className="material-icons" style={{ fontSize: 13 }}>lan</span>}
+                    />
+                  ) : <Skeleton variant="rounded" width={65} height={22} />}
+                </Stack>
+              </Box>
+            </CardContent>
+          </Card>
+
+          {/* ── BPM ──────────────────────────────────────────────── */}
+          <Card>
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                <span className="material-icons" style={{ fontSize: 18, color: '#ab47bc' }}>music_note</span>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>BPM</Typography>
+                <Box sx={{ ml: 'auto' }}>
+                  <Chip
+                    size="small"
+                    label={tcpConnected ? 'Conectado' : 'Sin señal'}
+                    color={tcpConnected ? 'success' : 'default'}
+                  />
+                </Box>
+              </Box>
+              {sysData ? (
+                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5 }}>
+                  <Typography variant="h3" sx={{ fontWeight: 700, fontFamily: 'monospace', lineHeight: 1 }}>
+                    {bpm != null ? Math.round(bpm) : '—'}
+                  </Typography>
+                  {bpm != null && (
+                    <Typography variant="caption" color="text.secondary">bpm</Typography>
+                  )}
+                </Box>
+              ) : <Skeleton variant="rounded" height={48} width={120} />}
+              {lastSyncMs && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                  Sincronizado {timeSince(lastSyncMs)}
+                </Typography>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* ── Disco ────────────────────────────────────────────── */}
+          <Card>
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                <span className="material-icons" style={{ fontSize: 18, color: '#29b6f6' }}>storage</span>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>Sistema</Typography>
+              </Box>
+              {sysData ? (
+                <UsageBar
+                  label="Disco"
+                  value={sysData.disk_usage_percent}
+                  detail={sysData.disk_usage_string}
+                />
+              ) : <Skeleton variant="rounded" height={28} />}
+            </CardContent>
+          </Card>
+
+          {/* ── Carla service ────────────────────────────────────── */}
+          <Card>
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <span className="material-icons" style={{ fontSize: 18, color: svcOk ? '#66bb6a' : '#ef5350' }}>
+                    {svcOk ? 'check_circle' : 'error'}
+                  </span>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>Carla</Typography>
+                </Box>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Chip
+                    size="small"
+                    label={svcOk === null ? '…' : svcOk ? 'Activo' : 'Inactivo'}
+                    color={svcOk === null ? 'default' : svcOk ? 'success' : 'error'}
+                  />
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="warning"
+                    disabled={restarting}
+                    onClick={() => {
+                      setRestarting(true);
+                      fetch('/restart-cliente', { method: 'POST' })
+                        .finally(() => setTimeout(() => setRestarting(false), 3000));
+                    }}
+                    startIcon={restarting
+                      ? <CircularProgress size={12} color="inherit" />
+                      : <span className="material-icons" style={{ fontSize: 14 }}>restart_alt</span>}
+                    sx={{ minWidth: 0, px: 1 }}
+                  >
+                    {restarting ? '' : 'Reiniciar'}
+                  </Button>
+                </Stack>
+              </Box>
+              {svcData === null ? (
+                <Skeleton variant="rounded" height={60} />
+              ) : errors ? (
+                <Box component="pre" sx={{
+                  fontSize: '0.65rem', whiteSpace: 'pre-wrap', overflowX: 'auto',
+                  maxHeight: 200, bgcolor: 'rgba(239,83,80,0.08)',
+                  border: '1px solid rgba(239,83,80,0.2)',
+                  color: '#ef9a9a', p: 1, borderRadius: 1, m: 0,
+                }}>
+                  {errors}
+                </Box>
+              ) : (
+                <Typography variant="body2" color="text.secondary">Sin errores recientes</Typography>
+              )}
+            </CardContent>
+          </Card>
+
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  {% endraw %}</script>
+</body>
+</html>
