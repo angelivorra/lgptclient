@@ -2,16 +2,6 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Flask - Dev Server",
-      "type": "shell",
-      "command": "cd ${workspaceFolder}/flaskr && /home/angel/venvflask/bin/flask --app app run --host=0.0.0.0 --debug",
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "new"
-      }
-    },
-    {
       "label": "Stop servidor service",
       "type": "shell",
       "command": "sudo systemctl stop servidor.service",
@@ -40,18 +30,9 @@
       }
     },
     {
-      "label": "Ansible - Actualiza",
-      "type": "shell",
-      "command": "${workspaceFolder}/venv/bin/ansible-playbook ${workspaceFolder}/ansible/actualiza.yaml -i ${workspaceFolder}/ansible/inventario",
-      "problemMatcher": []
-    },
-    {
       "label": "MIDI Monitor (tkinter)",
       "type": "shell",
       "command": "${workspaceFolder}/midi_monitor/venv/bin/python ${workspaceFolder}/midi_monitor/main.py",
-      "windows": {
-        "command": "${workspaceFolder}\\midi_monitor\\venv\\Scripts\\python.exe ${workspaceFolder}\\midi_monitor\\main.py"
-      },
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
@@ -72,9 +53,6 @@
       "label": "Convierte Samples",
       "type": "shell",
       "command": "${workspaceFolder}/bin/venv/bin/python ${workspaceFolder}/bin/genera_samples.py",
-      "windows": {
-        "command": "${workspaceFolder}\\bin\\venv\\Scripts\\python.exe ${workspaceFolder}\\bin\\genera_samples.py"
-      },
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
@@ -95,8 +73,18 @@
       "label": "Genera Imágenes",
       "type": "shell",
       "command": "${workspaceFolder}/venv/bin/python ${workspaceFolder}/bin/genera.py ${input:terminal}",
-      "windows": {
-        "command": "& \"${workspaceFolder}\\midi_monitor\\venv\\Scripts\\python.exe\" \"${workspaceFolder}\\bin\\genera.py\" ${input:terminal}"
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Ansible: actualiza clientes",
+      "type": "shell",
+      "command": "ansible-playbook actualiza.yaml -i inventario",
+      "options": {
+        "cwd": "${workspaceFolder}/ansible"
       },
       "problemMatcher": [],
       "presentation": {
