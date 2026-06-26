@@ -1,0 +1,4 @@
+---
+# Actualiza todo el sistema: primero el sintetizador, luego las maletas.
+- import_playbook: actualiza-sinte.yaml
+- import_playbook: actualiza-maletas.yaml

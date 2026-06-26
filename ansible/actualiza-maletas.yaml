@@ -1,7 +1,9 @@
 ---
-- name: Instalamos robotas
+- name: Actualizar maletas (clientes)
   hosts: robotas
   gather_facts: no
   strategy: free
   roles:
     - role: cliente-actualiza
+      vars:
+        entorno_python: false

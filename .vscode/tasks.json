@@ -80,9 +80,35 @@
       }
     },
     {
-      "label": "Ansible: actualiza clientes",
+      "label": "Ansible: actualiza sinte",
       "type": "shell",
-      "command": "ansible-playbook actualiza.yaml -i inventario",
+      "command": "ansible-playbook actualiza-sinte.yaml -i inventario",
+      "options": {
+        "cwd": "${workspaceFolder}/ansible"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Ansible: actualiza maletas",
+      "type": "shell",
+      "command": "ansible-playbook actualiza-maletas.yaml -i inventario",
+      "options": {
+        "cwd": "${workspaceFolder}/ansible"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Ansible: actualiza todo",
+      "type": "shell",
+      "command": "ansible-playbook actualiza-todo.yaml -i inventario",
       "options": {
         "cwd": "${workspaceFolder}/ansible"
       },
