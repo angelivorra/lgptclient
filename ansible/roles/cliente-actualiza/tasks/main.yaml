@@ -4,21 +4,24 @@
   service:
     name: "{{ item }}"
     state: stopped
-    enabled: no
   loop: [cliente, display]
   ignore_errors: yes
 
-- name: Remove existing venv directory
-  file:
+- name: Check whether the venv already exists
+  ansible.builtin.stat:
+    path: /home/angel/venv/bin/python
+  register: venv_stat
+
+- name: Remove existing venv directory (forzado con entorno_python)
+  ansible.builtin.file:
     path: /home/angel/venv
     state: absent
-    owner: angel
-    group: angel
   when: entorno_python | default(false) | bool
 
-- name: Create Python virtual environment
-  command: /usr/bin/python3 -m venv /home/angel/venv
-  when: entorno_python | default(false) | bool
+- name: Create Python virtual environment (si no existe o forzado)
+  ansible.builtin.command: /usr/bin/python3 -m venv /home/angel/venv
+  register: venv_created
+  when: entorno_python | default(false) | bool or not venv_stat.stat.exists
 
 - name: Copy requirements.txt
   ansible.builtin.copy:
@@ -26,14 +29,14 @@
     dest: /home/angel/requirements.txt
     owner: angel
     group: angel
-  when: entorno_python | default(false) | bool
+  register: requirements_file
 
-- name: Install Python dependencies
-  pip:
+- name: Install Python dependencies (solo si cambiaron o venv nuevo)
+  ansible.builtin.pip:
     requirements: /home/angel/requirements.txt
     virtualenv: /home/angel/venv
     extra_args: "--cache-dir /home/angel/.pip-cache"
-  when: entorno_python | default(false) | bool
+  when: requirements_file.changed or venv_created.changed
 
 - name: Sync client files
   synchronize:
@@ -54,7 +57,6 @@
   ansible.builtin.command:
     cmd: "/home/angel/lgptclient/venv/bin/python /home/angel/lgptclient/bin/genera.py {{ inventory_hostname }}"
   delegate_to: localhost
-  when: imagenes | default(false) | bool
 
 - name: Sync image binary files
   synchronize:
@@ -63,7 +65,6 @@
     delete: yes
     rsync_opts:
       - "--chown=angel:angel"
-  when: imagenes | default(false) | bool
 
 - name: Configure cliente service
   become: true
@@ -73,6 +74,7 @@
     owner: root
     group: root
     mode: '0644'
+  register: cliente_unit
 
 - name: Enable and start the cliente service
   become: true
@@ -80,4 +82,5 @@
     name: cliente.service
     enabled: yes
     state: started
-    daemon_reload: yes
+    # Solo recargar systemd si la unidad cambió (evita daemon-reload innecesario)
+    daemon_reload: "{{ cliente_unit.changed }}"

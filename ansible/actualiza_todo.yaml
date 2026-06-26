@@ -1,12 +1,12 @@
 ---
 - name: Instalamos maleta
-  hosts: sombrilla
-  gather_facts: yes
+  hosts: clientes
+  gather_facts: no
+  strategy: free
   roles:
     - role: cliente-actualiza
       vars:
         entorno_python: false
-        imagenes: false
     # - role: servicio-panel
     #   vars:
     #     install_python: false

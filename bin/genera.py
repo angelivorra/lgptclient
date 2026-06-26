@@ -1,14 +1,13 @@
 import argparse
 import logging
-import random
-import colorsys
+import os
+import multiprocessing
 import time
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Any
-import struct
-from array import array
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import shutil
 import json
@@ -62,8 +61,9 @@ DATOS_TERMINAL: Dict[str, Dict[str, Any]] = {
     "ordenador": {"invert": False},
 }
 
-# Config en uso durante la ejecución (se setea en main)
-CURRENT_CONFIG: Dict[str, Any] = {}
+# Versión de la lógica de generación/empaquetado. Incrementar para forzar la
+# regeneración completa (invalida todos los .manifest.json existentes).
+GENERATOR_VERSION = 1
 
 
 class Cartera(Enum):  # alias semántico (evita conflicto con folder) (unused but placeholder)
@@ -153,13 +153,11 @@ def note_from_index(index: int) -> str:
 def png_to_bin(img: Image.Image, bin_path: Path, width: int = 800, height: int = 480, bpp: int = 16):
     img = img.resize((width, height))
     img = img.convert("RGB")
-    if bpp == 16:  # RGB565 optimizado
-        pixels = img.getdata()
-        buff = array('H', (( (r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3) for r, g, b in pixels ))
-        # Asegurar little-endian
-        if struct.pack('H', 1) == b'\x00\x01':  # big endian
-            buff.byteswap()
-        data = buff.tobytes()
+    if bpp == 16:  # RGB565 vectorizado con numpy
+        arr = np.asarray(img, dtype=np.uint16)  # (H, W, 3), recorrido row-major
+        r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+        rgb565 = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
+        data = rgb565.astype('<u2').tobytes()  # little-endian explícito
     elif bpp == 24:
         data = img.tobytes()
     elif bpp == 32:
@@ -171,13 +169,19 @@ def png_to_bin(img: Image.Image, bin_path: Path, width: int = 800, height: int =
         f.write(data)
 
 
-def _color_aleatorio_blanco() -> tuple:
-    """Devuelve un color RGB cercano al blanco con variación aleatoria de tono."""
-    h = random.random()
-    s = random.uniform(0, 0.30)
-    v = random.uniform(0.82, 1.0)
-    r, g, b = colorsys.hsv_to_rgb(h, s, v)
-    return (int(r * 255), int(g * 255), int(b * 255))
+# Paleta fija de colores cercanos al blanco. Determinista: la salida es idéntica
+# entre ejecuciones, de modo que rsync no retransmite los textos sin cambios.
+_PALETA_TEXTO: tuple = (
+    (255, 255, 255),
+    (255, 244, 230),
+    (235, 240, 255),
+    (255, 235, 240),
+)
+
+
+def _color_texto(idx: int = 0) -> tuple:
+    """Color fijo (determinista) para cada carácter, según su índice."""
+    return _PALETA_TEXTO[idx % len(_PALETA_TEXTO)]
 
 
 def _dec_stem_a_hex(stem: str) -> str:
@@ -230,13 +234,54 @@ def detectar_tipo_carpeta(path: Path) -> CarpetaTipo:
 
 
 # -----------------------------------------------------------
+# Manifest incremental: huella de las fuentes de cada carpeta
+# -----------------------------------------------------------
+MANIFEST_FILENAME = '.manifest.json'
+
+
+def calcula_manifest(path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
+    """Huella determinista de las fuentes de una carpeta numérica.
+    Incluye nombre/tamaño/mtime de cada archivo fuente + flags que afectan al
+    output (invert, markdown) + GENERATOR_VERSION. Si nada cambia, se puede
+    saltar la regeneración (y por tanto el rsync no transfiere nada)."""
+    archivos = []
+    for f in sorted(path.rglob('*')):
+        if f.is_file():
+            st = f.stat()
+            archivos.append([f.relative_to(path).as_posix(), st.st_size, int(st.st_mtime)])
+    return {
+        "version": GENERATOR_VERSION,
+        "invert": bool(config.get("invert")),
+        "markdown": bool(config.get("markdown")),
+        "files": archivos,
+    }
+
+
+def _manifest_coincide(out_dir: Path, manifest: Dict[str, Any]) -> bool:
+    """True si out_dir ya contiene salida válida para este manifest."""
+    manifest_path = out_dir / MANIFEST_FILENAME
+    if not out_dir.exists() or not manifest_path.exists():
+        return False
+    try:
+        previo = json.loads(manifest_path.read_text(encoding='utf-8'))
+    except Exception:
+        return False
+    return previo == manifest
+
+
+def _escribe_manifest(out_dir: Path, manifest: Dict[str, Any]):
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding='utf-8')
+
+
+# -----------------------------------------------------------
 # Procesadores por tipo
 # -----------------------------------------------------------
-def _necesita_thumbs() -> bool:
-    return bool(CURRENT_CONFIG.get('markdown'))
+def _necesita_thumbs(config: Dict[str, Any]) -> bool:
+    return bool(config.get('markdown'))
 
 
-def procesa_textos(path: Path) -> Dict:
+def procesa_textos(path: Path, config: Dict[str, Any]) -> Dict:
     """Genera imágenes de texto usando fondo.png & fuente.ttf.
     Lista de palabras fija de ejemplo (puede venir de archivo 'textos')."""
     fondo = path / 'fondo.png'
@@ -251,16 +296,16 @@ def procesa_textos(path: Path) -> Dict:
     bg = Image.open(fondo).convert('RGBA')
     W, H = bg.size
 
-    out_dir = OUTPUT_BASE / CURRENT_CONFIG.get('terminal', 'default') / path.name
+    out_dir = OUTPUT_BASE / config.get('terminal', 'default') / path.name
     vacia_carpeta(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     thumbs_dir = None
-    if _necesita_thumbs():
+    if _necesita_thumbs(config):
         thumbs_dir = HELP_BASE / path.name
         if thumbs_dir.exists():
             vacia_carpeta(thumbs_dir)
         thumbs_dir.mkdir(parents=True, exist_ok=True)
-    invert = bool(CURRENT_CONFIG.get("invert"))
+    invert = bool(config.get("invert"))
     for idx, palabra in enumerate(palabras):
         margin_ratio = 0.03 if len(palabra) > 7 else 0.1
         max_w = W * (1 - 2 * margin_ratio)
@@ -294,7 +339,7 @@ def procesa_textos(path: Path) -> Dict:
         # Cada carácter con un color aleatorio cercano al blanco
         for i, char in enumerate(palabra):
             offset_x = int(draw2.textlength(palabra[:i], font=font))
-            draw2.text((x + offset_x, y), char, font=font, fill=_color_aleatorio_blanco())
+            draw2.text((x + offset_x, y), char, font=font, fill=_color_texto(i))
         if invert:
             canvas = canvas.transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
         filename = f"{idx:03d}.png"
@@ -316,7 +361,7 @@ def procesa_textos(path: Path) -> Dict:
     return {"palabras": len(palabras), "out": str(out_dir)}
 
 
-def procesa_imagenes(path: Path) -> Dict:
+def procesa_imagenes(path: Path, config: Dict[str, Any]) -> Dict:
     """Centra cada png dentro de fondo usando fuente solo para consistencia (no se usa)."""
     fondo = path / 'fondo.png'
     if not fondo.exists():
@@ -326,11 +371,11 @@ def procesa_imagenes(path: Path) -> Dict:
     png_dir = path / 'png'
     if not png_dir.exists():
         return {"procesadas": 0, "razon": "No existe png/"}
-    out_dir = OUTPUT_BASE / CURRENT_CONFIG.get('terminal', 'default') / path.name
+    out_dir = OUTPUT_BASE / config.get('terminal', 'default') / path.name
     vacia_carpeta(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     thumbs_dir = None
-    if _necesita_thumbs():
+    if _necesita_thumbs(config):
         thumbs_dir = HELP_BASE / path.name
         if thumbs_dir.exists():
             vacia_carpeta(thumbs_dir)
@@ -340,7 +385,7 @@ def procesa_imagenes(path: Path) -> Dict:
     max_h = H * (1 - 2 * margin_ratio)
     procesadas = 0
     existentes = 0
-    invert = bool(CURRENT_CONFIG.get("invert"))
+    invert = bool(config.get("invert"))
     for i in range(1, 1000):
         src = png_dir / f"{i:03d}.png"
         if not src.exists():
@@ -381,22 +426,22 @@ def procesa_imagenes(path: Path) -> Dict:
     return {"procesadas": procesadas, "existentes": existentes, "out": str(out_dir)}
 
 
-def procesa_animaciones(path: Path) -> Dict:
+def procesa_animaciones(path: Path, config: Dict[str, Any]) -> Dict:
     """Cada subcarpeta => animación, frames *.png -> se exportan centrados en canvas 800x480 si posible."""
     subdirs = [d for d in path.iterdir() if d.is_dir()]
     configs_copiados = 0
-    base_out = OUTPUT_BASE / CURRENT_CONFIG.get('terminal', 'default') / path.name
+    base_out = OUTPUT_BASE / config.get('terminal', 'default') / path.name
     vacia_carpeta(base_out)
     base_out.mkdir(parents=True, exist_ok=True)
     thumbs_root = None
-    if _necesita_thumbs():
+    if _necesita_thumbs(config):
         thumbs_root = HELP_BASE / path.name
         if thumbs_root.exists():
             vacia_carpeta(thumbs_root)
         thumbs_root.mkdir(parents=True, exist_ok=True)
     animaciones = 0
     frames_total = 0
-    invert = bool(CURRENT_CONFIG.get("invert"))
+    invert = bool(config.get("invert"))
     for d in subdirs:
         frames = sorted(d.glob('*.png'))
         if not frames:
@@ -446,37 +491,72 @@ def procesa_animaciones(path: Path) -> Dict:
     return {"animaciones": animaciones, "frames": frames_total, "configs": configs_copiados, "out": str(base_out)}
 
 
-PROCESSORS: Dict[CarpetaTipo, Callable[[Path], Dict]] = {
+PROCESSORS: Dict[CarpetaTipo, Callable[[Path, Dict[str, Any]], Dict]] = {
     CarpetaTipo.TEXTOS: procesa_textos,
     CarpetaTipo.IMAGENES: procesa_imagenes,
     CarpetaTipo.ANIMACIONES: procesa_animaciones,
 }
 
 
-def procesa_carpeta(carpeta: Path) -> ProcesamientoResultado:
+def procesa_carpeta(carpeta: Path, config: Dict[str, Any]) -> ProcesamientoResultado:
     t0 = time.perf_counter()
     tipo = detectar_tipo_carpeta(carpeta)
+    out_dir = OUTPUT_BASE / config.get('terminal', 'default') / carpeta.name
+    manifest = calcula_manifest(carpeta, config)
+    # Incremental: si las fuentes no han cambiado y ya hay salida válida, saltar.
+    if _manifest_coincide(out_dir, manifest):
+        logger.info(f"Carpeta {carpeta.name} -> {tipo.name} (sin cambios, se omite)")
+        return ProcesamientoResultado(tipo=tipo, carpeta=carpeta, detalles={"skipped": True}, elapsed=0.0)
     logger.info(f"Carpeta {carpeta.name} -> {tipo.name}")
-    detalles = PROCESSORS[tipo](carpeta)
+    detalles = PROCESSORS[tipo](carpeta, config)
+    _escribe_manifest(out_dir, manifest)
     elapsed = time.perf_counter() - t0
     return ProcesamientoResultado(tipo=tipo, carpeta=carpeta, detalles=detalles, elapsed=elapsed)
 
 
-def recorrer_images(root: Path) -> List[ProcesamientoResultado]:
-    resultados: List[ProcesamientoResultado] = []
+def _worker(args) -> ProcesamientoResultado:
+    """Worker pickleable para multiprocessing.Pool."""
+    carpeta, config = args
+    return procesa_carpeta(carpeta, config)
+
+
+def recorrer_images(root: Path, config: Dict[str, Any]) -> List[ProcesamientoResultado]:
     logger.debug(f"Explorando root: {root}")
-    for sub in sorted(root.iterdir()):
-        if not sub.is_dir():
-            logger.debug(f"Ignorado (no dir): {sub.name}")
-            continue
-        if not sub.name.isdigit():
-            logger.debug(f"Ignorado (nombre no numérico): {sub.name}")
-            continue
-        logger.debug(f"Procesando subcarpeta candidata: {sub.name}")
-        resultados.append(procesa_carpeta(sub))
-    if not resultados:
+    tareas = [
+        (sub, config)
+        for sub in sorted(root.iterdir())
+        if sub.is_dir() and sub.name.isdigit()
+    ]
+    if not tareas:
         logger.info(f"No se encontraron subcarpetas numéricas dentro de {root}")
+        return []
+    workers = min(len(tareas), os.cpu_count() or 1)
+    if workers > 1:
+        with multiprocessing.Pool(workers) as pool:
+            resultados = pool.map(_worker, tareas)  # preserva el orden
+    else:
+        resultados = [_worker(t) for t in tareas]
     return resultados
+
+
+def limpia_huerfanos(terminal_output_dir: Path, images_root: Path, markdown: bool):
+    """Elimina salidas de carpetas numéricas que ya no existen en origen.
+    Necesario porque ya no se vacía toda la salida al inicio (incremental)."""
+    fuentes = {
+        s.name for s in images_root.iterdir()
+        if s.is_dir() and s.name.isdigit()
+    } if images_root.exists() else set()
+    if terminal_output_dir.exists():
+        for sub in terminal_output_dir.iterdir():
+            if sub.is_dir() and sub.name.isdigit() and sub.name not in fuentes:
+                logger.info(f"Eliminando salida huérfana: {sub}")
+                shutil.rmtree(sub, ignore_errors=True)
+    if markdown and HELP_BASE.exists():
+        for item in HELP_BASE.iterdir():
+            if item.is_dir() and item.name.isdigit() and item.name not in fuentes:
+                shutil.rmtree(item, ignore_errors=True)
+            elif item.is_file() and item.suffix == '.md' and item.stem.isdigit() and item.stem not in fuentes:
+                item.unlink()
 
 
 def main():
@@ -488,23 +568,23 @@ def main():
     terminal = args.terminal.lower()
     if terminal not in DATOS_TERMINAL:
         raise SystemExit(f"Terminal desconocido: {terminal}. Opciones: {', '.join(DATOS_TERMINAL)}")
-    global CURRENT_CONFIG
-    CURRENT_CONFIG = dict(DATOS_TERMINAL[terminal])
-    CURRENT_CONFIG['terminal'] = terminal
+    config: Dict[str, Any] = dict(DATOS_TERMINAL[terminal])
+    config['terminal'] = terminal
     if args.debug:
         logger.setLevel(logging.DEBUG)
     if terminal in ('maleta', 'ordenador'):
-        CURRENT_CONFIG['markdown'] = True
+        config['markdown'] = True
     terminal_output_dir = OUTPUT_BASE / terminal
-    if terminal_output_dir.exists():
-        logger.info(f"Vaciando salida previa: {terminal_output_dir}")
-        vacia_carpeta(terminal_output_dir)
+    # NO se vacía la salida previa: el incremental por carpeta (.manifest.json)
+    # reutiliza lo que no cambió para que rsync no retransmita nada.
     terminal_output_dir.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Procesando root: {args.images_root} para terminal '{terminal}' (invert={CURRENT_CONFIG.get('invert')})")
-    logger.debug(f"CONFIG ACTUAL: {CURRENT_CONFIG}")
+    logger.info(f"Procesando root: {args.images_root} para terminal '{terminal}' (invert={config.get('invert')})")
+    logger.debug(f"CONFIG ACTUAL: {config}")
     t0 = time.perf_counter()
-    resultados = recorrer_images(Path(args.images_root))
-    if CURRENT_CONFIG.get('markdown'):
+    images_root = Path(args.images_root)
+    resultados = recorrer_images(images_root, config)
+    limpia_huerfanos(terminal_output_dir, images_root, bool(config.get('markdown')))
+    if config.get('markdown'):
         try:
             generar_markdown_ayuda(resultados)
         except Exception as e:

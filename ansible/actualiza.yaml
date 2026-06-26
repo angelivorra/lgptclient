@@ -1,12 +1,7 @@
 ---
 - name: Instalamos cliente
-  hosts: sombrilla
+  hosts: clientes
   gather_facts: no
+  strategy: free
   roles:
     - role: cliente-actualiza
-      vars:
-        entorno_python: false
-        imagenes: true
-    # - role: servicio-panel
-    #   vars:
-    #     install_python: false
