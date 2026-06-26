@@ -274,6 +274,14 @@ def _escribe_manifest(out_dir: Path, manifest: Dict[str, Any]):
     (out_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding='utf-8')
 
 
+def _ayuda_presente(carpeta_name: str) -> bool:
+    """True si ya existen miniaturas de ayuda para esta carpeta.
+    Sirve para no omitir la regeneración cuando los thumbs (ayuda_imagenes)
+    faltan aunque el binario de img_output esté al día."""
+    thumbs_dir = HELP_BASE / carpeta_name
+    return thumbs_dir.exists() and any(thumbs_dir.rglob('*.png'))
+
+
 # -----------------------------------------------------------
 # Procesadores por tipo
 # -----------------------------------------------------------
@@ -503,8 +511,11 @@ def procesa_carpeta(carpeta: Path, config: Dict[str, Any]) -> ProcesamientoResul
     tipo = detectar_tipo_carpeta(carpeta)
     out_dir = OUTPUT_BASE / config.get('terminal', 'default') / carpeta.name
     manifest = calcula_manifest(carpeta, config)
-    # Incremental: si las fuentes no han cambiado y ya hay salida válida, saltar.
-    if _manifest_coincide(out_dir, manifest):
+    # Incremental: saltar solo si las fuentes no han cambiado, el binario está al
+    # día y (cuando se generan thumbs) la ayuda también existe. Así un cambio de
+    # fuente o unos thumbs borrados fuerzan la regeneración de ayuda_imagenes.
+    ayuda_ok = (not _necesita_thumbs(config)) or _ayuda_presente(carpeta.name)
+    if _manifest_coincide(out_dir, manifest) and ayuda_ok:
         logger.info(f"Carpeta {carpeta.name} -> {tipo.name} (sin cambios, se omite)")
         return ProcesamientoResultado(tipo=tipo, carpeta=carpeta, detalles={"skipped": True}, elapsed=0.0)
     logger.info(f"Carpeta {carpeta.name} -> {tipo.name}")
