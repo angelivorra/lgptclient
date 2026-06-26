@@ -1,6 +1,6 @@
 ---
-- name: Instalamos cliente
-  hosts: clientes
+- name: Instalamos robotas
+  hosts: robotas
   gather_facts: no
   strategy: free
   roles:

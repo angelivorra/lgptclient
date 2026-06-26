@@ -1,9 +1,12 @@
 [all:vars]
 ansible_user=angel
 
-[clientes]
+[robotas]
 maleta ansible_host=192.168.0.3 screenx=800 screeny=480 invert=false
 sombrilla ansible_host=192.168.0.4 screenx=800 screeny=480 invert=true
+
+[sinte]
+sintetizador ansible_host=192.168.0.2 pantalla=false
 
 [varios]
 roboguitarra ansible_host=192.168.0.20 pantalla=false ansible_user=patch 

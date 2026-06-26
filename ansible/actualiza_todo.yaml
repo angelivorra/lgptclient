@@ -1,6 +1,6 @@
 ---
-- name: Instalamos maleta
-  hosts: clientes
+- name: Instalamos Clientes
+  hosts: robotas
   gather_facts: no
   strategy: free
   roles:
