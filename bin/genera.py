@@ -2,11 +2,12 @@ import argparse
 import logging
 import os
 import multiprocessing
+import random
 import time
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Any
+from typing import Callable, Dict, List, Optional, Any, Tuple
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import shutil
@@ -63,7 +64,7 @@ DATOS_TERMINAL: Dict[str, Dict[str, Any]] = {
 
 # Versión de la lógica de generación/empaquetado. Incrementar para forzar la
 # regeneración completa (invalida todos los .manifest.json existentes).
-GENERATOR_VERSION = 1
+GENERATOR_VERSION = 2
 
 
 class Cartera(Enum):  # alias semántico (evita conflicto con folder) (unused but placeholder)
@@ -169,19 +170,50 @@ def png_to_bin(img: Image.Image, bin_path: Path, width: int = 800, height: int =
         f.write(data)
 
 
-# Paleta fija de colores cercanos al blanco. Determinista: la salida es idéntica
-# entre ejecuciones, de modo que rsync no retransmite los textos sin cambios.
-_PALETA_TEXTO: tuple = (
-    (255, 255, 255),
-    (255, 244, 230),
-    (235, 240, 255),
-    (255, 235, 240),
+# Paletas robóticas: cada palabra coge un tema fijo (sembrado por la propia
+# palabra) para que el efecto sea idéntico en cada generación y terminal.
+TEMAS_ROBOT: Tuple[Tuple[int, int, int], ...] = (
+    (0, 229, 255),    # cian
+    (57, 255, 20),    # verde matrix
+    (255, 176, 0),    # ámbar
+    (255, 45, 45),    # rojo alerta
+    (255, 0, 200),    # magenta
+    (120, 200, 255),  # hielo
+    (180, 120, 255),  # violeta
 )
 
+# Estilos posibles por palabra. Todos llevan glow coloreado de base ("neón").
+ESTILOS_TEXTO: Tuple[str, ...] = ('neon', 'glitch', 'jitter', 'glitch_jitter')
 
-def _color_texto(idx: int = 0) -> tuple:
-    """Color fijo (determinista) para cada carácter, según su índice."""
-    return _PALETA_TEXTO[idx % len(_PALETA_TEXTO)]
+
+def _tema_palabra(rng: random.Random) -> Tuple[Tuple[int, int, int], Tuple[int, int, int]]:
+    """Devuelve (color_letra, color_glow) para la palabra. El glow usa el mismo
+    tono que la letra para el efecto de neón."""
+    color = rng.choice(TEMAS_ROBOT)
+    return color, color
+
+
+def _posiciones_letras(palabra: str, font: ImageFont.FreeTypeFont, x: int, y: int,
+                       rng: random.Random, jitter_amp: int) -> List[Tuple[int, int, str]]:
+    """Posición (cx, cy, char) de cada letra. cx acumula el ancho previo; cy
+    aplica un desplazamiento vertical fijo por letra (jitter) si jitter_amp>0.
+    Se calcula una sola vez y la reutilizan todas las capas para que queden
+    alineadas."""
+    tmp = ImageDraw.Draw(Image.new('RGBA', (1, 1)))
+    posiciones: List[Tuple[int, int, str]] = []
+    for i, char in enumerate(palabra):
+        offset_x = int(tmp.textlength(palabra[:i], font=font))
+        dy = rng.randint(-jitter_amp, jitter_amp) if jitter_amp > 0 else 0
+        posiciones.append((x + offset_x, y + dy, char))
+    return posiciones
+
+
+def _dibuja_letras(draw: ImageDraw.ImageDraw, posiciones: List[Tuple[int, int, str]],
+                   font: ImageFont.FreeTypeFont, fill, stroke_width: int = 0, stroke_fill=None):
+    """Pinta cada carácter en su posición."""
+    for cx, cy, char in posiciones:
+        draw.text((cx, cy), char, font=font, fill=fill,
+                  stroke_width=stroke_width, stroke_fill=stroke_fill)
 
 
 def _dec_stem_a_hex(stem: str) -> str:
@@ -329,25 +361,47 @@ def procesa_textos(path: Path, config: Dict[str, Any]) -> Dict:
                 break
             font_size -= 2
         canvas = bg.copy()
-        stroke_width = 8
+        glow_stroke = 8
         draw = ImageDraw.Draw(canvas)
-        bbox = draw.textbbox((0, 0), palabra, font=font, stroke_width=stroke_width)
+        bbox = draw.textbbox((0, 0), palabra, font=font, stroke_width=glow_stroke)
         w = bbox[2] - bbox[0]
         h = bbox[3] - bbox[1]
         x = (W - w) // 2 - bbox[0]
         y = (H - h) // 2 - bbox[1]
+
+        # Efecto fijo por palabra: sembramos con la propia palabra para que el
+        # resultado sea idéntico en cada generación y en todos los terminales.
+        rng = random.Random(palabra)
+        color, glow_color = _tema_palabra(rng)
+        estilo = rng.choice(ESTILOS_TEXTO)
+        jitter_amp = round(font_size * rng.uniform(0.04, 0.10)) if 'jitter' in estilo else 0
+        posiciones = _posiciones_letras(palabra, font, x, y, rng, jitter_amp)
+
+        # 1) Glow coloreado (neón): mismo tono que la letra, difuminado.
         glow = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-        dg = ImageDraw.Draw(glow)
-        dg.text((x, y), palabra, font=font, fill='white', stroke_width=stroke_width, stroke_fill='white')
-        glow = glow.filter(ImageFilter.GaussianBlur(radius=6))
-        alpha = glow.getchannel('A').point(lambda a: int(a * 0.5))
-        glow.putalpha(alpha)
+        _dibuja_letras(ImageDraw.Draw(glow), posiciones, font, glow_color,
+                       stroke_width=glow_stroke, stroke_fill=glow_color)
+        glow = glow.filter(ImageFilter.GaussianBlur(radius=8))
+        glow.putalpha(glow.getchannel('A').point(lambda a: int(a * 0.55)))
         canvas = Image.alpha_composite(canvas, glow)
-        draw2 = ImageDraw.Draw(canvas)
-        # Cada carácter con un color aleatorio cercano al blanco
-        for i, char in enumerate(palabra):
-            offset_x = int(draw2.textlength(palabra[:i], font=font))
-            draw2.text((x + offset_x, y), char, font=font, fill=_color_texto(i))
+
+        # 2) Glitch / aberración RGB: capa blanca del texto separada en canales
+        #    rojo y azul, desplazados, para dejar flecos cian/magenta.
+        if 'glitch' in estilo:
+            dx = rng.randint(4, 10)
+            base = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+            _dibuja_letras(ImageDraw.Draw(base), posiciones, font, (255, 255, 255))
+            r, g, b, a = base.split()
+            cero = Image.new('L', (W, H), 0)
+            for canal, despl in (((r, cero, cero, a), -dx), ((cero, cero, b, a), dx)):
+                capa = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+                capa.paste(Image.merge('RGBA', canal), (despl, 0))
+                canvas = Image.alpha_composite(canvas, capa)
+
+        # 3) Texto principal en color de tema, con contorno oscuro fino.
+        stroke_width = max(2, font_size // 40)
+        _dibuja_letras(ImageDraw.Draw(canvas), posiciones, font, color,
+                       stroke_width=stroke_width, stroke_fill=(0, 0, 0))
         if invert:
             canvas = canvas.transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
         filename = f"{idx:03d}.png"
