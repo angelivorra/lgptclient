@@ -1,0 +1,6 @@
+---
+- name: Actualizar sintetizador
+  hosts: sinte
+  gather_facts: no
+  roles:
+    - role: sintetizador-actualiza

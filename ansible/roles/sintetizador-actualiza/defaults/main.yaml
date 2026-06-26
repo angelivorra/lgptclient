@@ -1,0 +1,8 @@
+---
+# Directorio del checkout git desde el que corren los servicios.
+repo_dir: /home/angel/lgptclient
+
+# Servicios del repo que corren en el sintetizador (se reinician si el repo cambia).
+servicios:
+  - servidor.service
+  - panel.service

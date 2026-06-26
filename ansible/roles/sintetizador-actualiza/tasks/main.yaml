@@ -1,0 +1,32 @@
+---
+- name: HEAD del repo antes de actualizar
+  ansible.builtin.command: git rev-parse --short HEAD
+  args:
+    chdir: "{{ repo_dir }}"
+  register: head_before
+  changed_when: false
+
+# git pull solo trae los objetos cambiados (no toca las carpetas gitignoreadas
+# como lgpt/songs o samples). --autostash preserva modificaciones locales del
+# equipo; --ff-only evita merges accidentales.
+- name: Actualizar repositorio (git pull --ff-only)
+  ansible.builtin.command: git pull --ff-only --autostash
+  args:
+    chdir: "{{ repo_dir }}"
+  register: git_pull
+  changed_when: "'Already up to date' not in git_pull.stdout"
+
+- name: HEAD del repo tras actualizar
+  ansible.builtin.command: git rev-parse --short HEAD
+  args:
+    chdir: "{{ repo_dir }}"
+  register: head_after
+  changed_when: false
+
+- name: Reiniciar servicios (solo si el repo cambió)
+  become: true
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: restarted
+  loop: "{{ servicios }}"
+  when: head_before.stdout != head_after.stdout
