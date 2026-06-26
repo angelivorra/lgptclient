@@ -1,11 +1,31 @@
 ---
-- name: Stop services
+- name: Stop cliente service
   become: true
-  service:
-    name: "{{ item }}"
+  ansible.builtin.service:
+    name: cliente
     state: stopped
-  loop: [cliente, display]
-  ignore_errors: yes
+  failed_when: false
+
+- name: Purge obsolete display service (stop + disable)
+  become: true
+  ansible.builtin.systemd:
+    name: display.service
+    state: stopped
+    enabled: no
+  failed_when: false
+
+- name: Remove obsolete display.service unit file
+  become: true
+  ansible.builtin.file:
+    path: /etc/systemd/system/display.service
+    state: absent
+  register: display_unit_removed
+
+- name: Reload systemd after removing display.service
+  become: true
+  ansible.builtin.systemd:
+    daemon_reload: yes
+  when: display_unit_removed.changed
 
 - name: Check whether the venv already exists
   ansible.builtin.stat:
