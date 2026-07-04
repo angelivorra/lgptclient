@@ -1,5 +1,5 @@
 ---
-- name: Actualizar maletas (clientes)
+- name: Actualizar robotas
   hosts: robotas
   gather_facts: no
   strategy: free
