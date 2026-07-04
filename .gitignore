@@ -173,3 +173,7 @@ cython_debug/
 #.idea/
 
 config.json
+
+# Toolchain de build de los paneles (JSX -> static/robot.js). No se despliega.
+node_modules/
+package-lock.json

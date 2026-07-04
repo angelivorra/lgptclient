@@ -1,0 +1,13 @@
+{
+  "name": "lgptclient-build-tools",
+  "private": true,
+  "description": "Toolchain de build para precompilar el JSX de los paneles (flaskr y vocoder). No se despliega: solo se usa en este PC para generar static/robot.js.",
+  "scripts": {
+    "build": "flaskr/build.sh && vocoder/flask/build.sh"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.24.0",
+    "@babel/core": "^7.24.0",
+    "@babel/preset-react": "^7.24.0"
+  }
+}

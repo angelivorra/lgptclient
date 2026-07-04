@@ -1,4 +1,20 @@
 ---
+# 1) Compilar los assets del panel en este PC (JSX -> static/robot.js) y, si
+#    cambiaron, commitear+pushear. El sinte sirve el panel desde su checkout git
+#    y se actualiza con 'git pull', así que el robot.js compilado debe estar en
+#    origin antes de que el device haga pull.
+- name: Compilar assets web (panel del sinte)
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  roles:
+    - role: compilar-web
+      vars:
+        web_build_apps:
+          - flaskr
+        web_commit_push: true
+
+# 2) git pull + reinicio de servicios en el sinte.
 - name: Actualizar sintetizador
   hosts: sinte
   gather_facts: no

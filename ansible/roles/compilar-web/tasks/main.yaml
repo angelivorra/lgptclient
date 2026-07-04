@@ -1,0 +1,66 @@
+---
+# Este rol se ejecuta SIEMPRE en la máquina de control (este PC), donde hay
+# node + internet. Compila el JSX de los paneles a static/robot.js antes de
+# desplegar, para no servir nunca assets obsoletos.
+
+- name: Comprobar que node está disponible (necesario para compilar el JSX)
+  ansible.builtin.command: node --version
+  register: node_check
+  changed_when: false
+  failed_when: node_check.rc != 0
+  # Si falla: ejecuta la receta desde una shell donde 'node' esté en el PATH
+  # (p. ej. con fnm/nvm activo).
+
+- name: ¿Está instalada la toolchain de Babel (node_modules)?
+  ansible.builtin.stat:
+    path: "{{ repo_root }}/node_modules/.bin/babel"
+  register: babel_bin
+
+- name: Instalar la toolchain de Babel (npm install, solo si falta)
+  ansible.builtin.command: npm install
+  args:
+    chdir: "{{ repo_root }}"
+  when: not babel_bin.stat.exists
+
+- name: Compilar assets del panel (build.sh por app)
+  ansible.builtin.command: ./build.sh
+  args:
+    chdir: "{{ repo_root }}/{{ item }}"
+  register: web_builds
+  changed_when: true
+  loop: "{{ web_build_apps }}"
+
+# ── Commit + push del robot.js recompilado (solo despliegues por git pull) ──
+- name: Preparar el robot.js recompilado para commit
+  ansible.builtin.command: "git add {{ item }}/static/robot.js"
+  args:
+    chdir: "{{ repo_root }}"
+  changed_when: false
+  loop: "{{ web_build_apps }}"
+  when: web_commit_push | bool
+
+- name: ¿Hay cambios en los assets recompilados?
+  ansible.builtin.command: git diff --cached --quiet
+  args:
+    chdir: "{{ repo_root }}"
+  register: assets_diff
+  changed_when: false
+  failed_when: false
+  when: web_commit_push | bool
+
+- name: Commitear los assets recompilados (solo si cambiaron)
+  ansible.builtin.command: >-
+    git commit -m "assets: recompilar panel (automático desde ansible)"
+  args:
+    chdir: "{{ repo_root }}"
+  when:
+    - web_commit_push | bool
+    - assets_diff.rc == 1
+
+- name: Pushear los assets recompilados a origin (para que el device los reciba)
+  ansible.builtin.command: git push
+  args:
+    chdir: "{{ repo_root }}"
+  when:
+    - web_commit_push | bool
+    - assets_diff.rc == 1

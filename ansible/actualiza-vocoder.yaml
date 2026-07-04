@@ -1,4 +1,18 @@
 ---
+# 1) Compilar los assets del panel en este PC (JSX -> static/robot.js).
+#    El deploy es por rsync desde el árbol de trabajo, así que basta con compilar
+#    aquí: no hace falta commit/push.
+- name: Compilar assets web (vocoder)
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  roles:
+    - role: compilar-web
+      vars:
+        web_build_apps:
+          - vocoder/flask
+
+# 2) Sincronizar la app y reiniciar el servicio en el device.
 - name: Actualizar vocoder
   hosts: vocoder
   gather_facts: no
