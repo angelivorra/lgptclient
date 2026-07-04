@@ -1,4 +1,17 @@
 ---
+# 1) Compilar los assets del panel en este PC (JSX -> static/robot.js) antes de
+#    sincronizarlo a las robotas por rsync. Así el panel viaja offline y sin Babel.
+- name: Compilar assets web (panel de las robotas)
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  roles:
+    - role: compilar-web
+      vars:
+        web_build_apps:
+          - flaskr
+
+# 2) Actualizar cliente + panel en cada robota (rsync) y reiniciar servicios.
 - name: Actualizar robotas
   hosts: robotas
   gather_facts: no

@@ -83,3 +83,30 @@
     state: started
     # Solo recargar systemd si la unidad cambió (evita daemon-reload innecesario)
     daemon_reload: "{{ cliente_unit.changed }}"
+
+# ── Panel de control (flaskr) ─────────────────────────────────────────────
+# Cada robota sirve el panel como panel.service desde /home/angel/panel. Lo
+# sincronizamos por rsync desde este PC (sin internet) para que reciba la versión
+# offline: JSX precompilado + React/MUI y fuentes vendorizadas. Se preserva
+# instance/ (carpeta de Flask con estado runtime) y se excluye __pycache__.
+# El robot.js ya viene compilado por el paso 'compilar-web' del playbook.
+- name: Sincronizar el panel de control (flaskr)
+  ansible.posix.synchronize:
+    src: /home/angel/lgptclient/flaskr/
+    dest: /home/angel/panel/
+    delete: yes
+    checksum: true
+    times: false
+    perms: false
+    rsync_opts:
+      - "--exclude=__pycache__"
+      - "--exclude=instance"
+      - "--chown=angel:angel"
+  register: panel_sync
+
+- name: Reiniciar el panel (solo si cambió)
+  become: true
+  ansible.builtin.systemd:
+    name: panel.service
+    state: restarted
+  when: panel_sync.changed
