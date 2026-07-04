@@ -1,8 +1,14 @@
 ---
-# Directorio del checkout git desde el que corren los servicios.
+# Directorio del checkout desde el que corren los servicios EN EL DEVICE.
 repo_dir: /home/angel/lgptclient
 
-# Servicios del repo que corren en el sintetizador (se reinician si el repo cambia).
+# Directorio del repo EN ESTE PC (control), origen del rsync.
+control_repo_dir: /home/angel/lgptclient
+
+# Fichero temporal (en el control) con la lista de archivos versionados a enviar.
+rsync_filelist: /tmp/sinte-rsync-filelist.txt
+
+# Servicios del repo que corren en el sintetizador (se reinician si algo cambió).
 servicios:
   - servidor.service
   - panel.service

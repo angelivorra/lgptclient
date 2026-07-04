@@ -1,32 +1,47 @@
 ---
-- name: HEAD del repo antes de actualizar
-  ansible.builtin.command: git rev-parse --short HEAD
+# El sinte NO tiene internet, así que no puede hacer 'git pull'. En su lugar
+# sincronizamos por rsync desde este PC (control) SOLO los ficheros que git
+# rastrea. Al usar la lista de 'git ls-files' no tocamos las carpetas
+# gitignoreadas del device (venv/, lgpt/, images/, .git/, samples/…), que además
+# son enormes. Rsync envía el contenido del árbol de trabajo del control, así que
+# recoge también los assets recién recompilados aunque no estén commiteados.
+
+- name: Generar la lista de ficheros versionados (en el PC de control)
+  ansible.builtin.command: git ls-files
   args:
-    chdir: "{{ repo_dir }}"
-  register: head_before
+    chdir: "{{ control_repo_dir }}"
+  delegate_to: localhost
+  run_once: true
+  register: tracked_files
   changed_when: false
 
-# git pull solo trae los objetos cambiados (no toca las carpetas gitignoreadas
-# como lgpt/songs o samples). --autostash preserva modificaciones locales del
-# equipo; --ff-only evita merges accidentales.
-- name: Actualizar repositorio (git pull --ff-only)
-  ansible.builtin.command: git pull --ff-only --autostash
-  args:
-    chdir: "{{ repo_dir }}"
-  register: git_pull
-  changed_when: "'Already up to date' not in git_pull.stdout"
-
-- name: HEAD del repo tras actualizar
-  ansible.builtin.command: git rev-parse --short HEAD
-  args:
-    chdir: "{{ repo_dir }}"
-  register: head_after
+- name: Escribir la lista para rsync (en el PC de control)
+  ansible.builtin.copy:
+    content: "{{ tracked_files.stdout }}\n"
+    dest: "{{ rsync_filelist }}"
+    mode: "0644"
+  delegate_to: localhost
+  run_once: true
   changed_when: false
 
-- name: Reiniciar servicios (solo si el repo cambió)
+# Push desde el control al device. --files-from limita la transferencia a los
+# ficheros versionados (rutas relativas a control_repo_dir); NO se borra nada del
+# device, así que las carpetas gitignoreadas quedan intactas.
+- name: Sincronizar los ficheros versionados al sinte (rsync)
+  ansible.posix.synchronize:
+    src: "{{ control_repo_dir }}/"
+    dest: "{{ repo_dir }}/"
+    checksum: true
+    times: false
+    perms: false
+    rsync_opts:
+      - "--files-from={{ rsync_filelist }}"
+  register: repo_sync
+
+- name: Reiniciar servicios (solo si algo cambió)
   become: true
   ansible.builtin.systemd:
     name: "{{ item }}"
     state: restarted
   loop: "{{ servicios }}"
-  when: head_before.stdout != head_after.stdout
+  when: repo_sync.changed
