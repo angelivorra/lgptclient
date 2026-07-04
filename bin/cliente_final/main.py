@@ -22,6 +22,7 @@ Protocolo de mensajes (ASCII, terminados en \\n):
 import asyncio
 import json
 import os
+import time
 import logging
 from pathlib import Path
 
@@ -31,8 +32,17 @@ STATUS_FILE = "/tmp/cliente_status.json"
 SERVER_HOST = os.environ.get("SERVER_HOST", "192.168.0.2")
 SERVER_PORT = int(os.environ.get("SERVER_PORT", "8888"))
 
-# Configuración de sincronización NTP
-ENABLE_NTP_SYNC = os.environ.get("ENABLE_NTP_SYNC", "1") == "1"
+# Sincronización del reloj con el servidor.
+# En vez de NTP (que necesitaría internet o un servidor NTP autoritativo en la
+# LAN — no disponible aquí), ajustamos el reloj con la hora que el servidor manda
+# por el propio socket en los mensajes SYNC. Funciona sin internet.
+# ENABLE_NTP_SYNC se mantiene como alias por compatibilidad.
+ENABLE_TIME_SYNC = os.environ.get(
+    "ENABLE_TIME_SYNC", os.environ.get("ENABLE_NTP_SYNC", "1")
+) == "1"
+# Solo se ajusta el reloj si el desfase con el servidor supera este umbral (ms),
+# para no pisar el reloj en cada heartbeat SYNC.
+TIME_SYNC_THRESHOLD_MS = int(os.environ.get("TIME_SYNC_THRESHOLD_MS", "200"))
 
 # Configuración de modo simulación
 SIMULATE_GPIO = os.environ.get("SIMULATE_GPIO", "0") == "1"
@@ -112,39 +122,46 @@ class MIDIClient:
         except Exception as e:
             logger.warning(f"No se pudo escribir estado: {e}")
 
-    async def synchronize_system_time(self):
-        """Sincroniza el reloj del sistema con el servidor usando ntpdate."""
-        if not ENABLE_NTP_SYNC:
-            logger.info("⏰ Sincronización NTP desactivada (ENABLE_NTP_SYNC=0)")
+    async def sync_clock_to_server(self, server_ts_ms: int):
+        """Ajusta el reloj del sistema a la hora del servidor (recibida por SYNC).
+
+        Todo el timing del cliente compara timestamps absolutos del servidor con
+        time.time() local, así que ambos relojes deben coincidir. Aquí no usamos
+        NTP: tomamos la hora que el servidor manda por el socket y la aplicamos con
+        'date -s' (coreutils, siempre presente; requiere sudo sin contraseña, que
+        las robotas ya tienen). Robusto sin internet.
+        """
+        if not ENABLE_TIME_SYNC:
             return
-        
-        logger.info("⏰ Sincronizando reloj del sistema con el servidor...")
-        
+
+        local_ms = time.time() * 1000
+        drift_ms = server_ts_ms - local_ms
+        # No tocar el reloj si ya está prácticamente alineado (evita pisarlo en
+        # cada heartbeat SYNC). La latencia LAN de un solo sentido es sub-ms,
+        # despreciable frente al umbral y al delay base del sistema.
+        if abs(drift_ms) < TIME_SYNC_THRESHOLD_MS:
+            return
+
+        epoch = server_ts_ms / 1000.0
+        logger.info(
+            f"⏰ Ajustando reloj al servidor (desfase {drift_ms/1000:.1f}s)"
+        )
         try:
             process = await asyncio.create_subprocess_exec(
-                'sudo', 'ntpdate', '-u', SERVER_HOST,
+                'sudo', '-n', 'date', '-s', f'@{epoch:.3f}',
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            
-            stdout, stderr = await process.communicate()
-            
+            _, stderr = await process.communicate()
+
             if process.returncode == 0:
-                logger.info("✅ Reloj del sistema sincronizado exitosamente")
-                if stdout:
-                    output = stdout.decode().strip()
-                    logger.info(f"   {output}")
+                logger.info("✅ Reloj sincronizado con el servidor")
             else:
-                error_msg = stderr.decode().strip() if stderr else "Sin detalles de error"
-                logger.warning(f"⚠️  No se pudo sincronizar el reloj del sistema")
-                logger.warning(f"   Error: {error_msg}")
-                
-        except FileNotFoundError:
-            logger.error("❌ ntpdate no está instalado")
-            logger.error("   Instala con: sudo apt-get install ntpdate")
-            
+                error_msg = stderr.decode().strip() if stderr else "sin detalles"
+                logger.warning(f"⚠️  No se pudo ajustar el reloj: {error_msg}")
+
         except Exception as e:
-            logger.error(f"❌ Error sincronizando tiempo: {e}")
+            logger.error(f"❌ Error ajustando el reloj: {e}")
     
     async def process_message(self, line: str):
         """Procesa una línea recibida del servidor."""
@@ -169,7 +186,10 @@ class MIDIClient:
                 self._write_status(debug, ruido, pantalla)
                 
             elif msg_type == 'SYNC' and len(parts) >= 2:
-                logger.debug("SYNC ignorado")
+                # El servidor envía su hora de pared (epoch ms) al conectar y en
+                # heartbeats periódicos. La usamos para alinear el reloj local.
+                server_ts_ms = int(parts[1])
+                await self.sync_clock_to_server(server_ts_ms)
                 
             elif msg_type == 'NOTA' and len(parts) >= 5:
                 server_ts_ms = int(parts[1])
@@ -218,7 +238,7 @@ class MIDIClient:
         logger.info("Cliente MIDI con GPIO - Iniciando")
         logger.info("=" * 60)
         logger.info(f"Servidor: {SERVER_HOST}:{SERVER_PORT}")
-        logger.info(f"Sincronización NTP: {'Activada' if ENABLE_NTP_SYNC else 'Desactivada'}")
+        logger.info(f"Sincronización de reloj con el servidor: {'Activada' if ENABLE_TIME_SYNC else 'Desactivada'}")
         logger.info(f"Modo GPIO: {'Simulación' if SIMULATE_GPIO else 'Real'}")
         logger.info("")
         
@@ -242,9 +262,9 @@ class MIDIClient:
                     logger.info("")
                     
                     try:
-                        # Sincronizar tiempo del sistema
-                        await self.synchronize_system_time()
-                        
+                        # El reloj se sincroniza al recibir el primer SYNC del
+                        # servidor (llega justo tras CONFIG, antes de cualquier
+                        # evento). Ver sync_clock_to_server / process_message.
                         logger.info("")
                         logger.info("📡 Esperando mensajes del servidor...")
                         logger.info("-" * 60)
