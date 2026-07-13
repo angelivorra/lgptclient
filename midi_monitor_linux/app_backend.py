@@ -11,7 +11,12 @@ from PySide6.QtCore import QObject, Signal, Slot, QTimer
 
 from midi_handler import MidiHandler, MidiMessage
 from srt_recorder import SrtRecorder, TEXT_CC
-from config import BATERIA_CONFIG_FILE, IMAGES_DIR
+from config import (
+    BATERIA_CONFIG_FILE,
+    IMAGES_DIR,
+    GUITARRA_CC_REVERB,
+    GUITARRA_CC_CHORUS,
+)
 
 
 class MidiBackend(QObject):
@@ -25,6 +30,14 @@ class MidiBackend(QObject):
     visualChanged = Signal(str, int, int, int)
     # bpm actual (0 = parado)
     bpmChanged = Signal(float)
+    # Roboguitarra: nota, canal, velocity
+    guitarNoteOn = Signal(int, int, int)
+    # Roboguitarra: nota, canal
+    guitarNoteOff = Signal(int, int)
+    # Roboguitarra: pitch bend (-8192..8191, centro 0)
+    guitarBend = Signal(int)
+    # Roboguitarra: controller, value (CC 91 reverb / 93 chorus)
+    guitarCC = Signal(int, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -87,6 +100,18 @@ class MidiBackend(QObject):
             # Banco 002 (CC nº 2): registrar el texto como subtítulo si estamos grabando.
             if msg.control == TEXT_CC:
                 self.srt.add_text(msg.value)
+
+        # Roboguitarra: traducir los eventos del mástil al visor de guitarra.
+        # El traste sale del número de nota (nota - GUITARRA_OPEN_NOTE), no del
+        # canal (que cicla por 1/2/3 según el traste, ver main.cpp).
+        if msg.type == "note_on" and msg.velocity > 0:
+            self.guitarNoteOn.emit(msg.note, msg.channel, msg.velocity)
+        elif msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0):
+            self.guitarNoteOff.emit(msg.note, msg.channel)
+        elif msg.type == "pitchwheel":
+            self.guitarBend.emit(msg.pitch)
+        elif msg.type == "control_change" and msg.control in (GUITARRA_CC_REVERB, GUITARRA_CC_CHORUS):
+            self.guitarCC.emit(msg.control, msg.value)
 
         # Transporte MIDI: 'start' inicia la grabación de subtítulos; 'stop' la vuelca a .srt.
         if msg.type == "start":

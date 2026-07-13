@@ -46,6 +46,22 @@ Kirigami.ApplicationWindow {
         function onBpmChanged(value) {
             root.bpm = value
         }
+
+        function onGuitarNoteOn(note, channel, velocity) {
+            guitarraPage.noteOn(note, channel, velocity)
+        }
+
+        function onGuitarNoteOff(note, channel) {
+            guitarraPage.noteOff(note, channel)
+        }
+
+        function onGuitarBend(pitch) {
+            guitarraPage.setBend(pitch)
+        }
+
+        function onGuitarCC(control, value) {
+            guitarraPage.setCC(control, value)
+        }
     }
 
     ColumnLayout {
@@ -176,6 +192,10 @@ Kirigami.ApplicationWindow {
                 text: "Visuales"
                 icon.name: "image-x-generic"
             }
+            BigTab {
+                text: "Guitarra"
+                icon.name: "audio-input-microphone"
+            }
         }
 
         StackLayout {
@@ -193,6 +213,10 @@ Kirigami.ApplicationWindow {
 
             VisualesPage {
                 id: visualesPage
+            }
+
+            GuitarraPage {
+                id: guitarraPage
             }
         }
     }
