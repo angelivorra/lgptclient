@@ -228,6 +228,14 @@ class EventMidiOut:
     def cc(self, channel, control, value):
         self.server.emit("CC", self._ts(), value, channel, control)
 
+    def chord_on(self, channel, notes, velocity):
+        # Evento nuevo para la pista de voz -> vocoder: nota raíz + acorde,
+        # sin mezclar con NOTA/CC. `channel` es el índice del canal del
+        # tracker (0-7), no un canal MIDI. Sin evento de "off" explícito,
+        # mismo criterio que note_off: el receptor corta la nota anterior
+        # al recibir la siguiente.
+        self.server.emit("ACRD", self._ts(), channel, velocity, *notes)
+
     def program_change(self, channel, program):
         pass                                # sin equivalente en el protocolo
 

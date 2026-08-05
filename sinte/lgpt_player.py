@@ -44,41 +44,6 @@ from lgpt_engine import Engine, MasterChain, MidiOut, SAMPLE_RATE
 DEFAULT_SONGS_DIR = "/home/angel/Documentos/canciones/"
 CONFIG_PATH = Path(__file__).resolve().parent / "lttileplayer.toml"
 
-# --- Visualizador en directo (espectro reactivo al audio) --------------------
-# Se analiza el audio ya mezclado (el bloque del callback), no el motor: una
-# ventana rodante de VIZ_NFFT muestras -> rFFT -> bandas log. Todo el análisis
-# ocurre en el hilo de UI; el hilo de audio solo copia el bloque (ver
-# _audio_callback). Constantes calibradas sobre canciones reales.
-VIZ_NFFT = 2048           # ~46 ms @44.1k: resuelve graves sin retardo visible
-VIZ_FMIN = 35.0
-VIZ_FMAX = 16000.0
-# Auto-ganancia: con ganancia fija, un tema con graves fuertes deja las
-# barras bajas clavadas arriba (el drone de bulebule) y el visor deja de
-# informar. Se normaliza contra una referencia que sube rápido y baja
-# despacio, así el visor sigue siendo expresivo con cualquier nivel.
-VIZ_AGC_REF = 0.02        # nivel de referencia inicial/mínimo (evita ruido)
-VIZ_AGC_UP = 0.30         # adaptación al subir (rápida: no satura)
-VIZ_AGC_DOWN = 0.02       # adaptación al bajar (lenta: mantiene dinámica)
-VIZ_AGC_KNEE = 2.3        # una banda en la referencia llega a ~90% de altura
-VIZ_TILT = 0.5            # realce de agudos: peso (f/fmin)**VIZ_TILT
-VIZ_MAX_BANDS = 48        # más bandas que bins útiles solo repetiría barras
-VIZ_ZONES = 8             # 8 knobs = 8 celdas
-VIZ_GRID_ROWS = 2         # rejilla 2x4: knobs 1-4 arriba, 5-8 abajo
-VIZ_GRID_COLS = 4
-# Caracteres con los que se rompe la celda al abrir el knob.
-VIZ_GLITCH = "▓▒░▚▞▙▟"
-# Ancho de barra + hueco. Subirlo = menos barras y mas gruesas.
-VIZ_BAR_STEP = 5
-# Caracteres y densidad del ruido de fondo con el que se llena la region
-# de un knob abierto, para que se vea que actua aunque no haya barras.
-VIZ_NOISE = "░▒·˙"
-VIZ_NOISE_MAX = 0.16
-VIZ_ATTACK = 0.6          # subida rápida de la barra (0-1, mayor = más rápida)
-VIZ_RELEASE = 0.16        # caída lenta de la barra
-VIZ_PEAK_FALL = 0.012     # caída del testigo de pico por frame
-# Sub-bloques verticales para resolución fina dentro de cada celda de texto.
-VIZ_BLOCKS = " ▁▂▃▄▅▆▇█"
-
 # Un bloque que consuma más de esta fracción de su presupuesto se apunta como
 # "apurado": todavía no corta, pero es el aviso de que falta margen.
 CARGA_AVISO = 0.75
@@ -481,9 +446,6 @@ def open_midi_input(port_name: str | None, engine_ref: dict,
                 value = int(round(msg.value * scale))
                 for tch in chans:
                     engine.push_event("param", tch, tparam, value)
-                values = engine_ref.get("pot_values")
-                if values is not None:
-                    values[idx] = msg.value     # solo para el visor
         elif msg.type == "control_change":
             engine.push_event("cc", msg.channel % 8, msg.control, msg.value)
 
@@ -515,9 +477,6 @@ def open_midi_output(port_name: str | None) -> MidoMidiOut | None:
     print(f"[midi] salida: '{chosen}'")
     return MidoMidiOut(port, mido)
 
-
-NOTE_NAMES = ["C-", "C#", "D-", "D#", "E-", "F-",
-              "F#", "G-", "G#", "A-", "A#", "B-"]
 
 # Microfuente 3x5 para el título y la lista de canciones (estética retro)
 FONT3X5 = {
@@ -622,26 +581,11 @@ def display_name(dirname: str) -> str:
     return name.upper()[:10]
 
 
-def note_name(n) -> str:
-    if n is None or n >= 0x80:
-        return "---"
-    return f"{NOTE_NAMES[n % 12]}{n // 12 - 2}"
-
-
 def meter(value: float, width: int = 8) -> str:
     """Medidor retro de bloques: value 0-1."""
     value = min(max(value, 0.0), 1.0)
     filled = round(value * width)
     return "█" * filled + "░" * (width - filled)
-
-
-def pan_meter(pan: int, width: int = 5) -> str:
-    """Indicador de pan de `width` celdas con marca."""
-    pan = min(max(pan, 0), 254)
-    pos = round(pan / 254 * (width - 1))
-    cells = ["·"] * width
-    cells[pos] = "█"
-    return "".join(cells)
 
 
 class Player:
@@ -655,6 +599,7 @@ class Player:
         self.index = 0
         self.engine_ref: dict = {}
         self.midi_in = None
+        self._midi_retry_next = 0.0   # ver _ensure_midi_input: reconexión en caliente
         # El MIDI se usa solo de ENTRADA (el controlador). Los eventos para
         # los clientes del robot salen por TCP, no por un puerto MIDI.
         self.event_server: EventServer | None = None
@@ -666,19 +611,6 @@ class Player:
         self.estado_audio = EstadoAudio(
             args.blocksize / float(args.samplerate) * 1000.0)
         self._restart = False               # STOP en el menú: relanzar
-        # visualizador en directo (ver constantes VIZ_*)
-        self._view_mode = "viz"              # "viz" | "detail"
-        self._want_viz = False               # el callback copia audio solo si True
-        self._viz_ring = np.zeros(VIZ_NFFT, dtype=np.float32)  # audio mono rodante
-        self._viz_bands = None               # alturas suavizadas (0-1) por barra
-        self._viz_peaks = None               # testigos de pico por barra
-        self._viz_win = np.hanning(VIZ_NFFT).astype(np.float32)
-        self._viz_layout_cache: dict = {}    # nbands -> (edges, weights, colors)
-        self._viz_agc = VIZ_AGC_REF          # referencia de auto-ganancia
-        self._viz_frame = 0                  # avanza la fase de la distorsion
-        self._viz_rng = random.Random(0)     # glitch reproducible
-        self.pot_labels: list = [None] * 8   # (pista, efecto) por knob activo
-        self.engine_ref["pot_values"] = [0] * 8   # último valor MIDI por knob
         self.stream = sd.OutputStream(
             samplerate=args.samplerate,
             channels=2,
@@ -731,18 +663,9 @@ class Player:
         streamer = self.streamer
         if streamer is not None:
             streamer.write(outdata)
-        if self._want_viz:
-            # ventana rodante mono para el visualizador (swap de referencia:
-            # el hilo de UI ve siempre un snapshot consistente, sin locks).
-            mono = (outdata[:, 0] + outdata[:, 1]).astype(np.float32)
-            n = len(mono)
-            if n >= VIZ_NFFT:
-                self._viz_ring = mono[-VIZ_NFFT:].copy()
-            else:
-                self._viz_ring = np.concatenate((self._viz_ring[n:], mono))
         # Coste real de este bloque. Se mide al final, con todo hecho
-        # (render + grabación + streaming + visualizador), porque lo que
-        # provoca el corte es el total, no solo el motor.
+        # (render + grabación + streaming), porque lo que provoca el corte
+        # es el total, no solo el motor.
         ms = (time.perf_counter() - t_entrada) * 1000.0
         est.ultima_ms = ms
         est.bloques += 1
@@ -765,11 +688,6 @@ class Player:
                         audio_delay=self.args.delay,
                         wavs_dir=self.args.wavs_dir)
         engine.midi_out = self.event_out
-        # Los knobs arrancan a cero en cada canción: el controlador no
-        # responde a consultas (solo emite CC al moverlo), así que no hay
-        # forma de leer su posición física. El motor ya nace sin efectos, y
-        # esto deja la pantalla acorde hasta que se toque un mando.
-        self.engine_ref["pot_values"] = [0] * 8
         m = self.args.master_fx
         if m:
             engine.master_chain = MasterChain(
@@ -798,6 +716,18 @@ class Player:
             except (OSError, json.JSONDecodeError) as exc:
                 print(f"[config] {cfg_file.name}: {exc}")
         engine.muted = set(song_cfg.get("mute", []))
+        # Compensación de presencia al final de la cadena de FX (ver
+        # Engine.render/Channel.fx_presence): opt-in por canal, solo para
+        # la pista en la que se esté trabajando, no global.
+        presence_channels = set(song_cfg.get("presence", []))
+        for ch in engine.channels:
+            ch.fx_presence = ch.idx in presence_channels
+        # Pistas cuyo acorde (param1/param2, ver Engine._chord_tones) se
+        # manda al vocoder por el evento ACRD además de/en vez de sonar
+        # localmente (ver Channel.vocoder_out).
+        vocoder_channels = set(song_cfg.get("vocoder", []))
+        for ch in engine.channels:
+            ch.vocoder_out = ch.idx in vocoder_channels
         # Volumen general de la canción (0-200, 100 = el del proyecto LGPT).
         # Sirve para igualar la sonoridad entre canciones sin tocar el
         # lgptsav.dat: unas están mezcladas más fuerte que otras.
@@ -819,24 +749,8 @@ class Player:
             engine.pad_volume_map = {}
             engine.pad_volume_default = float(pv) / 100
         # targets por canción sobre el mapeo físico global de knobs
-        # Efectos fijos por canal, siempre activos y sin gastar un knob:
-        #   "fx": {"2": {"reverb": 15}}   (canal tracker 0-7, cantidad 0-100)
-        # Si un knob apunta al mismo efecto y canal, al moverlo manda el knob.
-        for ch_key, effects in (song_cfg.get("fx") or {}).items():
-            try:
-                ci = int(ch_key)
-            except (TypeError, ValueError):
-                continue
-            if not 0 <= ci < len(engine.channels) or not isinstance(effects, dict):
-                continue
-            for name, amount in effects.items():
-                if name in EFFECT_PRESETS:
-                    engine.channels[ci].fx_amounts[name] = float(amount) / 100.0
-                else:
-                    print(f"[config] efecto desconocido: {name}")
         song_pots = song_cfg.get("pots", {})
         self.args.pots.clear()
-        self.pot_labels = [None] * 8       # (nº pista, efecto) por knob activo
         for key, entry in self.args.hw_pots.items():
             if not isinstance(entry, dict):
                 continue
@@ -851,12 +765,6 @@ class Player:
             if not 0 <= idx < 8:
                 continue
             self.args.pots.append((spec, target, idx))
-            chans, name, _scale = target
-            # `tempo` es global a la canción: el canal del target no pinta
-            # nada, así que en el visor se marca con * en vez de un número.
-            pistas = "*" if name == "tempo" else \
-                ",".join(str(c + 1) for c in chans)
-            self.pot_labels[idx] = (pistas, name)
 
     # -- UI curses --------------------------------------------------------------
 
@@ -879,34 +787,47 @@ class Player:
             except queue.Empty:
                 return
 
+    def _midi_available(self, wanted: str | None) -> bool:
+        """Como `_pick_port` pero sin imprimir nada: se llama cada pocos
+        segundos desde `_ensure_midi_input` y no debe llenar la consola de
+        avisos mientras el controlador está desenchufado."""
+        try:
+            import mido
+            names = mido.get_input_names()
+        except ImportError:
+            return False
+        if not wanted:
+            return bool(names)
+        base = wanted.rsplit(" ", 1)[0]
+        return any(wanted.lower() in n.lower() or base.lower() in n.lower()
+                   for n in names)
+
+    def _ensure_midi_input(self):
+        """Reconexión en caliente del controlador MIDI: si se enchufa
+        después de arrancar el player, o se desenchufa un momento y vuelve,
+        no debería hacer falta reiniciar. Se limita a comprobar cada 2s
+        (mido.get_input_names() no es gratis) y solo actúa si cambia algo."""
+        now = time.time()
+        if now < self._midi_retry_next:
+            return
+        self._midi_retry_next = now + 2.0
+        available = self._midi_available(self.args.midi)
+        if self.midi_in is not None:
+            if not available:
+                self.midi_in.close()
+                self.midi_in = None
+                self._set_notice("MIDI desconectado")
+        elif available:
+            new_port = open_midi_input(
+                self.args.midi, self.engine_ref, self.ui_queue, self.buttons,
+                self.args.pots)
+            if new_port is not None:
+                self.midi_in = new_port
+                self._set_notice("MIDI reconectado")
+
     def _set_notice(self, msg: str):
         """Aviso breve en la línea inferior de la UI (thread-safe)."""
         self._notice = (msg, time.time())
-
-    def _draw_carga(self, scr, curses, y: int, w: int):
-        """Margen de audio arriba a la derecha: `72% ·3` = el peor bloque
-        reciente consumió el 72% de su presupuesto y van 3 incidentes.
-
-        Se muestra siempre y no solo al fallar: un corte se ve venir cuando
-        el porcentaje sube, y así se sabe si una canción va justa antes de
-        que se note por los altavoces.
-        """
-        est = self.estado_audio
-        pct = est.peor_desde / est.presupuesto_ms * 100 if est.presupuesto_ms else 0
-        txt = f"{pct:.0f}%"
-        if est.incidentes:
-            txt += f" ·{est.incidentes}"
-        if est.xruns:
-            color = 6          # rojo: hubo cortes de verdad
-        elif pct >= CARGA_AVISO * 100:
-            color = 5          # ámbar: apurado, aún sin cortar
-        else:
-            color = 3          # verde tenue: con margen
-        try:
-            scr.addstr(y, max(w - len(txt) - 1, 0), txt,
-                       curses.color_pair(color) | curses.A_BOLD)
-        except curses.error:
-            pass
 
     def _draw_notice(self, scr, curses, y: int):
         if self._notice is not None:
@@ -983,232 +904,14 @@ class Player:
             except curses.error:
                 pass                      # pantalla estrecha: se recorta
 
-    # -- visualizador en directo (espectro reactivo) ----------------------------
+    def _draw_song(self, scr, curses, engine: Engine):
+        """Pantalla mínima de reproducción: estado, canción, BPM y progreso.
 
-    def _enter_song_view(self, scr):
-        """Ajusta refresco y análisis según el modo de vista de canción:
-        el visualizador va a ~30 fps (necesita fluidez); la vista detallada
-        a 10 fps basta y ahorra CPU en la Pi."""
-        self._want_viz = self._view_mode == "viz"
-        self._viz_bands = None            # reinicia envolvente al entrar
-        self._viz_peaks = None
-        scr.timeout(33 if self._want_viz else 100)
-
-    def _viz_layout(self, nbands: int):
-        """Bordes de bin, pesos y color por barra para `nbands` bandas
-        log-espaciadas. Cacheado: solo cambia si cambia el ancho del terminal."""
-        cached = self._viz_layout_cache.get(nbands)
-        if cached is not None:
-            return cached
-        sr = self.args.samplerate
-        nbins = VIZ_NFFT // 2 + 1
-        freqs = np.logspace(np.log10(VIZ_FMIN),
-                            np.log10(min(VIZ_FMAX, sr / 2 * 0.95)), nbands + 1)
-        edges, weights, colors = [], [], []
-        ng = len(self._viz_gradient)
-        for i in range(nbands):
-            lo = int(freqs[i] / (sr / 2) * (nbins - 1))
-            hi = max(lo + 1, int(freqs[i + 1] / (sr / 2) * (nbins - 1)))
-            edges.append((lo, min(hi, nbins)))
-            center = math.sqrt(freqs[i] * freqs[i + 1])
-            weights.append((center / VIZ_FMIN) ** VIZ_TILT)
-            colors.append(self._viz_gradient[min(ng - 1, i * ng // nbands)])
-        layout = (edges, np.array(weights, dtype=np.float32), colors)
-        self._viz_layout_cache[nbands] = layout
-        return layout
-
-    def _viz_levels(self, nbands: int) -> np.ndarray:
-        """Nivel 0-1 por banda del último audio (rFFT de la ventana rodante),
-        con realce de agudos, auto-ganancia y compresión suave para que
-        ninguna banda domine ni se quede clavada arriba."""
-        edges, weights, _ = self._viz_layout(nbands)
-        spec = np.abs(np.fft.rfft(self._viz_ring * self._viz_win)) / VIZ_NFFT
-        raw = np.array([spec[lo:hi].mean() for lo, hi in edges],
-                       dtype=np.float32) * weights
-        # referencia adaptativa: sube rápido, baja despacio
-        peak = float(raw.max())
-        ref = self._viz_agc
-        rate = VIZ_AGC_UP if peak > ref else VIZ_AGC_DOWN
-        ref += rate * (peak - ref)
-        self._viz_agc = max(ref, VIZ_AGC_REF)
-        return 1.0 - np.exp(-raw / self._viz_agc * VIZ_AGC_KNEE)
-
-    def _draw_viz(self, scr, curses, engine: Engine):
-        """Espectro continuo a todo el ancho + distorsion por knob.
-
-        Las barras son una sola imagen que ocupa la pantalla entera; encima,
-        la pantalla se reparte en 8 regiones (2 filas x 4 columnas, knobs 1-4
-        arriba y 5-8 abajo) y cada knob deforma SU region tanto mas cuanto
-        mas abierto este. Asi el espectro se lee de un vistazo y a la vez se
-        ve que mando esta actuando.
+        Sin detalle por canal ni visualizador: el motor ya no aplica
+        efectos de canal, así que no hay nada de eso que mostrar.
         """
         scr.erase()
         h, w = scr.getmaxyx()
-        if engine.finished:
-            sym, cpair = "[]", 6
-        elif engine.playing:
-            sym, cpair = ">", 2
-        else:
-            sym, cpair = "II", 5
-        name = display_name(engine.project.dir.name)
-        head = f"{sym} {name}  {engine.tempo:.0f}BPM"
-        scr.addstr(0, 1, head[:w - 2], curses.color_pair(cpair) | curses.A_BOLD)
-        self._draw_carga(scr, curses, 0, w)
-
-        rows = h - 1                         # fila 0 = cabecera
-        if rows < 2 or w < 8:
-            self._draw_notice(scr, curses, h - 1)
-            scr.refresh()
-            return
-
-        step = VIZ_BAR_STEP if w >= 24 else 2
-        bar_w = step - 1
-        nbands = min(VIZ_MAX_BANDS, (w - 1) // step)
-        _, _, colors = self._viz_layout(nbands)
-
-        target = self._viz_levels(nbands)
-        bands, peaks = self._viz_bands, self._viz_peaks
-        if bands is None or len(bands) != nbands:
-            bands = np.zeros(nbands, dtype=np.float32)
-            peaks = np.zeros(nbands, dtype=np.float32)
-        rising = target > bands
-        bands += np.where(rising, VIZ_ATTACK, VIZ_RELEASE) * (target - bands)
-        peaks = np.maximum(peaks - VIZ_PEAK_FALL, bands)
-        self._viz_bands, self._viz_peaks = bands, peaks
-
-        # El espectro se compone en un buffer de caracteres porque la
-        # distorsion desplaza filas enteras: es mas simple sobre el buffer
-        # que sobre la pantalla.
-        grid = [[" "] * w for _ in range(rows)]
-        attrs = [[0] * w for _ in range(rows)]
-        levels = len(VIZ_BLOCKS) - 1
-        x_ini = max(0, (w - nbands * step) // 2)
-        for i in range(nbands):
-            x = x_ini + i * step
-            if x >= w:
-                break
-            ancho = min(bar_w, w - x)
-            total = int(bands[i] * rows * levels)
-            full, part = divmod(total, levels)
-            for r in range(min(full, rows)):
-                y = rows - 1 - r
-                a = colors[i] | (curses.A_BOLD if r >= rows * 0.6 else 0)
-                for dx in range(ancho):
-                    grid[y][x + dx] = "█"
-                    attrs[y][x + dx] = a
-            if full < rows and part > 0:
-                y = rows - 1 - full
-                for dx in range(ancho):
-                    grid[y][x + dx] = VIZ_BLOCKS[part]
-                    attrs[y][x + dx] = colors[i]
-            pr = int(peaks[i] * rows)
-            if 0 < pr <= rows:
-                y = rows - min(pr, rows)
-                for dx in range(ancho):
-                    grid[y][x + dx] = "▁"
-                    attrs[y][x + dx] = self._viz_cap
-
-        # distorsion: una region por knob sobre la imagen ya compuesta
-        values = self.engine_ref.get("pot_values") or [0] * 8
-        self._viz_frame += 1
-        cell_h = max(1, rows // VIZ_GRID_ROWS)
-        cell_w = max(1, w // VIZ_GRID_COLS)
-        for k in range(VIZ_ZONES):
-            gr, gc = divmod(k, VIZ_GRID_COLS)
-            amount = min(max(values[k] if k < len(values) else 0, 0), 127) / 127.0
-            if amount <= 0.01:
-                continue
-            y0 = gr * cell_h
-            y1 = rows if gr == VIZ_GRID_ROWS - 1 else min((gr + 1) * cell_h, rows)
-            x0 = gc * cell_w
-            x1 = w if gc == VIZ_GRID_COLS - 1 else min((gc + 1) * cell_w, w)
-            self._distort(grid, attrs, amount, y0, y1, x0, x1)
-
-        for r in range(rows):
-            y = 1 + r
-            for c in range(w):
-                ch = grid[r][c]
-                if ch == " ":
-                    continue
-                try:
-                    scr.addstr(y, c, ch, attrs[r][c])
-                except curses.error:
-                    pass
-
-        # etiquetas de los knobs, una por region, encima del espectro
-        for k in range(VIZ_ZONES):
-            gr, gc = divmod(k, VIZ_GRID_COLS)
-            self._draw_knob_label(
-                scr, curses, k, 1 + gr * cell_h, gc * cell_w, cell_w,
-                values[k] if k < len(values) else 0)
-
-        self._draw_notice(scr, curses, h - 1)
-        scr.refresh()
-
-    def _draw_knob_label(self, scr, curses, idx: int, y: int, x: int,
-                         ancho: int, value: int):
-        """Etiqueta del knob en la esquina de su region: numero, efecto,
-        pistas que modula y % actual. Atenuada si el knob esta a cero."""
-        amount = min(max(value, 0), 127) / 127.0
-        label = self.pot_labels[idx] if idx < len(self.pot_labels) else None
-        if label is None:
-            texto, attr = f"{idx + 1}", self._viz_knob_off
-        else:
-            pistas, effect = label
-            texto = f"{idx + 1}{effect[:3].upper()}"
-            if ancho >= 10:
-                texto += f" {pistas} {int(amount * 100):3d}"
-            attr = self._viz_knob if amount > 0.01 else self._viz_knob_off
-        try:
-            scr.addstr(y, x, texto[:max(1, ancho - 1)], attr)
-        except curses.error:
-            pass
-
-    def _distort(self, grid, attrs, amount: float,
-                 y0: int, y1: int, x0: int, x1: int):
-        """Deforma la region [y0,y1) x [x0,x1) del buffer proporcionalmente
-        a lo abierto que este el knob: desplaza las filas de esa franja en
-        horizontal y corrompe bloques. Solo se toca esa ventana, asi que el
-        espectro sigue siendo continuo fuera de ella."""
-        rng = self._viz_rng
-        ancho = x1 - x0
-        if ancho < 2:
-            return
-        # El desplazamiento crece LINEAL con el knob: multiplicarlo dos veces
-        # por `amount` lo deja cuadratico y hasta un tercio de recorrido no se
-        # mueve nada, que en directo se siente como que el mando no responde.
-        max_shift = max(1.0, amount * ancho / 3.0)
-        phase = self._viz_frame * 0.35
-        prob = (amount - 0.15) * 0.45 if amount > 0.15 else 0.0
-        ruido = amount * VIZ_NOISE_MAX
-        for r in range(y0, y1):
-            wave = math.sin(phase + r * 0.9)
-            shift = int(round(wave * max_shift))
-            if rng.random() < amount * 0.3:       # tiron puntual
-                shift += rng.randint(-int(max_shift), int(max_shift))
-            shift %= ancho
-            if shift:
-                fila = grid[r]
-                tramo = fila[x0:x1]
-                fila[x0:x1] = tramo[-shift:] + tramo[:-shift]
-                fila_a = attrs[r]
-                tramo_a = fila_a[x0:x1]
-                fila_a[x0:x1] = tramo_a[-shift:] + tramo_a[:-shift]
-            for c in range(x0, x1):
-                if grid[r][c] != " ":
-                    if prob and rng.random() < prob:
-                        grid[r][c] = VIZ_GLITCH[rng.randrange(len(VIZ_GLITCH))]
-                elif rng.random() < ruido:
-                    # hueco vacio: ruido tenue, para que la region se vea
-                    # aunque el espectro no llegue hasta ahi
-                    grid[r][c] = VIZ_NOISE[rng.randrange(len(VIZ_NOISE))]
-                    attrs[r][c] = self._viz_noise
-
-    def _draw_song(self, scr, curses, engine: Engine):
-        scr.erase()
-        h, w = scr.getmaxyx()
-        wide = w >= 68
-        mw = 8 if wide else 4
         if engine.finished:
             state, color = "STOP ", 6
         elif engine.playing:
@@ -1216,50 +919,15 @@ class Player:
         else:
             state, color = "PAUSA", 5
         row = max(engine.song_positions())
+        pct = row / 255.0
         scr.addstr(0, 1, state, curses.color_pair(color) | curses.A_BOLD)
         scr.addstr(0, 7, engine.project.dir.name[:w - 8],
                    curses.color_pair(1) | curses.A_BOLD)
-        if wide:
-            scr.addstr(0, 30, f"{engine.tempo:.0f} BPM  fila {row:02X}  "
-                              f"{meter(row / 255, 12)}"[:w - 31])
-        for ch in engine.channels:
-            y = 2 + ch.idx
-            v = ch.voice
-            sounding = (v is not None and v.active) or ch.midi_note is not None
-            if sounding:
-                note = v.note if v is not None else ch.last_note
-                instr = ch.last_instr if ch.last_instr is not None else 0
-                vol = (v.vol_cur / 255.0 * ch.cc_vol) if v is not None else 0.0
-                scr.addstr(y, 1, f"{ch.idx + 1} {note_name(note)} {instr:02X}",
-                           curses.color_pair(2))
-                scr.addstr(y, 10, f"vol {meter(vol, mw)}"[:w - 11])
-                x_fx = 13 + mw
-                for name, amount in list(ch.fx_amounts.items())[:2]:
-                    attr = curses.color_pair(2) if amount > 0.001 \
-                        else curses.color_pair(3)
-                    tag = name[:3]
-                    scr.addstr(y, x_fx, f"{tag} {meter(amount, mw)}"[:w - 1],
-                               attr)
-                    x_fx += 7 + mw
-                if wide:
-                    if v is not None and v.cc_pan is not None:
-                        pan_val = v.cc_pan
-                    elif v is not None:
-                        pan_val = v.pan
-                    else:
-                        pan_val = 127
-                    scr.addstr(y, 43, f"pan {pan_meter(pan_val)}")
-                    semis = 12.0 * math.log2(ch.cc_pitch)
-                    scr.addstr(y, 52, f"pit {semis:+4.1f}")
-            else:
-                scr.addstr(y, 1, f"{ch.idx + 1} --- --",
-                           curses.color_pair(3))
-                if ch.idx in engine.muted:
-                    scr.addstr(y, 10, "MUTE", curses.color_pair(5))
-                elif ch.playing:
-                    scr.addstr(y, 10, "·", curses.color_pair(3))
+        scr.addstr(2, 1, f"{engine.tempo:.0f} BPM   {meter(pct, 20)} "
+                         f"{pct * 100:5.1f}%"[:w - 2],
+                   curses.color_pair(3))
         scr.addstr(h - 1, 1,
-                   "espacio: pausa  n/p: canción  v: visor  q: lista"[:w - 2],
+                   "espacio: pausa  n/p: canción  q: lista"[:w - 2],
                    curses.color_pair(3))
         self._draw_notice(scr, curses, h - 2)
         scr.refresh()
@@ -1288,21 +956,6 @@ class Player:
         self._pair_sel = curses.color_pair(2) | curses.A_BOLD
         self._pair_dim = curses.color_pair(3) | curses.A_DIM
         self._pair_neg = curses.color_pair(4)      # negro sobre verde
-        # Paleta a color solo para el visualizador (gradiente grave->agudo).
-        # Fuera del verde fósforo del resto de la UI a propósito: el directo
-        # pide color. Sobre tty1 con setvtrgb salen algo lavados pero legibles.
-        viz_fg = [curses.COLOR_RED, curses.COLOR_YELLOW, curses.COLOR_GREEN,
-                  curses.COLOR_CYAN, curses.COLOR_BLUE, curses.COLOR_MAGENTA]
-        for i, fg in enumerate(viz_fg):
-            curses.init_pair(10 + i, fg, bg)
-        curses.init_pair(16, curses.COLOR_WHITE, bg)   # testigo de pico
-        self._viz_gradient = [curses.color_pair(10 + i) for i in range(6)]
-        self._viz_cap = curses.color_pair(16) | curses.A_BOLD
-        # knobs: blanco intenso al estar activos, atenuado en reposo, para
-        # que se lean por encima de las barras de color
-        self._viz_knob = curses.color_pair(16) | curses.A_BOLD
-        self._viz_knob_off = curses.color_pair(16) | curses.A_DIM
-        self._viz_noise = curses.color_pair(16) | curses.A_DIM
         scr.timeout(100)
         engine = None
         needs_clear = True                # limpieza completa al cambiar de vista
@@ -1311,6 +964,7 @@ class Player:
                 scr.clear()
                 needs_clear = False
             self._drain_buttons()
+            self._ensure_midi_input()
             try:
                 self._draw_list(scr, curses)
             except curses.error:
@@ -1340,13 +994,11 @@ class Player:
                 engine = self._load_song(self.index)
                 self._drain_buttons()
                 scr.clear()               # limpieza al entrar en la canción
-                self._enter_song_view(scr)
+                scr.timeout(100)
                 while True:               # vista canción
+                    self._ensure_midi_input()
                     try:
-                        if self._view_mode == "viz":
-                            self._draw_viz(scr, curses, engine)
-                        else:
-                            self._draw_song(scr, curses, engine)
+                        self._draw_song(scr, curses, engine)
                     except curses.error:
                         pass              # pantalla pequeña: recorte
                     key = self._read_key(scr, curses, "song")
@@ -1355,11 +1007,6 @@ class Player:
                     if key == " ":
                         engine.push_event(
                             "pause" if engine.playing else "play")
-                    elif key == "v":
-                        self._view_mode = ("detail" if self._view_mode == "viz"
-                                           else "viz")
-                        self._enter_song_view(scr)
-                        scr.clear()
                     elif key == "n":
                         self.index = (self.index + 1) % len(self.projects)
                         engine = self._load_song(self.index)
@@ -1369,7 +1016,6 @@ class Player:
                     elif key in ("q", "esc"):
                         engine.push_event("stop")
                         self.engine_ref["engine"] = None
-                        self._want_viz = False
                         scr.timeout(100)
                         needs_clear = True
                         break
@@ -1679,6 +1325,7 @@ class Player:
     def _run_headless(self):
         """Sin TTY: solo audio + botones MIDI (modo servicio)."""
         while True:
+            self._ensure_midi_input()
             time.sleep(1.0)
 
     def run(self):

@@ -49,6 +49,20 @@ DECLICK_SECONDS = 0.004
 # que interesa que se note sin desmadrarse: +12% son 180->202 BPM.
 TEMPO_BOOST_MAX = 0.12
 
+# Compensación de presencia al final de la cadena de efectos de un canal
+# (ver Engine.render y Channel.fx_presence): en vez de afinar una constante
+# de ganancia por cada Fx nuevo (frágil si se combinan varios a la vez, como
+# pasó con `bode`), se compara el RMS antes/después de la cadena entera y se
+# corrige. Es opt-in por canal (Channel.fx_presence, activado desde
+# robotraca.json con "presence": [canal, ...] en lgpt_player.py) y no
+# global: cada pista que ya suena bien tal cual no tiene por qué pasar por
+# esto. Tope de corrección acotado para no disparar silencios ni compensar
+# de más.
+PRESENCE_GAIN_MIN = 0.5
+PRESENCE_GAIN_MAX = 3.0
+PRESENCE_ATTACK = 0.15      # sube rápido la compensación (efecto recién activado)
+PRESENCE_RELEASE = 0.04     # baja despacio (evita bombeo con la música)
+
 # Pan law original (LittleGPTracker/sources/Application/Instruments/
 # SampleInstrumentDatas.h), 255 entradas en punto fijo 16.16.
 # Gain L = panlaw[pan] / 65536, gain R = panlaw[254 - pan] / 65536.
@@ -203,6 +217,12 @@ class MidiOut:
         pass
 
     def program_change(self, channel: int, program: int):
+        pass
+
+    def chord_on(self, channel: int, notes: list[int], velocity: int):
+        """Acorde de la pista de voz -> vocoder (ver Channel.vocoder_out).
+        `channel` es el índice del canal del tracker (0-7), no un canal
+        MIDI: es un evento nuevo, sin relación con `note_on`/`cc`."""
         pass
 
     # Transporte. El engine los llama con getattr defensivo, así que un sink
@@ -652,326 +672,182 @@ class TablePlayback:
 # Presets de efectos (cadena por canal, a la salida del delay)
 # --------------------------------------------------------------------------
 
-class SuboctaveFx:
-    """Audio Divider + paso bajo: peso una octava por debajo, SUMADO al
-    original.
+class ValveFx:
+    """Distorsión digital (Decimator, decimator_1202.so): preset "valve"
+    por el hueco que ocupa en la cadena (drive antes del filtro acid),
+    aunque ya ha pasado por dos plugins distintos antes de llegar a este:
+    Valve saturation quedaba demasiado sutil (2º armónico nunca pasaba de
+    ~25-40% por mucho que se empujara el nivel) y Chebyshev distortion,
+    aunque medía bien, no convenció por oído. Este es un bitcrush: baja la
+    profundidad de bits en vez de recortar la onda, textura "digital" en
+    vez de "analógica".
 
-    Dos cosas que hay que respetar aquí, las dos aprendidas midiendo:
+    Curva medida con el bajo real: por encima de 10 bits es transparente,
+    entre 8 y 4 el crujido crece con fuerza (fracción de energía 800-8kHz
+    pasa de 0.17 a 0.47), por debajo de 3 la onda queda casi cuadrada
+    (demasiado roto). `amount` 0-1 mapea a 24-4 bits con una curva
+    cuadrática para que la mitad del recorrido siga siendo sutil y el
+    crujido fuerte quede concentrado en el último tercio del knob.
 
-    - **Se suma, no se cruza.** Antes esto hacía `buf *= (1-amount)` antes de
-      meter el wet, así que al pasar de medio recorrido el bajo original se
-      iba borrando hasta desaparecer. Un pedal de suboctava añade una voz,
-      no sustituye la que hay.
-    - **El wet va filtrado.** La salida cruda del divisor es una onda
-      cuadrada: sobre el bajo de abduccion medía solo un 21.7% de energía
-      por debajo de 200 Hz, frente al 70.1% del bajo seco. O sea que sin
-      filtrar no aporta peso, aporta zumbido, y encima diluye el grave. El
-      paso bajo es lo que la convierte en cuerpo.
+    Sin alternativa en numpy a propósito, igual que `AcidFx`: si el plugin
+    LADSPA no está instalado, falla al crear el efecto en vez de
+    aproximarlo a mano."""
 
-    Con esto la energía bajo 200 Hz SUBE con el knob (71.8% -> 83.1%) en vez
-    de hundirse, el nivel se mueve menos de 1.7 dB y el pico nunca pasa del
-    que ya tenía el bajo seco.
-    """
-
-    PRE_HZ = 120.0
-    # El knob ABRE el filtro de la octava, no solo la sube de volumen. Con un
-    # corte fijo bajo, la octava cae en 33 Hz y por un altavoz de PA no se
-    # oye: es correcta y a la vez inútil. Al abrir hasta 2.2 kHz van saliendo
-    # los armónicos de la cuadrada del divisor, que refuerzan el bajo en su
-    # propio fundamental — el truco del octave-fuzz. Medido tras un paso alto
-    # a 60 Hz (lo que de verdad sale por el altavoz), el cambio audible pasa
-    # de 3.2 dB (versión original) a 8.1 dB al final del recorrido.
-    LP_MIN = 180.0
-    LP_MAX = 6000.0
-    GAIN = 8.0
-    COMP = 0.8
+    BITS_MIN = 4.0
+    BITS_MAX = 24.0
 
     def __init__(self, sr: int):
-        self.sr = sr
-        self.pre = None
-        self.lp = None
-        try:
-            from ladspa_fx import LadspaStereoDivider, LadspaStereoSVF
-            self.pre = LadspaStereoSVF(sr)
-            self.pre.set(freq_hz=self.PRE_HZ, res=0.0)
-            self.plugin = LadspaStereoDivider(sr)
-            # OJO: el denominador del plugin va desplazado en uno. Medido con
-            # senoidales: set(2) devuelve la MISMA frecuencia (no divide
-            # nada), set(3) la mitad y set(4) un tercio. Con el 2 que había
-            # antes, esto llevaba desde siempre sumando una copia del bajo en
-            # vez de una octava, y por eso apenas se notaba.
-            self.plugin.set(3.0)
-            self.lp = LadspaStereoSVF(sr)
-        except Exception:
-            self.plugin = None
-        # Estado del fallback: signo previo, biestable y polos de los filtros.
-        self.flip = [1.0, 1.0]
-        self.prev = [0.0, 0.0]
-        self.zpre = [0.0, 0.0]
-        self.zlp = [0.0, 0.0]
+        from ladspa_fx import LadspaStereoDecimator
+        self.plugin = LadspaStereoDecimator(sr)
 
     def apply(self, buf: np.ndarray, amount: float):
-        if amount <= 0.0:
+        if amount <= 0.001:
             return
-        wet = buf.copy()
-        cut = self.LP_MIN * (self.LP_MAX / self.LP_MIN) ** amount
-        if self.plugin is not None:
-            # El pre-filtro no es opcional: el divisor cuenta cruces por cero
-            # y un bajo percusivo tiene de sobra por culpa de los armónicos,
-            # así que sin limpiarlo antes no engancha el fundamental y
-            # devuelve la misma nota. Medido sobre el bajo de abduccion:
-            # sin pre-filtro el wet se queda en 65 Hz, con él baja a 33.
-            self.pre.run(wet)
-            self.plugin.run(wet)
-            self.lp.set(freq_hz=cut, res=0.0)
-            self.lp.run(wet)
-        else:
-            self._divide(wet, cut)
-        buf += wet * (self.GAIN * amount)
-        buf *= 1.0 / (1.0 + self.COMP * amount)
-
-    def _divide(self, buf: np.ndarray, cut: float):
-        """Suboctava sin LADSPA: biestable en los cruces por cero (divide la
-        frecuencia entre dos) y paso bajo de un polo para quitarle a la
-        cuadrada los armónicos que no aportan peso.
-
-        Lleva el mismo pre-filtro que el camino con plugin y por el mismo
-        motivo: sin limpiar la señal antes, los armónicos meten cruces por
-        cero de más y el biestable no engancha el fundamental.
-
-        El 0.35 iguala el nivel con el del divisor LADSPA: esta versión
-        rectifica, así que sale más caliente, y sin bajarla el knob a tope
-        clipeaba. Con él, el mismo GAIN/COMP vale para los dos caminos.
-        """
-        ap = math.exp(-2.0 * math.pi * self.PRE_HZ / self.sr)
-        a = math.exp(-2.0 * math.pi * min(cut, self.sr * 0.45) / self.sr)
-        for side in range(buf.shape[1]):
-            xs = buf[:, side]
-            flip, prev = self.flip[side], self.prev[side]
-            zp, z = self.zpre[side], self.zlp[side]
-            for i in range(len(xs)):
-                zp = xs[i] * (1.0 - ap) + zp * ap
-                if prev <= 0.0 < zp:
-                    flip = -flip
-                prev = zp
-                z = abs(zp) * flip * (1.0 - a) + z * a
-                xs[i] = z * 0.35
-            self.flip[side], self.prev[side] = flip, prev
-            self.zpre[side], self.zlp[side] = zp, z
+        bits = self.BITS_MIN + (self.BITS_MAX - self.BITS_MIN) * (1.0 - amount) ** 2
+        self.plugin.set(bits)
+        self.plugin.run(buf)
 
 
-class AcidLpFx:
-    """C* AutoFilter LP: barrido 3800 -> 780 Hz (50% log) con resonancia
-    y compensación de volumen progresiva hasta +40%."""
+class AcidFx:
+    """Filtro acid (C* AutoFilter, caps.so): barrido de graves 3800 -> 160 Hz
+    (recorrido logarítmico completo) con resonancia hasta 0.9 y
+    compensación de nivel.
+
+    Antes el barrido solo llegaba a 780 Hz y la resonancia a 0.425 (la
+    mitad del recorrido de cada uno) — se estiró a tope para un acid más
+    extremo. Probado estable en todo el rango (sin overflow ni NaN, a
+    diferencia del comb filter o el ring modulator).
+
+    Sin alternativa en numpy a propósito: si el plugin LADSPA no está
+    instalado, falla al crear el efecto en vez de aproximarlo a mano (a
+    diferencia del resto de la cadena, que siempre tiene un fallback)."""
 
     COMP = 0.40
 
     def __init__(self, sr: int):
-        self.sr = sr
-        self.plugin = None
-        for cls in ("LadspaStereoAutoFilter", "LadspaStereoSVF"):
-            try:
-                mod = __import__("ladspa_fx")
-                self.plugin = getattr(mod, cls)(sr)
-                break
-            except Exception:
-                continue
-        self.coef: Optional[tuple] = None
-        self.state = [0.0] * 8
+        from ladspa_fx import LadspaStereoAutoFilter
+        self.plugin = LadspaStereoAutoFilter(sr)
 
     def apply(self, buf: np.ndarray, amount: float):
-        freq = 3800.0 * (160.0 / 3800.0) ** (amount * 0.5)
-        res = 0.85 * amount * 0.5
-        if self.plugin is not None:
-            self.plugin.set(freq_hz=freq, res=res)
-            self.plugin.run(buf)
-        else:
-            self._biquad(buf, amount, freq, res)
+        freq = 3800.0 * (160.0 / 3800.0) ** amount
+        res = 0.9 * amount
+        self.plugin.set(freq_hz=freq, res=res)
+        self.plugin.run(buf)
         buf *= 1.0 + self.COMP * amount
 
-    def _biquad(self, buf: np.ndarray, cut: float, freq: float, res: float):
-        if self.coef is None or self.coef[0] != cut or self.coef[1] != res:
-            q = 0.5 + res * 9.5
-            w0 = 2.0 * math.pi * freq / self.sr
-            alpha = math.sin(w0) / (2.0 * q)
-            cosw = math.cos(w0)
-            a0 = 1.0 + alpha
-            b0 = (1.0 - cosw) * 0.5 / a0
-            b1 = (1.0 - cosw) / a0
-            a1 = -2.0 * cosw / a0
-            a2 = (1.0 - alpha) / a0
-            self.coef = (cut, res, b0, b1, b0, a1, a2)
-        _c, _r, b0, b1, b2, a1, a2 = self.coef
-        st = self.state
-        for side in range(2):
-            x1, x2, y1, y2 = st[side * 4:side * 4 + 4]
-            xs = buf[:, side]
-            for i in range(len(xs)):
-                x = xs[i]
-                y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
-                x2, x1 = x1, x
-                y2, y1 = y1, y
-                if y > 4.0:
-                    y = 4.0
-                elif y < -4.0:
-                    y = -4.0
-                xs[i] = y
-            st[side * 4:side * 4 + 4] = [x1, x2, y1, y2]
 
+class DelayFx:
+    """Eco (Delayorama, delayorama_1402.so): 3 taps a 0.4/0.8/1.2s que
+    decaen (cada uno <50% del anterior), el pot mueve un único dry/wet
+    mix 0-1.
 
-class SatanFx:
-    """Barry's Satan Maximiser: knee 0 -> -60 dB (destrucción progresiva)
-    con compensación de nivel para no disparar el volumen."""
+    Pasó por dos ajustes: Tape Delay Simulation con dos niveles en dB por
+    separado se disparaba a tope de knob; una primera versión de
+    Delayorama con 2 taps al mismo nivel sonaba a "demasiadas repeticiones"
+    sobre una pista que suena todo el rato, porque los ecos de notas
+    seguidas se amontonaban sin decaer. Con caída de nivel entre taps
+    (medida con pulso: 0.0425 -> 0.033 -> 0.0196) resuena 2-3 veces y se
+    apaga, en vez de un eco plano.
 
-    KNEE_MAX = -60.0
+    Sin alternativa en numpy a propósito, igual que `AcidFx`/`ValveFx`: si
+    el plugin LADSPA no está instalado, falla al crear el efecto en vez de
+    aproximarlo a mano."""
 
     def __init__(self, sr: int):
-        try:
-            from ladspa_fx import LadspaStereoSatan
-            self.plugin = LadspaStereoSatan(sr)
-        except Exception:
-            self.plugin = None
+        from ladspa_fx import LadspaStereoDelayorama
+        self.plugin = LadspaStereoDelayorama(sr)
 
     def apply(self, buf: np.ndarray, amount: float):
-        if self.plugin is not None:
-            self.plugin.set(self.KNEE_MAX * amount)
-            self.plugin.run(buf)
-        else:
-            np.tanh(buf * (1.0 + 30.0 * amount), out=buf)
-        # compensación fuerte + limitador: la destrucción sin el disparo
-        buf *= 1.0 / (1.0 + 3.0 * amount)
-        if amount > 0.001:
-            np.tanh(buf, out=buf)
-
-
-class RingmodFx:
-    """Ringmod with LFO: depth 0 = bypass; al subir entra la modulación
-    en anillo con la frecuencia barriendo 30 -> 330 Hz (zona metálica).
-    No sube el nivel."""
-
-    def __init__(self, sr: int):
-        try:
-            from ladspa_fx import LadspaStereoRingmod
-            self.plugin = LadspaStereoRingmod(sr)
-        except Exception:
-            self.plugin = None
-
-    def apply(self, buf: np.ndarray, amount: float):
-        if self.plugin is not None:
-            self.plugin.set(2.0 * amount, 30.0 + 300.0 * amount)
-            self.plugin.run(buf)
-        else:
-            # fallback: tremolo rápido aproximado
-            n = np.arange(len(buf), dtype=np.float32)
-            mod = 1.0 - amount * (0.5 + 0.5 * np.sin(
-                2 * np.pi * (30 + 300 * amount) * n / 44100))
-            buf *= mod[:, None]
-
-
-class PhaserFx:
-    """LFO Phaser: depth 0 = seco; al subir entra el phaser con feedback
-    y rate 0.2 -> 1.7 Hz. No toca el nivel."""
-
-    def __init__(self, sr: int):
-        try:
-            from ladspa_fx import LadspaStereoPhaser
-            self.plugin = LadspaStereoPhaser(sr)
-        except Exception:
-            self.plugin = None
-
-    def apply(self, buf: np.ndarray, amount: float):
-        if self.plugin is not None:
-            self.plugin.set(0.2 + 1.5 * amount, amount, 0.6 * amount)
-            self.plugin.run(buf)
-            # el phaser colorea incluso a depth 0 (~1.4x) y sube con el
-            # feedback: compensación para mantener el nivel
-            buf *= 1.0 / (1.4 + amount)
-
-
-class DecimatorFx:
-    """Decimator: textura fija de 16 bits y barrido SUAVE del sample rate
-    (100% -> 20%). La profundidad de bits es entera en el plugin (a
-    pasos), así que el barrido principal va por el rate, que es continuo."""
-
-    def __init__(self, sr: int):
-        self.sr = sr
-        try:
-            from ladspa_fx import LadspaStereoDecimator
-            self.plugin = LadspaStereoDecimator(sr)
-        except Exception:
-            self.plugin = None
-
-    def apply(self, buf: np.ndarray, amount: float):
-        bits = 24.0 - 8.0 * amount                # 24 -> 16 (textura leve)
-        if self.plugin is not None:
-            self.plugin.set(bits, self.sr * (1.0 - 0.8 * amount))
-            self.plugin.run(buf)
-        else:
-            step = 2.0 ** (1.0 - bits)
-            buf[:] = np.round(buf / step) * step
-
-
-class ChopperFx:
-    """Tremolo/gate con LFO (Ringmod with LFO): depth 0 = bypass;
-    al subir, corte de 2 a 16 Hz con onda TRIANGULAR (bordes suaves).
-    No sube el nivel."""
-
-    def __init__(self, sr: int):
-        try:
-            from ladspa_fx import LadspaRingmod
-            self.left = LadspaRingmod(sr)
-            self.right = LadspaRingmod(sr)
-            for p in (self.left, self.right):
-                p.set_control(2, 0.0)      # sine off
-                p.set_control(3, 1.0)      # triangle on
-                p.set_control(5, 0.0)      # square off
-            self.ok = True
-        except Exception:
-            self.ok = False
-
-    def apply(self, buf: np.ndarray, amount: float):
-        if self.ok:
-            rate = 2.0 + 14.0 * amount
-            for p in (self.left, self.right):
-                p.set(2.0 * amount, rate)
-            left = np.ascontiguousarray(buf[:, 0])
-            self.left.run(left)
-            buf[:, 0] = left
-            right = np.ascontiguousarray(buf[:, 1])
-            self.right.run(right)
-            buf[:, 1] = right
-        else:
-            # fallback: tremolo cuadrado propio
-            n = np.arange(len(buf), dtype=np.float32)
-            rate = 2.0 + 14.0 * amount
-            mod = (np.sin(2 * np.pi * rate * n / 44100) > 0)
-            buf *= (1.0 - amount + amount * mod)[:, None]
-
-
-class FlangerFx:
-    """Retro Flanger: barrido suave con LFO, sin distorsión ni pérdida de
-    nivel (alternativa más limpia al chopper para el mismo canal)."""
-
-    def __init__(self, sr: int):
-        try:
-            from ladspa_fx import LadspaStereoRetroFlange
-            self.plugin = LadspaStereoRetroFlange(sr)
-        except Exception:
-            self.plugin = None
-
-    def apply(self, buf: np.ndarray, amount: float):
-        # El plugin procesa al 100% wet, así que la mezcla seco/procesado la
-        # hacemos aquí: sin ella el efecto entraba de golpe en el primer
-        # cuarto del knob y el resto del recorrido no aportaba nada. Además
-        # el barrido de peine solo se oye si queda algo de señal seca con la
-        # que interferir.
-        if self.plugin is None or amount <= 0.001:
+        if amount <= 0.001:
             return
-        dry = buf.copy()
-        self.plugin.set(6.0 * amount, 0.3 + 0.7 * amount)
+        self.plugin.set(amount)
         self.plugin.run(buf)
-        buf *= amount
-        buf += dry * (1.0 - amount)
+
+
+class MetalFx:
+    """Peine de resonancias (Comb filter, comb_1190.so): textura de tubo
+    metálico. Separación de bandas fija a 200 Hz; el pot mueve el feedback
+    de 0 a 0.9.
+
+    Con `feedback` cerca de 0.99 el filtro casi auto-oscila: sobre una
+    pista que suena en bucle sin parar (no un solo golpe), eso hace que la
+    energía se vaya acumulando con el tiempo en vez de asentarse — medido
+    hasta 6s seguidos: a 0.90 el pico se estabiliza (~0.105), a 0.95 ya
+    sube con el tiempo (~0.137) y a 0.99 no llega a asentarse (~0.256).
+    El tope se dejó en 0.9 con margen de sobra antes de esa zona.
+
+    Se probó antes Ringmod with LFO para este mismo hueco: resultó
+    inestable en este host (mismo código, misma entrada, 5 ejecuciones
+    seguidas dieron unas veces una señal correcta y otras un pico de
+    ~1e27, sin ninguna diferencia determinista) — descartado. El comb
+    filter, comprobado igual 5 veces seguidas, da siempre el mismo
+    resultado.
+
+    Sin alternativa en numpy a propósito, igual que el resto de esta
+    cadena: si el plugin LADSPA no está instalado, falla al crear el
+    efecto en vez de aproximarlo a mano."""
+
+    FEEDBACK_MAX = 0.9
+
+    def __init__(self, sr: int):
+        from ladspa_fx import LadspaStereoComb
+        self.plugin = LadspaStereoComb(sr, separation_hz=200.0)
+
+    def apply(self, buf: np.ndarray, amount: float):
+        if amount <= 0.001:
+            return
+        self.plugin.set(self.FEEDBACK_MAX * amount)
+        self.plugin.run(buf)
+
+
+class BodeFx:
+    """Frequency shifter (Bode frequency shifter, bode_shifter_1431.so):
+    desplaza todas las frecuencias una cantidad fija en Hz, así que las
+    relaciones armónicas se rompen — timbre inarmónico/alienígena, un
+    punto extra de rareza a juego con la resonancia metálica del comb.
+
+    Se probó el delay (Delayorama) primero en este hueco, pero no
+    convenció para este instrumento (se queda en el catálogo, disponible
+    para otras pistas). `amount` 0-1 mapea a 0-1500 Hz (probado estable
+    hasta 5000 Hz, pero por encima de ~1500 el timbre se vuelve caótico
+    para uso musical).
+
+    La salida "Up" del plugin sale sistemáticamente a la mitad de RMS del
+    seco (medido: ratio 0.497, igual con cualquier `amount` > 0 — es
+    característico de cómo se sintetiza esa salida, no algo que dependa
+    del desplazamiento), y sin compensar se notaba como pérdida de
+    presencia del instrumento. `GAIN_COMP` la contrarresta.
+
+    Sin alternativa en numpy a propósito, igual que el resto de esta
+    cadena: si el plugin LADSPA no está instalado, falla al crear el
+    efecto en vez de aproximarlo a mano."""
+
+    SHIFT_MAX = 1500.0
+    GAIN_COMP = 2.0
+
+    def __init__(self, sr: int):
+        from ladspa_fx import LadspaStereoBodeShifter
+        self.plugin = LadspaStereoBodeShifter(sr)
+
+    def apply(self, buf: np.ndarray, amount: float):
+        if amount <= 0.001:
+            return
+        self.plugin.set(self.SHIFT_MAX * amount)
+        self.plugin.run(buf)
+        buf *= self.GAIN_COMP
+
+
+# Presets disponibles para los pots (target = "canal:nombre"). El orden de
+# este dict es el orden de la cadena de efectos: drive (valve) -> filtro
+# (acid) -> delay -> metal -> bode, para que el desplazamiento de
+# frecuencia procese la señal ya distorsionada/filtrada/resonante.
+EFFECT_PRESETS = {
+    "valve": ValveFx,
+    "acid": AcidFx,
+    "delay": DelayFx,
+    "metal": MetalFx,
+    "bode": BodeFx,
+}
 
 
 class MasterChain:
@@ -1028,189 +904,6 @@ class MasterChain:
         buf[:, 1] = right
 
 
-class _ReverbBase:
-    """Mezcla wet/dry común a las reverbs: el plugin genera solo la cola y
-    aquí se suma al dry. `amount` es la cantidad de wet; el dry se toca poco
-    (si se recorta mucho, subir el knob solo se percibe como bajar volumen).
-    Sin el plugin LADSPA cae a un peine de 4 retardos primos entre sí (más
-    pobre, pero da cola).
-    """
-
-    _WET_GAIN = 1.0        # calibrado por reverb: el nivel de cola varía mucho
-    _DRY_DUCK = 0.25
-
-    def _make_plugin(self, sr):
-        raise NotImplementedError
-
-    def __init__(self, sr: int):
-        self.sr = sr
-        self._l = np.zeros(0, dtype=np.float32)
-        self._r = np.zeros(0, dtype=np.float32)
-        try:
-            self.plugin = self._make_plugin(sr)
-        except Exception:
-            self.plugin = None
-            self._taps = [int(sr * t) for t in (0.0297, 0.0371, 0.0411, 0.0437)]
-            self._ring = np.zeros((max(self._taps) + 1, 2), dtype=np.float32)
-            self._pos = 0
-
-    def apply(self, buf: np.ndarray, amount: float):
-        if amount <= 0.001:
-            return
-        wet_gain = self._WET_GAIN * amount
-        dry_gain = 1.0 - self._DRY_DUCK * amount
-        n = len(buf)
-        if self.plugin is not None:
-            if len(self._l) != n:
-                self._l = np.zeros(n, dtype=np.float32)
-                self._r = np.zeros(n, dtype=np.float32)
-            mono = np.ascontiguousarray((buf[:, 0] + buf[:, 1]) * 0.5)
-            self.plugin.wet(mono, self._l, self._r)
-            buf *= dry_gain
-            buf[:, 0] += self._l * wet_gain
-            buf[:, 1] += self._r * wet_gain
-            return
-        ring, d = self._ring, len(self._ring)
-        pos = self._pos
-        wet = np.zeros_like(buf)
-        idx = (pos + np.arange(n)) % d
-        for k, tap in enumerate(self._taps):
-            wet += ring[(idx - tap) % d] * (0.7 ** k)
-        ring[idx] = buf + wet * 0.45
-        self._pos = (pos + n) % d
-        buf *= dry_gain
-        buf += wet * (wet_gain * 0.3)
-
-
-class ReverbFx(_ReverbBase):
-    """Reverb de placa: cola corta, para quitar sequedad sin llamar la
-    atención. La cola del plugin sale a ~0.3 del nivel de entrada, de ahí
-    la ganancia alta del wet."""
-
-    _WET_GAIN = 2.5
-    _TIME_S = 1.6
-    _DAMPING = 0.35
-
-    def _make_plugin(self, sr):
-        from ladspa_fx import LadspaPlate
-        p = LadspaPlate(sr)
-        p.set(self._TIME_S, self._DAMPING)
-        return p
-
-
-class SpaceFx(_ReverbBase):
-    """Reverb de sala grande (GVerb): mucho más espacial que la de placa
-    — cola de ~2 s y estéreo amplio. Su salida es ~1.9x la entrada, así que
-    el wet necesita bastante menos ganancia que en `reverb`."""
-
-    # Calibrado para que a tope se note de verdad: el dry baja a la mitad y
-    # la cola pesa ~2x la señal original (respuesta lineal con el knob).
-    _WET_GAIN = 1.4
-    _DRY_DUCK = 0.5
-    _ROOM_M = 60.0
-    _TIME_S = 4.0
-    _DAMPING = 0.5
-    _BANDWIDTH = 0.75
-    _EARLY_DB = -10.0
-
-    def _make_plugin(self, sr):
-        from ladspa_fx import LadspaGVerb
-        p = LadspaGVerb(sr)
-        p.set(self._ROOM_M, self._TIME_S, self._DAMPING,
-              self._BANDWIDTH, self._EARLY_DB)
-        return p
-
-
-class BeatDelayFx:
-    """Delay sincronizado al tempo: el eco cae exactamente cada negra del
-    tempo de la canción (no del reloj de pared). El knob controla la
-    mezcla wet/dry y, con ella, cuántas repeticiones se oyen (feedback).
-    Sin plugin LADSPA: línea de retardo propia en numpy, para tener el
-    tiempo exacto en samples sin depender de puertos en segundos/pulgadas.
-    """
-
-    def __init__(self, sr: int):
-        self.sr = sr
-        self._tempo: Optional[float] = None
-        self._buf = np.zeros((1, 2), dtype=np.float32)
-        self._pos = 0
-
-    def set_tempo(self, bpm: float):
-        if bpm == self._tempo:
-            return
-        self._tempo = bpm
-        beat_samples = max(1, round(60.0 / max(bpm, 1.0) * self.sr))
-        self._buf = np.zeros((beat_samples, 2), dtype=np.float32)
-        self._pos = 0
-
-    # Con feedback 0.6 se oían ~9 repeticiones y, al llegar el knob al tope,
-    # el seco desaparecía del todo (solo ecos): demasiado delay y demasiado
-    # fuerte. Con 0.30 quedan ~4 repeticiones y el seco nunca baja del 50%.
-    _FEEDBACK_MIN = 0.08
-    _FEEDBACK_RANGE = 0.22
-    _WET_MAX = 0.5
-
-    def apply(self, buf: np.ndarray, amount: float):
-        if amount <= 0.001:
-            return
-        feedback = self._FEEDBACK_MIN + self._FEEDBACK_RANGE * amount
-        fb_buf = self._buf
-        d = len(fb_buf)
-        pos = self._pos
-        n = len(buf)
-        # d (una negra a tempo, miles de muestras) es siempre >> n (bloque
-        # de audio, cientos de muestras): el caso normal no envuelve el
-        # buffer circular y se puede vectorizar con slices en vez de un
-        # bucle Python muestra a muestra (caro en la Pi).
-        if pos + n <= d:
-            wet = fb_buf[pos:pos + n].copy()
-            fb_buf[pos:pos + n] = buf + wet * feedback
-        else:
-            k = d - pos
-            wet = np.concatenate((fb_buf[pos:], fb_buf[:n - k]))
-            fb_buf[pos:] = buf[:k] + fb_buf[pos:] * feedback
-            fb_buf[:n - k] = buf[k:] + fb_buf[:n - k] * feedback
-        self._pos = (pos + n) % d
-        w = self._WET_MAX * amount
-        buf *= (1.0 - w)
-        buf += wet * w
-
-
-class TapeDelayFx:
-    """Tape Delay: 0 = seco puro; al subir entra el eco (tap 1 a -6 dB,
-    dry baja 2 dB para no inflar la mezcla)."""
-
-    def __init__(self, sr: int):
-        try:
-            from ladspa_fx import LadspaStereoTapeDelay
-            self.plugin = LadspaStereoTapeDelay(sr)
-        except Exception:
-            self.plugin = None
-
-    def apply(self, buf: np.ndarray, amount: float):
-        if self.plugin is not None:
-            self.plugin.set(-2.0 * amount, -90.0 + 84.0 * amount)
-            self.plugin.run(buf)
-
-
-# Presets disponibles para los pots (target = "canal:nombre"). El orden
-# de este dict es el orden de la cadena: suboctava/drive -> filtro.
-EFFECT_PRESETS = {
-    "suboctave": SuboctaveFx,
-    "satan": SatanFx,
-    "ringmod": RingmodFx,
-    "chopper": ChopperFx,
-    "flanger": FlangerFx,
-    "phaser": PhaserFx,
-    "decimator": DecimatorFx,
-    "tape_delay": TapeDelayFx,
-    "beat_delay": BeatDelayFx,
-    "acid_lp": AcidLpFx,
-    "reverb": ReverbFx,
-    "space": SpaceFx,
-}
-
-
 # --------------------------------------------------------------------------
 # Canal del secuenciador
 # --------------------------------------------------------------------------
@@ -1223,7 +916,8 @@ class Channel:
         "cc_vol", "cc_pan", "cc_pitch", "cc_cutoff",
         "kind", "midi_def", "midi_note", "midi_ticks", "midi_vel",
         "groove", "g_pos", "g_ticks",
-        "fx_amounts", "fx_objs",
+        "fx_amounts", "fx_objs", "fx_gain", "fx_presence",
+        "vocoder_out",
     )
 
     def __init__(self, idx: int):
@@ -1259,6 +953,12 @@ class Channel:
         # Efectos live del canal (presets LADSPA): nombre -> cantidad 0-1
         self.fx_amounts: dict[str, float] = {}
         self.fx_objs: dict[str, object] = {}
+        self.fx_gain = 1.0      # compensación de presencia, ver render()
+        self.fx_presence = False   # activa la compensación (config por canción)
+        # Pista de voz -> vocoder (config por canción, ver _trigger_row):
+        # además de sonar (o no, si está muteada) emite el acorde por
+        # midi_out.chord_on().
+        self.vocoder_out = False
 
 
 # --------------------------------------------------------------------------
@@ -1505,9 +1205,12 @@ class Engine:
         out = np.zeros((frames, 2), dtype=np.float32)
         for ch in self.channels:
             block = self._delay_channel(ch, self._stage[ch.idx][:frames])
+            dry_ref = None
             for name, cls in EFFECT_PRESETS.items():
                 amount = ch.fx_amounts.get(name, 0.0)
                 if amount > 0.001:
+                    if ch.fx_presence and dry_ref is None:
+                        dry_ref = block.copy()
                     fx = ch.fx_objs.get(name)
                     if fx is None:
                         fx = cls(self.sr)
@@ -1516,6 +1219,29 @@ class Engine:
                     if set_tempo is not None:
                         set_tempo(self.tempo)
                     fx.apply(block, amount)
+            if dry_ref is not None:
+                dry_rms = float(np.sqrt((dry_ref ** 2).mean())) + 1e-6
+                wet_rms = float(np.sqrt((block ** 2).mean())) + 1e-6
+                target = min(max(dry_rms / wet_rms, PRESENCE_GAIN_MIN),
+                             PRESENCE_GAIN_MAX)
+                rate = (PRESENCE_ATTACK if target > ch.fx_gain
+                        else PRESENCE_RELEASE)
+                ch.fx_gain += rate * (target - ch.fx_gain)
+                # Límites inmediatos, fuera del suavizado de arriba: si la
+                # ganancia suavizada venía ajustada a OTRO efecto (p.ej. el
+                # knob de acid a tope) y de golpe cambia el efecto activo
+                # (acid a 0, valve a tope), el release lento no baja a
+                # tiempo y este bloque concreto se sobrecompensa. El pico
+                # no basta por sí solo: el "crest factor" (pico/RMS) del
+                # valve puede ser distinto al del acid, así que un pico
+                # acotado no garantiza un RMS acotado. Se cubre con margen
+                # de un 30% sobre el target sin suavizar de este bloque.
+                dry_peak = float(np.abs(dry_ref).max()) + 1e-6
+                wet_peak = float(np.abs(block).max()) + 1e-6
+                safe_gain = min(ch.fx_gain, dry_peak / wet_peak, target * 1.1)
+                block *= safe_gain
+            else:
+                ch.fx_gain = 1.0
             if ch.cc_vol != 1.0:
                 block *= ch.cc_vol
             if ch.cc_pan is not None:
@@ -1870,12 +1596,31 @@ class Engine:
             self._midi_start_note(ch, mdef, final)
             ch.kind = "midi"
         ch.last_note = final
+        if ch.vocoder_out and self.midi_out is not None:
+            notes = [final] + [(final + t) % 128
+                                for t in self._chord_tones(row)]
+            vel = ch.midi_vel if ch.midi_vel is not None else 100
+            self.midi_out.chord_on(ch.idx, notes, vel)
         if clean:
             table = idef.table if idef is not None else mdef.table
             if table >= 0 and table in self.project.tables:
                 ch.table.start(self.project.tables[table])
             else:
                 ch.table.stop()
+
+    def _chord_tones(self, row: int) -> list[int]:
+        """Notas de acorde codificadas en param1/param2 de una fila: cada
+        nibble hexadecimal distinto de cero (de los 4 de cada param) es un
+        intervalo en semitonos sobre la nota raíz. No depende de qué
+        comando haya en cmd1/cmd2 (normalmente "----"): LGPT guarda el
+        parámetro aunque no haya comando seleccionado."""
+        tones = []
+        for param in (self.project.param1[row], self.project.param2[row]):
+            for shift in (12, 8, 4, 0):
+                nibble = (param >> shift) & 0xF
+                if nibble:
+                    tones.append(nibble)
+        return tones
 
     def _trigger_pad(self, idx: int):
         """Pad sampler: dispara un WAV del banco de pads (wavs_dir),

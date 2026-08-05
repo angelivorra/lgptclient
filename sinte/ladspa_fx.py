@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Host LADSPA mínimo (ctypes) para el filtro del canal de bajo.
+"""Host LADSPA mínimo (ctypes) para el motor de audio de sinte.
 
 Carga plugins LADSPA directamente del .so (sin servidor JACK ni host
-externo) y los ejecuta en el hilo de audio. Pensado para el
-"State Variable Filter" de swh-plugins (svf_1214.so) instalado en la
-Raspberry Pi; si no está disponible, el engine usa su biquad propio.
+externo) y los ejecuta en el hilo de audio.
+
+Los efectos de canal se retiraron en una limpieza previa; el catálogo se
+reconstruye desde cero empezando por `LadspaAutoFilter`/
+`LadspaStereoAutoFilter` (filtro acid), sin alternativa en numpy — si el
+.so no está instalado, el efecto falla al crearse en vez de aproximarse a
+mano. Ver `EFECTOS_LADSPA.md` para el resto del catálogo de plugins de la
+Pi.
 
 Referencia: ladspa.h (LADSPA SDK).
 """
@@ -15,17 +20,6 @@ import ctypes
 from pathlib import Path
 
 import numpy as np
-
-SVF_PATH = "/usr/lib/ladspa/svf_1214.so"
-SVF_ID = 1214
-
-# Puertos del State Variable Filter
-SVF_INPUT = 0
-SVF_OUTPUT = 1
-SVF_TYPE = 2          # 0=none, 1=LP, 2=HP, 3=BP, 4=BR, 5=AP
-SVF_FREQ = 3          # 0-6000 Hz
-SVF_Q = 4             # 0-1
-SVF_RES = 5           # 0-1
 
 
 class _Descriptor(ctypes.Structure):
@@ -117,24 +111,6 @@ class LadspaPlugin:
         self._run(self._handle, len(buf))
 
 
-class LadspaSVF(LadspaPlugin):
-    """State Variable Filter (svf_1214.so) para un canal de audio."""
-
-    def __init__(self, sample_rate: int, path: str = SVF_PATH):
-        super().__init__(path, SVF_ID, sample_rate)
-        self.set_control(SVF_TYPE, 1.0)        # LP
-        self.set_control(SVF_Q, 0.25)
-
-    def set(self, freq_hz: float | None = None, res: float | None = None):
-        if freq_hz is not None:
-            self.set_control(SVF_FREQ, min(max(freq_hz, 0.0), 6000.0))
-        if res is not None:
-            self.set_control(SVF_RES, min(max(res, 0.0), 1.0))
-
-    def run(self, buf: np.ndarray):
-        super().run(buf, SVF_INPUT, SVF_OUTPUT)
-
-
 CAPS_PATH = "/usr/lib/ladspa/caps.so"
 CAPS_AUTOFILTER_ID = 2593
 
@@ -152,40 +128,37 @@ AF_OUTPUT = 9
 
 
 class LadspaAutoFilter(LadspaPlugin):
-    """C* AutoFilter (caps.so): filtro resonante auto-modulado.
+    """C* AutoFilter (caps.so): filtro resonante acid, un canal.
 
-    Configurado como filtro acid manual: la envolvente/LFO no modula
-    (lfo/env = 0); el cutoff lo controla el pot."""
+    Configurado en modo manual (lfo/env a 0): el cutoff lo controla el pot,
+    no una envolvente automática del propio plugin.
+    """
 
     def __init__(self, sample_rate: int, path: str = CAPS_PATH):
         super().__init__(path, CAPS_AUTOFILTER_ID, sample_rate)
-        self.set_control(AF_MODE, 0.0)         # 0 = low-pass (1 es HP!)
+        self.set_control(AF_MODE, 0.0)         # 0 = low-pass (1 es HP)
         self.set_control(AF_FILTER, 0.0)
         self.set_control(AF_DEPTH, 1.0)
         self.set_control(AF_LFOENV, 0.0)
         self.set_control(AF_RATE, 0.25)
         self.set_control(AF_SHAPE, 1.0)
 
-    def set(self, freq_hz: float | None = None, res: float | None = None):
-        if freq_hz is not None:
-            self.set_control(AF_FREQ, min(max(freq_hz, 20.0), 3800.0))
-        if res is not None:
-            self.set_control(AF_Q, min(max(res, 0.0), 1.0))
+    def set(self, freq_hz: float, res: float):
+        self.set_control(AF_FREQ, min(max(freq_hz, 20.0), 3800.0))
+        self.set_control(AF_Q, min(max(res, 0.0), 1.0))
 
     def run(self, buf: np.ndarray):
         super().run(buf, AF_INPUT, AF_OUTPUT)
 
 
-class LadspaStereoSVF:
-    """Dos instancias mono para el buffer estéreo del canal."""
-
-    _PLUGIN = LadspaSVF
+class LadspaStereoAutoFilter:
+    """Dos instancias mono del AutoFilter para el buffer estéreo del canal."""
 
     def __init__(self, sample_rate: int):
-        self.left = self._PLUGIN(sample_rate)
-        self.right = self._PLUGIN(sample_rate)
+        self.left = LadspaAutoFilter(sample_rate)
+        self.right = LadspaAutoFilter(sample_rate)
 
-    def set(self, freq_hz: float | None = None, res: float | None = None):
+    def set(self, freq_hz: float, res: float):
         self.left.set(freq_hz, res)
         self.right.set(freq_hz, res)
 
@@ -199,324 +172,51 @@ class LadspaStereoSVF:
         buf[:, 1] = right
 
 
-class LadspaStereoAutoFilter(LadspaStereoSVF):
-    """C* AutoFilter estéreo (filtro acid del canal de bajo)."""
-
-    _PLUGIN = LadspaAutoFilter
-
-
-FOVERDRIVE_PATH = "/usr/lib/ladspa/foverdrive_1196.so"
-FOVERDRIVE_ID = 1196
-
-# Puertos del Fast overdrive
-OD_DRIVE = 0            # 1-3 (1 = limpio)
-OD_INPUT = 1
-OD_OUTPUT = 2
-
-
-class LadspaOverdrive(LadspaPlugin):
-    """Fast overdrive (swh): drive 1-3; 1 = sin distorsión."""
-
-    def __init__(self, sample_rate: int, path: str = FOVERDRIVE_PATH):
-        super().__init__(path, FOVERDRIVE_ID, sample_rate)
-
-    def set(self, drive: float):
-        self.set_control(OD_DRIVE, min(max(drive, 1.0), 3.0))
-
-    def run(self, buf: np.ndarray):
-        super().run(buf, OD_INPUT, OD_OUTPUT)
-
-
-class LadspaStereoOverdrive:
-    """Dos instancias mono para el buffer estéreo del canal."""
-
-    def __init__(self, sample_rate: int):
-        self.left = LadspaOverdrive(sample_rate)
-        self.right = LadspaOverdrive(sample_rate)
-
-    def set(self, drive: float):
-        self.left.set(drive)
-        self.right.set(drive)
-
-    def run(self, buf: np.ndarray):
-        left = np.ascontiguousarray(buf[:, 0])
-        self.left.run(left)
-        buf[:, 0] = left
-        right = np.ascontiguousarray(buf[:, 1])
-        self.right.run(right)
-        buf[:, 1] = right
-
-
-FOLDOVER_PATH = "/usr/lib/ladspa/foldover_1213.so"
-FOLDOVER_ID = 1213
-
-# Puertos del Foldover distortion
-FO_DRIVE = 0            # 0-1
-FO_SKEW = 1             # 0-1 (lo dejamos a 0: drive 0 = limpio)
-FO_INPUT = 2
-FO_OUTPUT = 3
-
-
-class LadspaFoldover(LadspaPlugin):
-    """Foldover distortion (swh): wavefolding, muy audible en bajos.
-
-    skew = 0: drive 0 pasa limpio; al subir drive crece el contenido
-    armónico progresivamente."""
-
-    def __init__(self, sample_rate: int, path: str = FOLDOVER_PATH):
-        super().__init__(path, FOLDOVER_ID, sample_rate)
-        self.set_control(FO_SKEW, 0.0)
-
-    def set(self, drive: float):
-        self.set_control(FO_DRIVE, min(max(drive, 0.0), 1.0))
-
-    def run(self, buf: np.ndarray):
-        super().run(buf, FO_INPUT, FO_OUTPUT)
-
-
-class LadspaStereoFoldover:
-    """Dos instancias mono + compensación de nivel (1/(1+drive))."""
-
-    def __init__(self, sample_rate: int):
-        self.left = LadspaFoldover(sample_rate)
-        self.right = LadspaFoldover(sample_rate)
-        self._drive = 0.0
-
-    def set(self, drive: float):
-        self._drive = min(max(drive, 0.0), 1.0)
-        self.left.set(self._drive)
-        self.right.set(self._drive)
-
-    def run(self, buf: np.ndarray):
-        left = np.ascontiguousarray(buf[:, 0])
-        self.left.run(left)
-        buf[:, 0] = left
-        right = np.ascontiguousarray(buf[:, 1])
-        self.right.run(right)
-        buf[:, 1] = right
-        buf *= 1.0 / (1.0 + self._drive)
-
-
-DIVIDER_PATH = "/usr/lib/ladspa/divider_1186.so"
-DIVIDER_ID = 1186
-
-# Puertos del Audio Divider (suboctava)
-DIV_DENOM = 0           # 1-8 entero
-DIV_INPUT = 1
-DIV_OUTPUT = 2
-
-
-class LadspaDivider(LadspaPlugin):
-    """Audio Divider (swh): generador de suboctava para bajos.
-
-    denominator 1 = casi limpio; 2-4 añade la octava inferior."""
-
-    def __init__(self, sample_rate: int, path: str = DIVIDER_PATH):
-        super().__init__(path, DIVIDER_ID, sample_rate)
-
-    def set(self, denominator: float):
-        self.set_control(DIV_DENOM,
-                         float(int(round(min(max(denominator, 1.0), 8.0)))))
-
-    def run(self, buf: np.ndarray):
-        super().run(buf, DIV_INPUT, DIV_OUTPUT)
-
-
-class LadspaStereoDivider:
-    """Dos instancias mono para el buffer estéreo del canal."""
-
-    def __init__(self, sample_rate: int):
-        self.left = LadspaDivider(sample_rate)
-        self.right = LadspaDivider(sample_rate)
-
-    def set(self, denominator: float):
-        self.left.set(denominator)
-        self.right.set(denominator)
-
-    def run(self, buf: np.ndarray):
-        left = np.ascontiguousarray(buf[:, 0])
-        self.left.run(left)
-        buf[:, 0] = left
-        right = np.ascontiguousarray(buf[:, 1])
-        self.right.run(right)
-        buf[:, 1] = right
-
-
-SATAN_PATH = "/usr/lib/ladspa/satan_maximiser_1408.so"
-SATAN_ID = 1408
-
-# Puertos de Barry's Satan Maximiser
-SAT_DECAY = 0           # 2-30 samples
-SAT_KNEE = 1            # -90 a 0 dB (0 = limpio, -90 = destrucción)
-SAT_INPUT = 2
-SAT_OUTPUT = 3
-
-
-class LadspaSatan(LadspaPlugin):
-    """Barry's Satan Maximiser (swh): maximizador/distorsión brutal."""
-
-    def __init__(self, sample_rate: int, path: str = SATAN_PATH):
-        super().__init__(path, SATAN_ID, sample_rate)
-        self.set_control(SAT_DECAY, 30.0)
-
-    def set(self, knee_db: float):
-        self.set_control(SAT_KNEE, min(max(knee_db, -90.0), 0.0))
-
-    def run(self, buf: np.ndarray):
-        super().run(buf, SAT_INPUT, SAT_OUTPUT)
-
-
-class LadspaStereoSatan:
-    """Dos instancias mono para el buffer estéreo del canal."""
-
-    def __init__(self, sample_rate: int):
-        self.left = LadspaSatan(sample_rate)
-        self.right = LadspaSatan(sample_rate)
-
-    def set(self, knee_db: float):
-        self.left.set(knee_db)
-        self.right.set(knee_db)
-
-    def run(self, buf: np.ndarray):
-        left = np.ascontiguousarray(buf[:, 0])
-        self.left.run(left)
-        buf[:, 0] = left
-        right = np.ascontiguousarray(buf[:, 1])
-        self.right.run(right)
-        buf[:, 1] = right
-
-
-RINGMOD_PATH = "/usr/lib/ladspa/ringmod_1188.so"
-RINGMOD_ID = 1189
-
-# Puertos del Ringmod with LFO
-RM_DEPTH = 0            # 0=none, 1=AM, 2=RM
-RM_FREQ = 1             # 1-1000 Hz
-RM_SINE = 2
-RM_INPUT = 6
-RM_OUTPUT = 7
-
-
-class LadspaRingmod(LadspaPlugin):
-    """Ringmod with LFO (swh): textura robótica/metálica."""
-
-    def __init__(self, sample_rate: int, path: str = RINGMOD_PATH):
-        super().__init__(path, RINGMOD_ID, sample_rate)
-        self.set_control(RM_SINE, 1.0)
-
-    def set(self, depth: float, freq_hz: float):
-        self.set_control(RM_DEPTH, min(max(depth, 0.0), 2.0))
-        self.set_control(RM_FREQ, min(max(freq_hz, 1.0), 1000.0))
-
-    def run(self, buf: np.ndarray):
-        super().run(buf, RM_INPUT, RM_OUTPUT)
-
-
-class LadspaStereoRingmod:
-    """Dos instancias mono para el buffer estéreo del canal."""
-
-    def __init__(self, sample_rate: int):
-        self.left = LadspaRingmod(sample_rate)
-        self.right = LadspaRingmod(sample_rate)
-
-    def set(self, depth: float, freq_hz: float):
-        self.left.set(depth, freq_hz)
-        self.right.set(depth, freq_hz)
-
-    def run(self, buf: np.ndarray):
-        left = np.ascontiguousarray(buf[:, 0])
-        self.left.run(left)
-        buf[:, 0] = left
-        right = np.ascontiguousarray(buf[:, 1])
-        self.right.run(right)
-        buf[:, 1] = right
-
-
-PHASER_PATH = "/usr/lib/ladspa/phasers_1217.so"
-PHASER_ID = 1217
-
-# Puertos del LFO Phaser
-PH_RATE = 0             # 0-100 Hz
-PH_DEPTH = 1            # 0-1 (0 = seco)
-PH_FEEDBACK = 2         # -1 a 1
-PH_SPREAD = 3           # 0-2 octavas
-PH_INPUT = 4
-PH_OUTPUT = 5
-
-
-class LadspaPhaser(LadspaPlugin):
-    """LFO Phaser (swh): movimiento sin tocar el nivel."""
-
-    def __init__(self, sample_rate: int, path: str = PHASER_PATH):
-        super().__init__(path, PHASER_ID, sample_rate)
-        self.set_control(PH_SPREAD, 1.0)
-
-    def set(self, rate: float, depth: float, feedback: float):
-        self.set_control(PH_RATE, min(max(rate, 0.0), 100.0))
-        self.set_control(PH_DEPTH, min(max(depth, 0.0), 1.0))
-        self.set_control(PH_FEEDBACK, min(max(feedback, -1.0), 1.0))
-
-    def run(self, buf: np.ndarray):
-        super().run(buf, PH_INPUT, PH_OUTPUT)
-
-
-class LadspaStereoPhaser:
-    """Dos instancias mono para el buffer estéreo del canal."""
-
-    def __init__(self, sample_rate: int):
-        self.left = LadspaPhaser(sample_rate)
-        self.right = LadspaPhaser(sample_rate)
-
-    def set(self, rate: float, depth: float, feedback: float):
-        self.left.set(rate, depth, feedback)
-        self.right.set(rate, depth, feedback)
-
-    def run(self, buf: np.ndarray):
-        left = np.ascontiguousarray(buf[:, 0])
-        self.left.run(left)
-        buf[:, 0] = left
-        right = np.ascontiguousarray(buf[:, 1])
-        self.right.run(right)
-        buf[:, 1] = right
-
-
 DECIMATOR_PATH = "/usr/lib/ladspa/decimator_1202.so"
 DECIMATOR_ID = 1202
 
-# Puertos del Decimator
-DEC_BITS = 0            # 1-24 (24 = limpio)
-DEC_RATE = 1            # Hz (srate = limpio)
+# Puertos del Decimator (confirmados con `analyseplugin`)
+DEC_BITS = 0        # 1-24
+DEC_SRATE = 1       # 0.001*sr - 1*sr
 DEC_INPUT = 2
 DEC_OUTPUT = 3
 
 
 class LadspaDecimator(LadspaPlugin):
-    """Decimator (swh): bitcrush — profundidad de bits y sample rate."""
+    """Decimator (decimator_1202.so): bitcrush digital, un canal.
+
+    Medido con senoidal y con el bajo real: bajar el sample rate por sí
+    solo no cambia nada en un fundamental grave (queda muy por encima de
+    Nyquist aunque se baje al 2% del sample rate), así que aquí solo se
+    controla la profundidad de bits (sample rate fijo). Por encima de 10
+    bits es prácticamente transparente; entre 8 y 4 se oye crujido
+    creciente; por debajo de 3 la onda queda casi cuadrada (crest factor
+    1.0), demasiado roto para uso normal."""
 
     def __init__(self, sample_rate: int, path: str = DECIMATOR_PATH):
         super().__init__(path, DECIMATOR_ID, sample_rate)
-        self._sr = sample_rate
+        self.set_control(DEC_SRATE, float(sample_rate))
 
-    def set(self, bits: float, rate_hz: float):
+    def set(self, bits: float):
         self.set_control(DEC_BITS, min(max(bits, 1.0), 24.0))
-        self.set_control(DEC_RATE, min(max(rate_hz, 1.0), float(self._sr)))
 
     def run(self, buf: np.ndarray):
         super().run(buf, DEC_INPUT, DEC_OUTPUT)
 
 
 class LadspaStereoDecimator:
-    """Dos instancias mono para el buffer estéreo del canal."""
+    """Dos instancias mono del Decimator para el buffer estéreo."""
 
     def __init__(self, sample_rate: int):
         self.left = LadspaDecimator(sample_rate)
         self.right = LadspaDecimator(sample_rate)
 
-    def set(self, bits: float, rate_hz: float):
-        self.left.set(bits, rate_hz)
-        self.right.set(bits, rate_hz)
+    def set(self, bits: float):
+        self.left.set(bits)
+        self.right.set(bits)
 
     def run(self, buf: np.ndarray):
+        """buf (n, 2) float32, in-place."""
         left = np.ascontiguousarray(buf[:, 0])
         self.left.run(left)
         buf[:, 0] = left
@@ -525,50 +225,71 @@ class LadspaStereoDecimator:
         buf[:, 1] = right
 
 
-TAPE_DELAY_PATH = "/usr/lib/ladspa/tape_delay_1211.so"
-TAPE_DELAY_ID = 1211
+DELAYORAMA_PATH = "/usr/lib/ladspa/delayorama_1402.so"
+DELAYORAMA_ID = 1402
 
-# Puertos del Tape Delay Simulation
-TD_SPEED = 0            # pulgadas/s (1 = normal)
-TD_DRY = 1              # dB (-90 = off, 0 = full)
-TD_T1_DIST = 2
-TD_T1_LVL = 3
-TD_T2_DIST = 4
-TD_T2_LVL = 5
-TD_INPUT = 10
-TD_OUTPUT = 11
+# Puertos del Delayorama (confirmados con `analyseplugin`)
+DRM_SEED = 0
+DRM_INPUT_GAIN = 1      # dB
+DRM_FEEDBACK = 2        # %
+DRM_TAPS = 3
+DRM_FIRST_DELAY = 4     # s
+DRM_DELAY_RANGE = 5     # s
+DRM_DELAY_CHANGE = 6
+DRM_DELAY_RANDOM = 7    # %
+DRM_AMP_CHANGE = 8
+DRM_AMP_RANDOM = 9      # %
+DRM_MIX = 10            # 0-1, dry/wet
+DRM_INPUT = 11
+DRM_OUTPUT = 12
 
 
-class LadspaTapeDelay(LadspaPlugin):
-    """Tape Delay Simulation (swh): eco de cinta con 2 taps."""
+class LadspaDelayorama(LadspaPlugin):
+    """Delayorama (delayorama_1402.so): 3 ecos a 0.4/0.8/1.2s, cada uno
+    más flojo que el anterior, un canal.
 
-    def __init__(self, sample_rate: int, path: str = TAPE_DELAY_PATH):
-        super().__init__(path, TAPE_DELAY_ID, sample_rate)
-        self.set_control(TD_SPEED, 1.0)
-        self.set_control(TD_T1_DIST, 1.5)
-        self.set_control(TD_T2_DIST, 3.0)
-        self.set_control(TD_T2_LVL, -90.0)
+    Primera versión: 2 taps al mismo nivel, sin caída — sobre una pista
+    que suena todo el rato (no un solo golpe) eso amontona muchos ecos
+    igual de fuertes y satura de repeticiones. `Amplitude change` a 0.4
+    hace que cada tap sea menos de la mitad de fuerte que el anterior
+    (medido con un pulso: 0.0425 -> 0.033 -> 0.0196), así que a partir del
+    tercero ya es casi inaudible — "resuena 2-3 veces" en vez de un eco
+    plano sin fin. `feedback` se deja en 0: los taps son fijos (3), no una
+    realimentación que pueda alargarse sola."""
 
-    def set(self, dry_db: float, tap_db: float):
-        self.set_control(TD_DRY, min(max(dry_db, -90.0), 0.0))
-        self.set_control(TD_T1_LVL, min(max(tap_db, -90.0), 0.0))
+    def __init__(self, sample_rate: int, path: str = DELAYORAMA_PATH):
+        super().__init__(path, DELAYORAMA_ID, sample_rate)
+        self.set_control(DRM_SEED, 0.0)
+        self.set_control(DRM_INPUT_GAIN, 0.0)
+        self.set_control(DRM_FEEDBACK, 0.0)
+        self.set_control(DRM_TAPS, 3.0)
+        self.set_control(DRM_FIRST_DELAY, 0.4)
+        self.set_control(DRM_DELAY_RANGE, 0.8)     # taps a 0.4, 0.8 y 1.2s
+        self.set_control(DRM_DELAY_CHANGE, 1.0)
+        self.set_control(DRM_DELAY_RANDOM, 0.0)
+        self.set_control(DRM_AMP_CHANGE, 0.4)      # cada tap decae a <mitad del anterior
+        self.set_control(DRM_AMP_RANDOM, 0.0)
+
+    def set(self, mix: float):
+        self.set_control(DRM_MIX, min(max(mix, 0.0), 1.0))
 
     def run(self, buf: np.ndarray):
-        super().run(buf, TD_INPUT, TD_OUTPUT)
+        super().run(buf, DRM_INPUT, DRM_OUTPUT)
 
 
-class LadspaStereoTapeDelay:
-    """Dos instancias mono para el buffer estéreo del canal."""
+class LadspaStereoDelayorama:
+    """Dos instancias mono del Delayorama para el buffer estéreo."""
 
     def __init__(self, sample_rate: int):
-        self.left = LadspaTapeDelay(sample_rate)
-        self.right = LadspaTapeDelay(sample_rate)
+        self.left = LadspaDelayorama(sample_rate)
+        self.right = LadspaDelayorama(sample_rate)
 
-    def set(self, dry_db: float, tap_db: float):
-        self.left.set(dry_db, tap_db)
-        self.right.set(dry_db, tap_db)
+    def set(self, mix: float):
+        self.left.set(mix)
+        self.right.set(mix)
 
     def run(self, buf: np.ndarray):
+        """buf (n, 2) float32, in-place."""
         left = np.ascontiguousarray(buf[:, 0])
         self.left.run(left)
         buf[:, 0] = left
@@ -577,118 +298,132 @@ class LadspaStereoTapeDelay:
         buf[:, 1] = right
 
 
-RETRO_FLANGE_PATH = "/usr/lib/ladspa/retro_flange_1208.so"
-RETRO_FLANGE_ID = 1208
+COMB_PATH = "/usr/lib/ladspa/comb_1190.so"
+COMB_ID = 1190
 
-# Puertos del Retro Flanger
-RF_STALL = 0            # ms, 0-10 (profundidad)
-RF_FREQ = 1             # Hz, 0.5-8
-RF_INPUT = 2
-RF_OUTPUT = 3
+# Puertos del Comb filter (confirmados con `analyseplugin`)
+COMB_SEPARATION = 0     # Hz, 16-640
+COMB_FEEDBACK = 1       # -0.99 a 0.99
+COMB_INPUT = 2
+COMB_OUTPUT = 3
 
 
-class LadspaRetroFlange(LadspaPlugin):
-    """Retro Flanger (swh): barrido suave, sin distorsión ni pérdida de nivel."""
+class LadspaComb(LadspaPlugin):
+    """Comb filter (comb_1190.so): peine de resonancias, un canal.
 
-    def __init__(self, sample_rate: int, path: str = RETRO_FLANGE_PATH):
-        super().__init__(path, RETRO_FLANGE_ID, sample_rate)
+    Se probó antes Ringmod with LFO para el mismo hueco (textura
+    metálica): el plugin resultó inestable en este host — mismo código,
+    misma entrada, y en 5 ejecuciones seguidas el pico pasaba de 0.15 a
+    ~1e27 sin motivo determinista (memoria sin inicializar dentro del
+    propio plugin). El comb filter, comprobado igual 5 veces seguidas, da
+    siempre el mismo resultado.
 
-    def set(self, stall_ms: float, freq_hz: float):
-        self.set_control(RF_STALL, min(max(stall_ms, 0.0), 10.0))
-        self.set_control(RF_FREQ, min(max(freq_hz, 0.5), 8.0))
+    Separación de bandas fija; el pot solo mueve el feedback (0 = sin
+    efecto, cerca de 0.99 = resonancia metálica sostenida)."""
+
+    def __init__(self, sample_rate: int, path: str = COMB_PATH,
+                 separation_hz: float = 200.0):
+        super().__init__(path, COMB_ID, sample_rate)
+        self.set_control(COMB_SEPARATION,
+                          min(max(separation_hz, 16.0), 640.0))
+
+    def set(self, feedback: float):
+        self.set_control(COMB_FEEDBACK, min(max(feedback, -0.99), 0.99))
 
     def run(self, buf: np.ndarray):
-        super().run(buf, RF_INPUT, RF_OUTPUT)
+        super().run(buf, COMB_INPUT, COMB_OUTPUT)
 
 
-class LadspaStereoRetroFlange:
-    """Dos instancias mono para el buffer estéreo del canal."""
+class LadspaStereoComb:
+    """Dos instancias mono del Comb filter para el buffer estéreo."""
+
+    def __init__(self, sample_rate: int, separation_hz: float = 200.0):
+        self.left = LadspaComb(sample_rate, separation_hz=separation_hz)
+        self.right = LadspaComb(sample_rate, separation_hz=separation_hz)
+
+    def set(self, feedback: float):
+        self.left.set(feedback)
+        self.right.set(feedback)
+
+    def run(self, buf: np.ndarray):
+        """buf (n, 2) float32, in-place."""
+        left = np.ascontiguousarray(buf[:, 0])
+        self.left.run(left)
+        buf[:, 0] = left
+        right = np.ascontiguousarray(buf[:, 1])
+        self.right.run(right)
+        buf[:, 1] = right
+
+
+BODE_PATH = "/usr/lib/ladspa/bode_shifter_1431.so"
+BODE_ID = 1431
+
+# Puertos del Bode frequency shifter (confirmados con `analyseplugin`)
+BODE_SHIFT = 0      # Hz, 0-5000
+BODE_INPUT = 1
+BODE_DOWN_OUT = 2   # no se usa, hace falta un buffer válido igualmente
+BODE_UP_OUT = 3
+BODE_LATENCY = 4    # control de salida, se ignora (ya lo conecta el init genérico)
+
+
+class LadspaBodeShifter(LadspaPlugin):
+    """Bode frequency shifter (bode_shifter_1431.so): desplaza todas las
+    frecuencias una cantidad fija en Hz (no multiplica, como un pitch
+    shifter), así que las relaciones armónicas se rompen — timbre
+    inarmónico/alienígena. Un canal, usa solo la salida "Up".
+
+    A diferencia de un plugin normal de un único par entrada/salida, este
+    tiene DOS salidas de audio (Down/Up) más un puerto de latencia; no
+    puede reutilizar `LadspaPlugin.run()` (que conecta el mismo buffer a
+    entrada y salida) porque aquí entrada y salidas son buffers distintos.
+
+    Probado con senoidal y con el bajo real en todo el rango 0-5000 Hz:
+    estable, RMS/pico prácticamente constantes (solo cambia el timbre)."""
+
+    def __init__(self, sample_rate: int, path: str = BODE_PATH):
+        super().__init__(path, BODE_ID, sample_rate)
+        self._down = np.zeros(0, dtype=np.float32)
+        self._up = np.zeros(0, dtype=np.float32)
+
+    def set(self, shift_hz: float):
+        self.set_control(BODE_SHIFT, min(max(shift_hz, 0.0), 5000.0))
+
+    def run(self, buf: np.ndarray):
+        """buf (n,) float32, in-place: se sustituye por la salida Up."""
+        n = len(buf)
+        if len(self._down) != n:
+            self._down = np.zeros(n, dtype=np.float32)
+            self._up = np.zeros(n, dtype=np.float32)
+        self._connect(self._handle, BODE_INPUT,
+                      buf.ctypes.data_as(ctypes.c_void_p))
+        self._connect(self._handle, BODE_DOWN_OUT,
+                      self._down.ctypes.data_as(ctypes.c_void_p))
+        self._connect(self._handle, BODE_UP_OUT,
+                      self._up.ctypes.data_as(ctypes.c_void_p))
+        self._run(self._handle, n)
+        buf[:] = self._up
+
+
+class LadspaStereoBodeShifter:
+    """Dos instancias mono del Bode frequency shifter para el buffer
+    estéreo."""
 
     def __init__(self, sample_rate: int):
-        self.left = LadspaRetroFlange(sample_rate)
-        self.right = LadspaRetroFlange(sample_rate)
+        self.left = LadspaBodeShifter(sample_rate)
+        self.right = LadspaBodeShifter(sample_rate)
 
-    def set(self, stall_ms: float, freq_hz: float):
-        self.left.set(stall_ms, freq_hz)
-        self.right.set(stall_ms, freq_hz)
+    def set(self, shift_hz: float):
+        self.left.set(shift_hz)
+        self.right.set(shift_hz)
 
     def run(self, buf: np.ndarray):
+        """buf (n, 2) float32, in-place."""
         left = np.ascontiguousarray(buf[:, 0])
         self.left.run(left)
         buf[:, 0] = left
         right = np.ascontiguousarray(buf[:, 1])
         self.right.run(right)
         buf[:, 1] = right
-
-
-PLATE_PATH = "/usr/lib/ladspa/plate_1423.so"
-PLATE_ID = 1423
-PLATE_TIME, PLATE_DAMPING, PLATE_MIX = 0, 1, 2
-PLATE_IN, PLATE_OUT_L, PLATE_OUT_R = 3, 4, 5
-
-
-class LadspaPlate(LadspaPlugin):
-    """Reverb de placa (plate_1423.so): entrada mono, salida estéreo.
-
-    No usa LadspaPlugin.run() porque ese conecta el mismo buffer a entrada y
-    salida (in-place) y aquí los puertos son distintos: 1 entrada y 2 salidas.
-    """
-
-    def __init__(self, sample_rate: int, path: str = PLATE_PATH):
-        super().__init__(path, PLATE_ID, sample_rate)
-        self.set_control(PLATE_MIX, 1.0)   # 100% wet: la mezcla la hacemos aquí
-
-    def set(self, time_s: float, damping: float):
-        self.set_control(PLATE_TIME, time_s)
-        self.set_control(PLATE_DAMPING, damping)
-
-    def wet(self, mono: np.ndarray, out_l: np.ndarray, out_r: np.ndarray):
-        """Cola de reverb de `mono` en out_l/out_r (buffers contiguos)."""
-        self._connect(self._handle, PLATE_IN,
-                      mono.ctypes.data_as(ctypes.c_void_p))
-        self._connect(self._handle, PLATE_OUT_L,
-                      out_l.ctypes.data_as(ctypes.c_void_p))
-        self._connect(self._handle, PLATE_OUT_R,
-                      out_r.ctypes.data_as(ctypes.c_void_p))
-        self._run(self._handle, len(mono))
-
-
-GVERB_PATH = "/usr/lib/ladspa/gverb_1216.so"
-GVERB_ID = 1216
-(GVERB_ROOM, GVERB_TIME, GVERB_DAMP, GVERB_BW,
- GVERB_DRY, GVERB_EARLY, GVERB_TAIL) = range(7)
-GVERB_IN, GVERB_OUT_L, GVERB_OUT_R = 7, 8, 9
-
-
-class LadspaGVerb(LadspaPlugin):
-    """Reverb de sala (gverb_1216.so): entrada mono, salida estéreo.
-
-    Más espacial que el plate: tamaño de sala en metros y control aparte de
-    reflexiones tempranas y cola. El nivel dry se deja al mínimo porque la
-    mezcla wet/dry la hacemos nosotros.
-    """
-
-    def __init__(self, sample_rate: int, path: str = GVERB_PATH):
-        super().__init__(path, GVERB_ID, sample_rate)
-        self.set_control(GVERB_DRY, -90.0)     # sin dry: lo mezclamos aquí
-        self.set_control(GVERB_TAIL, 0.0)
-
-    def set(self, room_m: float, time_s: float, damping: float,
-            bandwidth: float, early_db: float):
-        self.set_control(GVERB_ROOM, room_m)
-        self.set_control(GVERB_TIME, time_s)
-        self.set_control(GVERB_DAMP, damping)
-        self.set_control(GVERB_BW, bandwidth)
-        self.set_control(GVERB_EARLY, early_db)
-
-    def wet(self, mono: np.ndarray, out_l: np.ndarray, out_r: np.ndarray):
-        self._connect(self._handle, GVERB_IN,
-                      mono.ctypes.data_as(ctypes.c_void_p))
-        self._connect(self._handle, GVERB_OUT_L,
-                      out_l.ctypes.data_as(ctypes.c_void_p))
-        self._connect(self._handle, GVERB_OUT_R,
-                      out_r.ctypes.data_as(ctypes.c_void_p))
-        self._run(self._handle, len(mono))
 
 
 DJ_EQ_PATH = "/usr/lib/ladspa/dj_eq_1901.so"
@@ -745,18 +480,3 @@ class LadspaLimiter(_StereoInOut):
         self.set_control(LIM_GAIN, min(max(gain_db, -20.0), 20.0))
         self.set_control(LIM_LIMIT, min(max(limit_db, -20.0), 0.0))
         self.set_control(LIM_RELEASE, min(max(release_s, 0.01), 2.0))
-
-
-if __name__ == "__main__":
-    # Autotest: ruido blanco -> con cutoff bajo debe atenuarse mucho
-    sr = 44100
-    fx = LadspaSVF(sr)
-    rng = np.random.default_rng(0)
-    noise = rng.standard_normal(sr).astype(np.float32) * 0.5
-    ref = float(np.sqrt((noise ** 2).mean()))
-    fx.set(freq_hz=100.0, res=0.0)
-    out = noise.copy()
-    fx.run(out)
-    lp = float(np.sqrt((out ** 2).mean()))
-    print(f"rms abierto {ref:.4f} -> lp100 {lp:.4f} "
-          f"(atenuación {20 * np.log10(lp / ref):.1f} dB)")

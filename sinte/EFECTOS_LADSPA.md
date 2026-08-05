@@ -1,5 +1,14 @@
 # Catálogo de efectos LADSPA disponibles en la Pi
 
+**Histórico.** Todos los presets que este documento marcaba como "ya
+wireados" se retiraron de `lgpt_engine.py`/`ladspa_fx.py` en una limpieza
+completa del sistema de efectos (rama `sinte-efectos-clean`): el motor no
+aplica hoy ningún efecto de canal. Se conserva `MasterChain` (EQ + limitador
+de seguridad de la mezcla) y la infraestructura genérica de `ladspa_fx.py`
+(`LadspaPlugin`, `_StereoInOut`). El catálogo de plugins de la Pi (secciones
+2 y 3) sigue siendo válido como referencia para diseñar el próximo efecto
+desde cero.
+
 Inventario de `/usr/lib/ladspa` en la Raspberry Pi (`ladspa-sdk` + `swh-plugins`
 + `caps.so`), para elegir nuevos efectos de knob por canal/canción sin tener
 que volver a inspeccionar el equipo cada vez. Consultado con `listplugins` /
