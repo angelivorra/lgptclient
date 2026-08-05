@@ -1,19 +1,22 @@
-# Servidor robot
+# lgptclient — robot de percusión
 
-## Instalar todos los clientes
+Ver [CLAUDE.md](CLAUDE.md) para la arquitectura completa (flujo de eventos,
+estructura de directorios, stack) y el flujo de despliegue por Ansible.
+
+## Desplegar
+
+```bash
+ansible-playbook ansible/actualiza-todo.yaml -i ansible/inventario
 ```
-ansible-playbook actualiza.yaml -i ./inventario
+
+O por nodo: `ansible/actualiza-sinte.yaml`, `ansible/actualiza-maletas.yaml`,
+`ansible/actualiza-vocoder.yaml` (mismo `-i ansible/inventario`).
+
+## Generar miniaturas / imágenes de cliente
+
+```bash
+venv/bin/python bin/genera.py <maleta|sombrilla>
 ```
 
-## Ver log 
-
-Este script arranca lgpt con alsa y jack para el audio y con un delay de un segundo, Necesito: 1- saber esta aplicado ese delay? 2- Me gustaria meter algunos efectos en jack de distorsion a toda la salida del tracker para un sonido mas sucio -3 Que plugins me recomiendas para aplicar esto? 4 - Como se podria implementar en este script? 
-
-
-## Inicio del equipo
-
-sudo nano /etc/rc.local
-
-## generar miniaturas
-
-Para generar minuaturas 
+Genera en `img_output/<host>/` las imágenes que el rol `cliente-actualiza`
+sincroniza al robot correspondiente.

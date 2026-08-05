@@ -177,3 +177,9 @@ config.json
 # Toolchain de build de los paneles (JSX -> static/robot.js). No se despliega.
 node_modules/
 package-lock.json
+
+# sinte/: clon de trabajo de LittleGPTracker (referencia upstream, no se versiona)
+sinte/LittleGPTracker/
+# sinte/: bounces de canción entera sueltos en la raíz de cada canción (pesados,
+# el player no los reproduce); sí se versionan los samples de samples/ y wavs/
+sinte/songs/*/*.wav

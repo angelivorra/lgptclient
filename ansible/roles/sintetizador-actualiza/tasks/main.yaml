@@ -2,9 +2,9 @@
 # El sinte NO tiene internet, así que no puede hacer 'git pull'. En su lugar
 # sincronizamos por rsync desde este PC (control) SOLO los ficheros que git
 # rastrea. Al usar la lista de 'git ls-files' no tocamos las carpetas
-# gitignoreadas del device (venv/, lgpt/, images/, .git/, samples/…), que además
-# son enormes. Rsync envía el contenido del árbol de trabajo del control, así que
-# recoge también los assets recién recompilados aunque no estén commiteados.
+# gitignoreadas del device (venv/, sinte/.venv/, images/, .git/, samples/…), que
+# además son enormes. Rsync envía el contenido del árbol de trabajo del control,
+# así que recoge también los assets recién recompilados aunque no estén commiteados.
 
 - name: Generar la lista de ficheros versionados (en el PC de control)
   ansible.builtin.command: git ls-files
@@ -38,7 +38,92 @@
       - "--files-from={{ rsync_filelist }}"
   register: repo_sync
 
-- name: Reiniciar servicios (solo si algo cambió)
+# ── Entorno del player (sinte/) ───────────────────────────────────────────
+- name: Check whether the sinte venv already exists
+  ansible.builtin.stat:
+    path: "{{ sinte_venv_dir }}/bin/python"
+  register: sinte_venv_stat
+
+- name: Crear el entorno virtual del player
+  ansible.builtin.command: /usr/bin/python3 -m venv "{{ sinte_venv_dir }}"
+  when: not sinte_venv_stat.stat.exists
+
+- name: Instalar dependencias del player
+  ansible.builtin.pip:
+    requirements: "{{ sinte_app_dir }}/requirements.txt"
+    virtualenv: "{{ sinte_venv_dir }}"
+  register: sinte_pip
+
+# ── Arranque en kiosk (autologin en tty1) ─────────────────────────────────
+# El player usa una UI curses a pantalla completa: necesita una tty real, no
+# tiene sentido como servicio systemd de fondo. Se lanza por autologin en
+# tty1 + un hook en .bash_profile que hace 'exec' al player (lo sustituye, no
+# lo lanza como hijo): si el proceso termina, agetty vuelve a hacer login y
+# se relanza solo. Reiniciar getty@tty1.service equivale a "reiniciar el
+# player": mata la sesión actual y agetty abre una nueva limpia.
+- name: Crear el wrapper de arranque del player
+  ansible.builtin.copy:
+    dest: "{{ sinte_app_dir }}/run-on-tty1.sh"
+    mode: "0755"
+    content: |
+      #!/bin/sh
+      exec {{ sinte_venv_dir }}/bin/python {{ sinte_app_dir }}/lgpt_player.py
+
+- name: Configurar autologin de angel en tty1
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/getty@tty1.service.d/autologin.conf
+    mode: "0644"
+    content: |
+      [Service]
+      ExecStart=
+      ExecStart=-/sbin/agetty --autologin angel --noclear %I $TERM
+  register: sinte_autologin
+
+- name: Recargar systemd si cambió el autologin
+  become: true
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: sinte_autologin.changed
+
+- name: Enganchar el arranque del player en tty1 (.bash_profile)
+  ansible.builtin.blockinfile:
+    path: /home/angel/.bash_profile
+    create: true
+    mode: "0644"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - sinte kiosk"
+    block: |
+      if [ "$(tty)" = "/dev/tty1" ]; then
+          exec {{ sinte_app_dir }}/run-on-tty1.sh
+      fi
+  register: sinte_bash_profile
+
+- name: Habilitar el autologin en tty1
+  become: true
+  ansible.builtin.systemd:
+    name: getty@tty1.service
+    enabled: true
+    state: started
+
+# Limpieza del mecanismo viejo (server-midi.py / server-movida.py corriendo
+# como servidor.service): si el device todavía lo tiene instalado a mano, lo
+# apagamos. No falla si nunca existió.
+- name: Desactivar el servidor.service antiguo si quedaba instalado
+  become: true
+  ansible.builtin.systemd:
+    name: servidor.service
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Reiniciar el player (solo si cambió algo)
+  become: true
+  ansible.builtin.systemd:
+    name: getty@tty1.service
+    state: restarted
+  when: repo_sync.changed or sinte_pip.changed or sinte_bash_profile.changed
+
+- name: Reiniciar el resto de servicios del sinte (solo si algo cambió)
   become: true
   ansible.builtin.systemd:
     name: "{{ item }}"

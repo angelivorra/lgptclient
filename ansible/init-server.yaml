@@ -1,7 +1,0 @@
----
-- name: Instalamos servidor
-  hosts: localhost
-  gather_facts: no
-  roles:
-    - wifi
-    - servidor

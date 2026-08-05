@@ -18,7 +18,15 @@
       "Bash(sed -n '330,360p' /home/angel/lgptclient/flaskr/app.py)",
       "Bash(ls -la /home/angel/lgptclient/bin/config*.json)",
       "Bash(file /home/angel/lgptclient/images/003/003/*.bin)",
-      "PowerShell(& \"C:\\\\Users\\\\angel\\\\lgptclient\\\\midi_monitor\\\\venv\\\\Scripts\\\\python.exe\" -c \"import PIL; print\\(PIL.__version__\\)\")"
+      "PowerShell(& \"C:\\\\Users\\\\angel\\\\lgptclient\\\\midi_monitor\\\\venv\\\\Scripts\\\\python.exe\" -c \"import PIL; print\\(PIL.__version__\\)\")",
+      "Bash(set -e)",
+      "Bash(cp /home/angel/git/lttileplayer/lgpt_parser.py sinte/)",
+      "Bash(cp /home/angel/git/lttileplayer/lgpt_engine.py sinte/)",
+      "Bash(cp /home/angel/git/lttileplayer/ladspa_fx.py sinte/)",
+      "Bash(cp /home/angel/git/lttileplayer/lgpt_player.py sinte/)",
+      "Bash(git rm *)",
+      "Bash(git restore *)",
+      "Bash(awk '{print $1}')"
     ]
   }
 }

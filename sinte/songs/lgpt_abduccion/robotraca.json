@@ -1,0 +1,23 @@
+{
+  "mute": [
+    3,
+    4,
+    6,
+    7
+  ],
+  "pots": {
+    "pot1": "2:acid_lp",
+    "pot5": "2:flanger",
+    "pot2": "5:flanger",
+    "pot6": "5:beat_delay",
+    "pot4": "2:space:24",
+    "pot8": "0:tempo"
+  },
+  "pad_volume": {
+    "1": 45,
+    "2": 45,
+    "3": 45,
+    "4": 45
+  },
+  "master": 109
+}

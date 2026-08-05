@@ -1,0 +1,9 @@
+{
+  "mute": [],
+  "pots": {
+    "pot1": "0:acid_lp",
+    "pot5": "0:flanger",
+    "pot2": "4:decimator",
+    "pot6": "4:space"
+  }
+}

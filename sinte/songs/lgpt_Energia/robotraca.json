@@ -1,0 +1,14 @@
+{
+  "mute": [6],
+  "pots": {
+    "pot1": "5:acid_lp",
+    "pot5": "5:phaser",
+    "pot2": "2:ringmod",
+    "pot6": "2:chopper",
+    "pot3": "4:acid_lp",
+    "pot7": "4:beat_delay",
+    "pot4": "1:flanger",
+    "pot8": "0:tempo"
+  },
+  "master": 100
+}

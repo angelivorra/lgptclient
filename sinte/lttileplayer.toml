@@ -1,0 +1,91 @@
+# Configuración de lttileplayer (generada por lgpt_setup.py).
+# Los argumentos de línea de comandos tienen prioridad.
+
+# Carpeta de canciones. Relativa = junto al programa (vale igual en el PC de
+# desarrollo y en la Pi). Cada canción es lgpt_<nombre>/ con su robotraca.json.
+songs_dir = "songs"
+
+[audio]
+output = "IQaudIODAC"
+samplerate = 44100
+# 2048 y no 512 por bulebule: su acordeón usa el filtro `scream`, que es un
+# bucle por muestra en Python, y en la Pi con los knobs a tope el peor bloque
+# tardaba 23 ms contra los 11.6 de presupuesto que dan 512 muestras (237
+# bloques pasados del 80% en 20 s = cortes). Con 2048 el presupuesto sube a
+# 46 ms, el peor bloque se queda en 31 ms (67%) y no hay ninguno pasado.
+# Cuesta 46 ms de buffer, irrelevante al lado del delay de 1 s de los clientes.
+blocksize = 2048
+delay = 1.0
+record = ""
+wavs_dir = "wavs"
+pad_volume = 45
+# 0 = apagado. El servidor de streaming escribía en el propio callback de
+# audio (`streamer.write(outdata)`), o sea que su coste entra en el
+# presupuesto del bloque. Era para escuchar la Pi desde el PC mientras se
+# desarrollaba; en directo solo resta margen.
+stream = 0
+
+[midi]
+input = "LPD8"
+output = "Midi Through"
+
+[channels]
+# Canales silenciados siempre (índice 0-7; 3 = pista 4).
+mute = [3, 7]
+
+[buttons]
+# Botones del controlador: "note:canal:nota" o "cc:canal:control",
+# "" = sin asignar.
+up = "note:9:40"
+down = "note:9:36"
+play = "note:9:41"
+stop = "note:9:37"
+sample1 = "note:9:43"
+sample2 = "note:9:38"
+sample3 = "note:9:39"
+sample4 = "note:9:42"
+
+[pots]
+# Potenciómetros: cc = "cc:canal:control" (capturado aquí),
+# target = "canal:parametro" (canal LGPT 0-7; parametro:
+# lp_cutoff, lp_res, volume, pan, pitch; "" = sin asignar).
+pot1 = { cc = "cc:0:70", target = "2:suboctave" }
+pot2 = { cc = "cc:0:71", target = "5:flanger" }
+pot3 = { cc = "cc:0:72", target = "" }
+pot4 = { cc = "cc:0:73", target = "" }
+pot5 = { cc = "cc:0:74", target = "2:acid_lp" }
+pot6 = { cc = "cc:0:75", target = "5:beat_delay" }
+pot7 = { cc = "cc:0:76", target = "" }
+pot8 = { cc = "cc:0:77", target = "" }
+
+[master]
+# Cadena final de la mezcla (EQ de 3 bandas + limitador), común a todas las
+# canciones. El limitador es la red de seguridad para altavoces: ningún pico
+# pasa de `limit` por muy arriba que se pongan los knobs.
+eq_lo = 1.5        # graves (dB, -70..6)
+eq_mid = -1.0      # medios (dB)
+eq_hi = 2.0        # agudos (dB)
+gain = 3.0         # ganancia de entrada al limitador (dB)
+limit = -1.0       # techo de salida (dB, 0 = fondo de escala)
+release = 0.15     # recuperación del limitador (s)
+
+[events]
+# Servidor TCP de eventos para los clientes del robot (solenoides, pantallas).
+# Mismo protocolo que el bridge server-midi.py del repo lgptclient, así que
+# los clientes ya desplegados no necesitan cambios.
+enabled = true
+port = 8888
+delay = 1000       # ms que el cliente espera antes de ejecutar (su base_delay)
+debug = 0
+ruido = 0
+pantalla = 1
+
+[events.clients]
+# IP -> nombre del cliente. En la lista de canciones se muestra la INICIAL de
+# cada uno en una esquina: brillante si está conectado, atenuada si no. Un
+# cliente conectado que no esté en esta tabla sale como "?".
+# Las IPs salen del inventario de ansible del repo lgptclient.
+"192.168.0.3" = "Obdulia"     # maleta
+"192.168.0.4" = "Carmen"      # sombrilla
+"192.168.0.10" = "Vocoder"    # vocoder
+"192.168.0.20" = "Guitarra"   # roboguitarra

@@ -1,5 +1,5 @@
 """
-Cliente TCP para el servidor de eventos LGPT (server-midi.py, puerto 8888).
+Cliente TCP para el servidor de eventos LGPT (sinte/event_server.py, puerto 8888).
 
 Protocolo recibido (líneas ASCII terminadas en \\n):
   CONFIG,<debug>,<ruido>,<pantalla>

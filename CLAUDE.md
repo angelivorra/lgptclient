@@ -4,20 +4,25 @@ Sistema de robot de percusión controlado por LGPT (Little GP Tracker). Conviert
 
 ## Flujo general
 
+El **sinte** (`sinte/`, host `sintetizador`) es la fuente: reproduce las canciones LGPT él mismo (motor propio en Python, sin LGPT binario ni JACK) y emite los eventos por TCP. El resto de nodos son clientes que escuchan ese TCP y actúan:
+
 ```
-LGPT (tracker) → MIDI → servidores Python → GPIO / animaciones / audio
-                                          → Flask / QML (monitorización)
+sinte/ (reproductor LGPT + entrada MIDI de un controlador) → TCP 8888 (CONFIG/SYNC/NOTA/CC/START/END)
+    → maleta / sombrilla: GPIO (solenoides) + animaciones + Flask (monitorización)
+    → vocoder: Carla (síntesis/efectos) + Flask (monitorización)
 ```
 
 ## Estructura de directorios
 
 | Directorio | Descripción |
 |---|---|
-| `bin/` | Scripts principales: orquestación LGPT, servidores MIDI/TCP, gestión de audio y samples |
-| `flaskr/` | Dashboard web Flask — monitorización de CPU/RAM/disco y estado de servicios |
-| `lgpt/` | Binario LGPT compilado para RPi + configuración (`config.xml`, `mapping.xml`) |
-| `midi_monitor_linux/` | App de escritorio Qt/QML para monitorizar MIDI y drum pads en tiempo real |
-| `ansible/` | Playbooks de despliegue e inicialización de clústeres Raspberry Pi |
+| `sinte/` | Reproductor standalone de canciones LGPT (motor, parser, efectos, UI curses, servidor de eventos TCP) para el host `sintetizador`. Ver `sinte/README.md`. |
+| `bin/` | `cliente_final/` (cliente real de maleta/sombrilla: GPIO, display, orquestación de eventos), perfiles `cliente.*.json`, y utilidades de generación de imágenes/samples (`genera*.py`) |
+| `flaskr/` | Dashboard web Flask — monitorización de CPU/RAM/disco y estado de servicios; se despliega a maleta, sombrilla y sinte |
+| `vocoder/` | App Flask + preset de Carla para el nodo vocoder |
+| `midi_monitor_linux/` / `tcp_monitor_linux/` | Apps de escritorio Qt/QML: monitorizan la entrada MIDI y el stream TCP de eventos, respectivamente |
+| `midi_monitor/` | Variante Windows del monitor MIDI, para ejecutar LGPT en local |
+| `ansible/` | Playbooks y roles de despliegue de los clústeres Raspberry Pi |
 | `images/` | Recursos de animaciones e imágenes indexadas por número |
 | `samples/` | Samples de audio organizados en `origen/` y `destino/` |
 
@@ -25,45 +30,46 @@ LGPT (tracker) → MIDI → servidores Python → GPIO / animaciones / audio
 
 | Archivo | Descripción |
 |---|---|
-| `main_server.py` | Servidor principal — gestiona eventos GPIO y MIDI |
-| `image_events2.py` | Manejo de eventos de imagen sincronizados con MIDI |
-| `robot_display.py` | Gestión del display del robot |
-| `lgpt-runner.service` | Servicio systemd para arranque automático de LGPT |
-| `jack.sh` / `asound.conf` | Configuración del servidor de audio JACK y ALSA |
 | `NOTAS.md` | Mapeado de notas MIDI (C1–B4) a acciones del robot |
 | `Imagenes.md` | Galería de referencia de imágenes con códigos hex |
+| `PANTALLA.md` | Notas sobre la pantalla del robot |
 
 ## Stack tecnológico
 
-- **Audio**: JACK, ALSA, FFmpeg, `pyalsaaudio`
-- **MIDI**: `alsa_midi`, servidores Python propios
-- **UI**: Flask (web), Qt/QML (escritorio)
+- **sinte** (`sinte/`): Python puro — `numpy`/`soundfile`/`sounddevice` (motor y salida de audio), `mido`/`python-rtmidi` (entrada del controlador MIDI), `curses` (UI). Sin JACK ni binario LGPT: el motor reimplementa el secuenciador.
+- **Resto de clientes**: `alsa_midi`, `RPi.GPIO`, `pyalsaaudio`, Flask
+- **UI**: Flask (web, todos los nodos), Qt/QML (monitores de escritorio)
 - **Hardware**: Raspberry Pi, GPIO, IQaudIODAC
 - **Despliegue**: Ansible
 
 ## Monitores de desarrollo
 
-Los monitores (`midi_monitor_linux/`, `tcp_monitor_linux/`) **se ejecutan en este PC**, no en el servidor.
+Los monitores (`midi_monitor_linux/`, `tcp_monitor_linux/`, `midi_monitor/`) **se ejecutan en este PC**, no en el servidor.
 
-## Despliegue del servidor (`bin/server-midi.py`)
+## Despliegue
 
-El servidor corre en la Raspberry Pi **192.168.0.2** como `servidor.service`.  
-**No se ejecuta en este equipo.** El flujo para aplicar cambios es siempre:
+Todos los nodos se despliegan por Ansible desde este PC; **ninguno hace `git pull`** (el sinte ni siquiera tiene internet). El flujo es siempre:
 
 ```bash
-# 1. Subir cambios al remoto
+# 1. Subir cambios (para tener el historial en remoto; el deploy no depende de esto)
 git push
 
-# 2. Actualizar el repo en el servidor
-ssh angel@192.168.0.2 'git -C /home/angel/lgptclient pull'
-
-# 3. Reiniciar el servicio
-ssh angel@192.168.0.2 'sudo systemctl restart servidor.service && systemctl is-active servidor.service'
+# 2. Desplegar. Playbooks disponibles en ansible/ (usar -i ansible/inventario):
+ansible-playbook ansible/actualiza-sinte.yaml -i ansible/inventario      # sintetizador (192.168.0.2)
+ansible-playbook ansible/actualiza-maletas.yaml -i ansible/inventario   # maleta + sombrilla
+ansible-playbook ansible/actualiza-vocoder.yaml -i ansible/inventario   # vocoder
+ansible-playbook ansible/actualiza-todo.yaml -i ansible/inventario      # los tres
 ```
+
+Cada playbook compila primero los paneles JSX→JS en este PC (rol `compilar-web`)
+y luego sincroniza por rsync los ficheros versionados del repo al host de
+destino (ninguno tiene acceso a internet), reiniciando solo los servicios que
+cambiaron. El rol `sintetizador-actualiza` además crea/actualiza el venv de
+`sinte/` y deja el player arrancando en kiosk (autologin en tty1) — ver
+`ansible/roles/sintetizador-actualiza/tasks/main.yaml`.
 
 ## Notas de desarrollo
 
 - El mapeado MIDI → acción está documentado en `NOTAS.md` (instrumentos 80–81 para imágenes/animaciones)
-- Los clientes se configuran con perfiles JSON en `bin/cliente.*.json`
-- `bin/run-lgpt.py` es el punto de entrada principal: arranca jackd, alsa_in y el binario LGPT
-- El bridge ALSA/JACK con compensación de latencia está en `bin/alsa_delay_bridge.py`
+- Los clientes de maleta/sombrilla se configuran con perfiles JSON en `bin/cliente.*.json`, consumidos por `bin/cliente_final/`
+- El protocolo de eventos TCP (`CONFIG/SYNC/NOTA/CC/START/END`, puerto 8888) lo emite `sinte/event_server.py`; el detalle de timing (`audio_delay`, cálculo de `event_time_ms`) está documentado en `sinte/README.md`

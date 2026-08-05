@@ -2,21 +2,21 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Stop servidor service",
+      "label": "Stop sinte player (tty1)",
       "type": "shell",
-      "command": "sudo systemctl stop servidor.service",
+      "command": "sudo systemctl stop getty@tty1.service",
       "problemMatcher": []
     },
     {
-      "label": "Start servidor service",
+      "label": "Start sinte player (tty1)",
       "type": "shell",
-      "command": "sudo systemctl start servidor.service",
+      "command": "sudo systemctl start getty@tty1.service",
       "problemMatcher": []
     },
     {
-      "label": "Restart servidor service",
+      "label": "Restart sinte player (tty1)",
       "type": "shell",
-      "command": "sudo systemctl restart servidor.service",
+      "command": "sudo systemctl restart getty@tty1.service",
       "problemMatcher": []
     },
     {
@@ -52,7 +52,7 @@
     {
       "label": "Convierte Samples",
       "type": "shell",
-      "command": "${workspaceFolder}/bin/venv/bin/python ${workspaceFolder}/bin/genera_samples.py",
+      "command": "${workspaceFolder}/venv/bin/python ${workspaceFolder}/bin/genera_samples.py",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
