@@ -851,7 +851,9 @@ class Player:
         prev = names[(self.index - 1) % n]
         current = names[self.index]
         nxt = names[(self.index + 1) % n]
-        sel_scale = 2 if len(current) * 8 <= w else 1
+        # tamaño fijo (el de "ABDUCCION"): si el título no cabe se recorta
+        # por los bordes en vez de encogerse a una fuente más pequeña.
+        sel_scale = 2
         # bloque: título (1) + hueco + prev (3) + seleccionada + next (3)
         total_rows = 2 + 3 + 5 * sel_scale + 1 + 3
         y0 = max(0, (h - total_rows) // 2)
@@ -926,6 +928,9 @@ class Player:
         scr.addstr(2, 1, f"{engine.tempo:.0f} BPM   {meter(pct, 20)} "
                          f"{pct * 100:5.1f}%"[:w - 2],
                    curses.color_pair(3))
+        if engine.current_lyric:
+            scr.addstr(4, 1, engine.current_lyric[:w - 2],
+                       curses.color_pair(1) | curses.A_BOLD)
         scr.addstr(h - 1, 1,
                    "espacio: pausa  n/p: canción  q: lista"[:w - 2],
                    curses.color_pair(3))
