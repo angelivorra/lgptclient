@@ -21,7 +21,6 @@ sinte/ (reproductor LGPT + entrada MIDI de un controlador) → TCP 8888 (CONFIG/
 | `flaskr/` | Dashboard web Flask — monitorización de CPU/RAM/disco y estado de servicios; se despliega a maleta y sombrilla (el sinte no lo sirve: solo corre el player en kiosk) |
 | `vocoder/` | App Flask + preset de Carla para el nodo vocoder |
 | `midi_monitor_linux/` / `tcp_monitor_linux/` | Apps de escritorio Qt/QML: monitorizan la entrada MIDI y el stream TCP de eventos, respectivamente |
-| `midi_monitor/` | Variante Windows del monitor MIDI, para ejecutar LGPT en local |
 | `ansible/` | Playbooks y roles de despliegue de los clústeres Raspberry Pi |
 | `images/` | Recursos de animaciones e imágenes indexadas por número |
 | `samples/` | Samples de audio organizados en `origen/` y `destino/` |
