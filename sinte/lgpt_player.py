@@ -851,9 +851,11 @@ class Player:
         prev = names[(self.index - 1) % n]
         current = names[self.index]
         nxt = names[(self.index + 1) % n]
-        # tamaño fijo (el de "ABDUCCION"): si el título no cabe se recorta
-        # por los bordes en vez de encogerse a una fuente más pequeña.
-        sel_scale = 2
+        # Tamaño fijo (el de "ABDUCCION") para toda la lista: si un título
+        # no cabe ni a este tamaño, no se dibuja (en vez de encogerlo a una
+        # fuente más pequeña o recortarlo a trozos por el borde).
+        sel_scale = 1
+        current_fits = len(current) * 4 * sel_scale <= w
         # bloque: título (1) + hueco + prev (3) + seleccionada + next (3)
         total_rows = 2 + 3 + 5 * sel_scale + 1 + 3
         y0 = max(0, (h - total_rows) // 2)
@@ -875,8 +877,9 @@ class Player:
             # escribir en la última celda de la pantalla es error en curses
             width = w if yy < h - 1 else w - 1
             scr.addstr(yy, 0, " " * width, self._pair_neg)
-        big_text(scr, y, max(0, (w - len(current) * 4 * sel_scale) // 2),
-                 current, sel_scale, self._pair_neg)
+        if current_fits:
+            big_text(scr, y, max(0, (w - len(current) * 4 * sel_scale) // 2),
+                     current, sel_scale, self._pair_neg)
         y += rows_sel + 1
         big_text_half(scr, y, max(0, (w - len(nxt) * 4) // 2), nxt,
                       self._pair_dim)
