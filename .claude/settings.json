@@ -26,7 +26,9 @@
       "Bash(cp /home/angel/git/lttileplayer/lgpt_player.py sinte/)",
       "Bash(git rm *)",
       "Bash(git restore *)",
-      "Bash(awk '{print $1}')"
+      "Bash(awk '{print $1}')",
+      "Bash(ping -c 2 -W 2 192.168.0.2)",
+      "Bash(ip route *)"
     ]
   }
 }

@@ -18,7 +18,7 @@ sinte/ (reproductor LGPT + entrada MIDI de un controlador) → TCP 8888 (CONFIG/
 |---|---|
 | `sinte/` | Reproductor standalone de canciones LGPT (motor, parser, efectos, UI curses, servidor de eventos TCP) para el host `sintetizador`. Ver `sinte/README.md`. |
 | `bin/` | `cliente_final/` (cliente real de maleta/sombrilla: GPIO, display, orquestación de eventos), perfiles `cliente.*.json`, y utilidades de generación de imágenes/samples (`genera*.py`) |
-| `flaskr/` | Dashboard web Flask — monitorización de CPU/RAM/disco y estado de servicios; se despliega a maleta, sombrilla y sinte |
+| `flaskr/` | Dashboard web Flask — monitorización de CPU/RAM/disco y estado de servicios; se despliega a maleta y sombrilla (el sinte no lo sirve: solo corre el player en kiosk) |
 | `vocoder/` | App Flask + preset de Carla para el nodo vocoder |
 | `midi_monitor_linux/` / `tcp_monitor_linux/` | Apps de escritorio Qt/QML: monitorizan la entrada MIDI y el stream TCP de eventos, respectivamente |
 | `midi_monitor/` | Variante Windows del monitor MIDI, para ejecutar LGPT en local |
@@ -61,11 +61,13 @@ ansible-playbook ansible/actualiza-vocoder.yaml -i ansible/inventario   # vocode
 ansible-playbook ansible/actualiza-todo.yaml -i ansible/inventario      # los tres
 ```
 
-Cada playbook compila primero los paneles JSX→JS en este PC (rol `compilar-web`)
-y luego sincroniza por rsync los ficheros versionados del repo al host de
-destino (ninguno tiene acceso a internet), reiniciando solo los servicios que
-cambiaron. El rol `sintetizador-actualiza` además crea/actualiza el venv de
-`sinte/` y deja el player arrancando en kiosk (autologin en tty1) — ver
+`actualiza-maletas.yaml` y `actualiza-vocoder.yaml` compilan primero el panel
+JSX→JS en este PC (rol `compilar-web`) y luego sincronizan por rsync los
+ficheros versionados del repo al host de destino (ninguno tiene acceso a
+internet), reiniciando solo los servicios que cambiaron. `actualiza-sinte.yaml`
+no compila ningún panel (el sinte no sirve panel web): solo sincroniza el
+repo y el rol `sintetizador-actualiza` crea/actualiza el venv de `sinte/` y
+deja el player arrancando en kiosk (autologin en tty1) — ver
 `ansible/roles/sintetizador-actualiza/tasks/main.yaml`.
 
 ## Notas de desarrollo

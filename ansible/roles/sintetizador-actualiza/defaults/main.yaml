@@ -12,9 +12,3 @@ rsync_filelist: /tmp/sinte-rsync-filelist.txt
 # vive solo en el device).
 sinte_app_dir: "{{ repo_dir }}/sinte"
 sinte_venv_dir: "{{ sinte_app_dir }}/.venv"
-
-# Servicios systemd normales del repo que corren en el sintetizador (se
-# reinician si algo cambió). El player en sí NO es uno de estos: se lanza por
-# autologin en tty1 (ver tasks/main.yaml), no como servicio de fondo.
-servicios:
-  - panel.service

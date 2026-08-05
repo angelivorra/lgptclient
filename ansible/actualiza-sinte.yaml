@@ -1,18 +1,7 @@
 ---
-# 1) Compilar los assets del panel en este PC (JSX -> static/robot.js).
-#    El sinte no tiene internet: se despliega por rsync desde este árbol de
-#    trabajo, así que basta con dejar el robot.js fresco aquí (sin commit/push).
-- name: Compilar assets web (panel del sinte)
-  hosts: localhost
-  connection: local
-  gather_facts: no
-  roles:
-    - role: compilar-web
-      vars:
-        web_build_apps:
-          - flaskr
-
-# 2) rsync de los ficheros versionados + reinicio de servicios en el sinte.
+# El sinte no sirve panel web (panel.service no está instalado en el device:
+# corre solo el player en kiosk). rsync de los ficheros versionados + arranque
+# del player.
 - name: Actualizar sintetizador
   hosts: sinte
   gather_facts: no

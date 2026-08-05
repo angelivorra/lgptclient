@@ -122,11 +122,3 @@
     name: getty@tty1.service
     state: restarted
   when: repo_sync.changed or sinte_pip.changed or sinte_bash_profile.changed
-
-- name: Reiniciar el resto de servicios del sinte (solo si algo cambió)
-  become: true
-  ansible.builtin.systemd:
-    name: "{{ item }}"
-    state: restarted
-  loop: "{{ servicios }}"
-  when: repo_sync.changed
