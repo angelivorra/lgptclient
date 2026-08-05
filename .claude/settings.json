@@ -75,7 +75,16 @@
       "Bash(cp /home/angel/LGPT/songs/lgpt_abduccion/lgptsav.dat songs/lgpt_abduccion/lgptsav.dat)",
       "Bash(cp /home/angel/LGPT/songs/lgpt_abduccion/samples/bajo_distor_C-2.wav songs/lgpt_abduccion/samples/)",
       "Bash(python3 -c \"import ast; ast.parse\\(open\\('vocoder/flask/carla_runner.py'\\).read\\(\\)\\)\")",
-      "Bash(.venv/bin/python -m pytest tests/test_events.py::TestEventMidiOut::test_transporte -q)"
+      "Bash(.venv/bin/python -m pytest tests/test_events.py::TestEventMidiOut::test_transporte -q)",
+      "Bash(ansible-playbook ansible/actualiza-sinte.yaml -i ansible/inventario)",
+      "Bash(scp /home/angel/git/lgptclient/sinte/songs/lgpt_abduccion/samples/bajo_distor_C-2.wav angel@192.168.0.2:/home/angel/lgptclient/sinte/songs/lgpt_abduccion/samples/)",
+      "Bash(git check-ignore *)",
+      "Bash(scp songs/lgpt_abduccion/samples/bajo_distor_C-2.wav angel@192.168.0.2:/home/angel/lgptclient/sinte/songs/lgpt_abduccion/samples/)",
+      "Bash(scp songs/lgpt_abdutest/samples/*.wav angel@192.168.0.2:/home/angel/lgptclient/sinte/songs/lgpt_abdutest/samples/)",
+      "Bash(xargs cat)",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('tests/test_engine.py'\\).read\\(\\)\\)\")",
+      "Bash(.venv/bin/python -m pytest tests/test_engine.py -k \"letra or mdcc\" -v)",
+      "Bash(python3 -m py_compile sinte/lgpt_player.py)"
     ]
   }
 }

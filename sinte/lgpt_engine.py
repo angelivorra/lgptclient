@@ -982,6 +982,17 @@ class Engine:
         if project.root is None:
             project.load()
         self.project = project
+        # Letra sincronizada al ritmo (ver _instrument_command, MDCC
+        # control=2): "banco de textos" ya usado por
+        # midi_monitor_linux/srt_recorder.py, una línea por valor 0..N.
+        # Canción sin fichero "textos" -> lista vacía, no pasa nada.
+        textos_file = project.dir / "textos"
+        try:
+            self.lyric_lines = textos_file.read_text(
+                encoding="utf-8").splitlines()
+        except OSError:
+            self.lyric_lines = []
+        self.current_lyric = ""
         self.sr = sample_rate
         # `tempo` es el efectivo (el que se oye y el que ven los efectos
         # sincronizados); `base_tempo` es el de la canción, sin acelerar.
@@ -1684,8 +1695,18 @@ class Engine:
             mch = ch.midi_def.channel
             if cmd == "VOLM" and self.midi_out is not None:
                 self.midi_out.cc(mch, 7, (param // 2) & 0x7F)
-            elif cmd == "MDCC" and self.midi_out is not None:
-                self.midi_out.cc(mch, (param >> 8) & 0x7F, param & 0x7F)
+            elif cmd == "MDCC":
+                control = (param >> 8) & 0x7F
+                value = param & 0x7F
+                if self.midi_out is not None:
+                    self.midi_out.cc(mch, control, value)
+                # Banco de textos (control=2, ver __init__/lyric_lines): la
+                # letra se actualiza en local aunque no haya midi_out — no
+                # depende de si se está emitiendo por TCP.
+                if control == 2 and 0 <= value < len(self.lyric_lines):
+                    line = self.lyric_lines[value]
+                    if line.strip():
+                        self.current_lyric = line
             elif cmd == "MDPG" and self.midi_out is not None:
                 self.midi_out.program_change(mch, param & 0x7F)
             elif cmd == "MVEL":

@@ -299,6 +299,55 @@ class TestMidiOut(unittest.TestCase):
             engine._process_tick()
         self.assertIn(("cc", 3, 74, 100), engine.midi_out.events)
 
+    def test_mdcc_letra(self):
+        # Banco de textos (control=2): la letra se actualiza en local
+        # aunque siga reenviándose el CC por midi_out como cualquier otro.
+        engine = self.make_midi_engine()
+        engine.lyric_lines = ["primera línea", "", "segunda línea"]
+        note_row(engine.project, 0, note=60, instr=0x80)
+        engine.project.cmd1[1] = "MDCC"
+        engine.project.param1[1] = (2 << 8) | 0   # control=2, valor=0
+        for _ in range(TICKS_PER_STEP + 1):
+            engine._process_tick()
+        self.assertEqual(engine.current_lyric, "primera línea")
+        self.assertIn(("cc", 3, 2, 0), engine.midi_out.events)
+
+    def test_mdcc_letra_valor_vacio_mantiene_la_anterior(self):
+        engine = self.make_midi_engine()
+        engine.lyric_lines = ["primera línea", ""]
+        engine.current_lyric = "primera línea"
+        note_row(engine.project, 0, note=60, instr=0x80)
+        engine.project.cmd1[1] = "MDCC"
+        engine.project.param1[1] = (2 << 8) | 1   # valor=1: línea vacía
+        for _ in range(TICKS_PER_STEP + 1):
+            engine._process_tick()
+        self.assertEqual(engine.current_lyric, "primera línea")
+
+    def test_mdcc_letra_valor_fuera_de_rango_mantiene_la_anterior(self):
+        engine = self.make_midi_engine()
+        engine.lyric_lines = ["primera línea"]
+        engine.current_lyric = "primera línea"
+        note_row(engine.project, 0, note=60, instr=0x80)
+        engine.project.cmd1[1] = "MDCC"
+        engine.project.param1[1] = (2 << 8) | 5   # valor=5, fuera de rango
+        for _ in range(TICKS_PER_STEP + 1):
+            engine._process_tick()
+        self.assertEqual(engine.current_lyric, "primera línea")
+
+    def test_mdcc_otro_control_no_toca_la_letra(self):
+        # Un CC distinto de 2 (p. ej. el de imágenes/animaciones en
+        # instrumentos 80-81) no debe chocar con el sistema de letras.
+        engine = self.make_midi_engine()
+        engine.lyric_lines = ["primera línea", "segunda línea"]
+        engine.current_lyric = "primera línea"
+        note_row(engine.project, 0, note=60, instr=0x80)
+        engine.project.cmd1[1] = "MDCC"
+        engine.project.param1[1] = (81 << 8) | 1   # control=81, valor=1
+        for _ in range(TICKS_PER_STEP + 1):
+            engine._process_tick()
+        self.assertEqual(engine.current_lyric, "primera línea")
+        self.assertIn(("cc", 3, 81, 1), engine.midi_out.events)
+
     def test_mdpg(self):
         engine = self.make_midi_engine()
         note_row(engine.project, 0, note=60, instr=0x80)
