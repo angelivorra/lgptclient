@@ -24,7 +24,7 @@
 
 - name: Copy requirements.txt
   ansible.builtin.copy:
-    src: "/home/angel/lgptclient/requirements_{{ inventory_hostname  }}.txt"
+    src: "/home/angel/git/lgptclient/requirements_{{ inventory_hostname  }}.txt"
     dest: /home/angel/requirements.txt
     owner: angel
     group: angel
@@ -39,7 +39,7 @@
 
 - name: Sync client files
   synchronize:
-    src: /home/angel/lgptclient/bin/cliente_final/
+    src: /home/angel/git/lgptclient/bin/cliente_final/
     dest: /home/angel/bin/
     delete: yes
     rsync_opts:
@@ -47,19 +47,19 @@
 
 - name: Copy client configuration
   ansible.builtin.copy:
-    src: "/home/angel/lgptclient/bin/cliente.{{ inventory_hostname  }}.json"
+    src: "/home/angel/git/lgptclient/bin/cliente.{{ inventory_hostname  }}.json"
     dest: /home/angel/bin/config.json
     owner: angel
     group: angel
 
 - name: Generate image binary files locally
   ansible.builtin.command:
-    cmd: "/home/angel/lgptclient/venv/bin/python /home/angel/lgptclient/bin/genera.py {{ inventory_hostname }}"
+    cmd: "/home/angel/git/lgptclient/venv/bin/python /home/angel/git/lgptclient/bin/genera.py {{ inventory_hostname }}"
   delegate_to: localhost
 
 - name: Sync image binary files
   synchronize:
-    src: "/home/angel/lgptclient/img_output/{{ inventory_hostname }}/"
+    src: "/home/angel/git/lgptclient/img_output/{{ inventory_hostname }}/"
     dest: /home/angel/images/
     delete: yes
     rsync_opts:
@@ -92,7 +92,7 @@
 # El robot.js ya viene compilado por el paso 'compilar-web' del playbook.
 - name: Sincronizar el panel de control (flaskr)
   ansible.posix.synchronize:
-    src: /home/angel/lgptclient/flaskr/
+    src: /home/angel/git/lgptclient/flaskr/
     dest: /home/angel/panel/
     delete: yes
     checksum: true

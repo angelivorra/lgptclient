@@ -1,7 +1,7 @@
 ---
 # Raíz del repo en este PC (la máquina de control), donde vive la toolchain de
 # Babel (node_modules/, gitignoreada) y los build.sh de cada app.
-repo_root: /home/angel/lgptclient
+repo_root: /home/angel/git/lgptclient
 
 # Apps cuyo build.sh hay que ejecutar (rutas relativas a repo_root). Cada una
 # compila su src/robot.jsx -> static/robot.js.

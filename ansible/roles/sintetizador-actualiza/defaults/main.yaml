@@ -3,7 +3,7 @@
 repo_dir: /home/angel/lgptclient
 
 # Directorio del repo EN ESTE PC (control), origen del rsync.
-control_repo_dir: /home/angel/lgptclient
+control_repo_dir: /home/angel/git/lgptclient
 
 # Fichero temporal (en el control) con la lista de archivos versionados a enviar.
 rsync_filelist: /tmp/sinte-rsync-filelist.txt

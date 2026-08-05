@@ -1,7 +1,7 @@
 ---
 - name: Sincronizar la app flask del vocoder
   ansible.posix.synchronize:
-    src: /home/angel/lgptclient/vocoder/flask/
+    src: /home/angel/git/lgptclient/vocoder/flask/
     dest: "{{ vocoder_dest }}/flask/"
     delete: yes
     checksum: true
@@ -14,7 +14,7 @@
 
 - name: Copiar el parche de Carla (template01.carxp)
   ansible.builtin.copy:
-    src: /home/angel/lgptclient/vocoder/prod/template01.carxp
+    src: /home/angel/git/lgptclient/vocoder/prod/template01.carxp
     dest: "{{ vocoder_dest }}/prod/template01.carxp"
     owner: patch
     group: patch
