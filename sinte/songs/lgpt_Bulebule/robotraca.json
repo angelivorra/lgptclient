@@ -10,5 +10,6 @@
     "pot6": "4:metal",
     "pot8": "0:tempo"
   },
+  "pots_red": ["pot3", "pot7"],
   "master": 125
 }
