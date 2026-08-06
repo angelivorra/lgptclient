@@ -139,7 +139,11 @@
       "Bash(grep -nE '^\\\\$[0-9]|Error en|hit Breakpoint' /tmp/gdb_out4.txt)",
       "Bash(xxd)",
       "Bash(timeout 20 gdb -q -batch -x /tmp/gdb_verify.txt ./lgpt.x64)",
-      "Bash(grep -nE '^\\\\$[0-9]|hit Breakpoint|SIGSEGV|LZ_Uncompress' /tmp/gdb_verify_out.txt)"
+      "Bash(grep -nE '^\\\\$[0-9]|hit Breakpoint|SIGSEGV|LZ_Uncompress' /tmp/gdb_verify_out.txt)",
+      "Bash(.venv/bin/python /tmp/claude-1000/-home-angel-git-lgptclient/86dff761-a7b3-4c7b-b158-afd03def1f16/scratchpad/medir_pistas_bulebule.py)",
+      "Bash(sed -i 's/SECONDS = 25/SECONDS = 60/' /tmp/claude-1000/-home-angel-git-lgptclient/86dff761-a7b3-4c7b-b158-afd03def1f16/scratchpad/comparar_master.py)",
+      "Bash(.venv/bin/python /tmp/claude-1000/-home-angel-git-lgptclient/86dff761-a7b3-4c7b-b158-afd03def1f16/scratchpad/comparar_master.py)",
+      "Bash(python3 -c \"import json; json.load\\(open\\('songs/lgpt_Bulebule/robotraca.json'\\)\\)\")"
     ],
     "additionalDirectories": [
       "/home/angel/LGPT/bin",

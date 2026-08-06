@@ -1,10 +1,14 @@
 {
   "mute": [
-    5,
     6
   ],
+  "vocoder": [6],
   "pots": {
+    "pot1": "1,2:acid",
+    "pot5": "1,2:valve",
+    "pot2": "4:bode",
+    "pot6": "4:metal",
     "pot8": "0:tempo"
   },
-  "master": 100
+  "master": 125
 }
