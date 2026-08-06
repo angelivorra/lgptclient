@@ -12,3 +12,7 @@ rsync_filelist: /tmp/sinte-rsync-filelist.txt
 # vive solo en el device).
 sinte_app_dir: "{{ repo_dir }}/sinte"
 sinte_venv_dir: "{{ sinte_app_dir }}/.venv"
+
+# venv de sinte EN ESTE PC (control): usado para generar los "textos" antes
+# de desplegar (bin/genera_textos.py necesita lgpt_parser.py, ver más abajo).
+sinte_control_venv_dir: "{{ control_repo_dir }}/sinte/.venv"

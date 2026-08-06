@@ -143,7 +143,11 @@
       "Bash(.venv/bin/python /tmp/claude-1000/-home-angel-git-lgptclient/86dff761-a7b3-4c7b-b158-afd03def1f16/scratchpad/medir_pistas_bulebule.py)",
       "Bash(sed -i 's/SECONDS = 25/SECONDS = 60/' /tmp/claude-1000/-home-angel-git-lgptclient/86dff761-a7b3-4c7b-b158-afd03def1f16/scratchpad/comparar_master.py)",
       "Bash(.venv/bin/python /tmp/claude-1000/-home-angel-git-lgptclient/86dff761-a7b3-4c7b-b158-afd03def1f16/scratchpad/comparar_master.py)",
-      "Bash(python3 -c \"import json; json.load\\(open\\('songs/lgpt_Bulebule/robotraca.json'\\)\\)\")"
+      "Bash(python3 -c \"import json; json.load\\(open\\('songs/lgpt_Bulebule/robotraca.json'\\)\\)\")",
+      "Bash(ansible-playbook ansible/actualiza-sinte.yaml -i ansible/inventario --syntax-check)",
+      "Bash(/usr/bin/ansible-playbook /home/angel/git/lgptclient/ansible/actualiza-sinte.yaml -i /home/angel/git/lgptclient/ansible/inventario --syntax-check)",
+      "Bash(sinte/.venv/bin/python bin/genera_textos.py)",
+      "Bash(/usr/bin/ansible-playbook ansible/actualiza-sinte.yaml -i ansible/inventario)"
     ],
     "additionalDirectories": [
       "/home/angel/LGPT/bin",

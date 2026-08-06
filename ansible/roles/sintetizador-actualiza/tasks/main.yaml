@@ -6,6 +6,19 @@
 # además son enormes. Rsync envía el contenido del árbol de trabajo del control,
 # así que recoge también los assets recién recompilados aunque no estén commiteados.
 
+# El "banco de textos" (letras, ver sinte/lgpt_engine.py y
+# midi_monitor_linux/srt_recorder.py) es compartido: images/002/textos son
+# frases indexadas que cualquier canción referencia por número desde sus
+# comandos MDCC control=2. Antes de desplegar, copiamos ese banco al
+# `textos` de cada canción que de verdad lo usa (y no tocamos las que no
+# tienen ningún MDCC control=2 — no hay letra autorada, no hace falta nada).
+- name: Generar los ficheros de letras (textos) que hagan falta (en el PC de control)
+  ansible.builtin.command: "{{ sinte_control_venv_dir }}/bin/python {{ control_repo_dir }}/bin/genera_textos.py"
+  delegate_to: localhost
+  run_once: true
+  register: genera_textos
+  changed_when: "'copiado banco' in genera_textos.stdout"
+
 - name: Generar la lista de ficheros versionados (en el PC de control)
   ansible.builtin.command: git ls-files
   args:
@@ -37,6 +50,23 @@
     rsync_opts:
       - "--files-from={{ rsync_filelist }}"
   register: repo_sync
+
+# genera_textos.py puede haber creado o actualizado un `textos` que todavía
+# no está comiteado: el rsync de arriba solo manda lo que git rastrea, así
+# que sincronizamos estos ficheros aparte, estén o no en git, para no
+# depender de acordarse de un 'git add' antes de desplegar.
+- name: Sincronizar las letras (textos) de las canciones al sinte
+  ansible.posix.synchronize:
+    src: "{{ control_repo_dir }}/sinte/songs/"
+    dest: "{{ repo_dir }}/sinte/songs/"
+    checksum: true
+    times: false
+    perms: false
+    rsync_opts:
+      - "--include=*/"
+      - "--include=textos"
+      - "--exclude=*"
+  register: textos_sync
 
 # ── Entorno del player (sinte/) ───────────────────────────────────────────
 - name: Check whether the sinte venv already exists
@@ -121,4 +151,4 @@
   ansible.builtin.systemd:
     name: getty@tty1.service
     state: restarted
-  when: repo_sync.changed or sinte_pip.changed or sinte_bash_profile.changed
+  when: repo_sync.changed or textos_sync.changed or sinte_pip.changed or sinte_bash_profile.changed
