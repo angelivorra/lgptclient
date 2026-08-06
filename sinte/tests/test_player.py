@@ -7,7 +7,7 @@ from pathlib import Path
 import mido
 
 from lgpt_player import CARGA_AVISO, EstadoAudio, match_button, match_pot, \
-    parse_button_spec, parse_pot_target
+    match_pot_red, parse_button_spec, parse_pot_target
 
 
 class TestParseButtonSpec(unittest.TestCase):
@@ -87,6 +87,26 @@ class TestMatchPot(unittest.TestCase):
         self.assertIsNone(match_pot(self.pots, msg))
         msg = mido.Message("note_on", channel=9, note=16, velocity=100)
         self.assertIsNone(match_pot(self.pots, msg))
+
+
+class TestMatchPotRed(unittest.TestCase):
+    def setUp(self):
+        self.pots_red = [
+            (parse_button_spec("cc:9:16"), 3),
+            (parse_button_spec("cc:9:17"), 7),
+        ]
+
+    def test_match(self):
+        msg = mido.Message("control_change", channel=9, control=16, value=80)
+        self.assertEqual(match_pot_red(self.pots_red, msg), 3)
+        msg = mido.Message("control_change", channel=9, control=17, value=1)
+        self.assertEqual(match_pot_red(self.pots_red, msg), 7)
+
+    def test_no_match(self):
+        msg = mido.Message("control_change", channel=9, control=18, value=80)
+        self.assertIsNone(match_pot_red(self.pots_red, msg))
+        msg = mido.Message("note_on", channel=9, note=16, velocity=100)
+        self.assertIsNone(match_pot_red(self.pots_red, msg))
 
 
 class TestParsePotTarget(unittest.TestCase):

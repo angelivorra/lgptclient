@@ -39,6 +39,7 @@ from lgpt_parser import LGPTProject
 
 SAMPLE_RATE = 44100
 CHANNEL_COUNT = 8
+NETCC_CHANNEL = 9           # canal virtual para CC de pots_red (ver _apply_netcc)
 TICKS_PER_STEP = 6          # AUDIO_SLICES_PER_STEP del upstream
 KRATE = 100                 # KRATE_SAMPLE_COUNT del upstream
 # Anti-click: micro-rampa al cortar una voz (nota nueva) o al saltar el
@@ -993,6 +994,20 @@ class Engine:
         except OSError:
             self.lyric_lines = []
         self.current_lyric = ""
+        # El MDCC que dispara la letra se procesa a t=0 (secuenciador), pero
+        # se oye a t+1 como el resto del audio (audio_delay + buffers de
+        # salida). Sin este retardo la letra se adelanta al sonido. Cola de
+        # (muestra_objetivo, línea); se vacía en render() según avanza
+        # _samples_rendered. Medido a ojo por el usuario contra el sonido
+        # real: 0.75s deja la letra ajustada al ritmo.
+        self.LYRIC_DELAY_S = 0.75
+        # Cada palabra se apaga sola pasado este tiempo si no llega otra
+        # antes (si no, se queda en pantalla hasta el siguiente MDCC,
+        # que puede tardar mucho más de lo que dura la palabra cantada).
+        self.LYRIC_MAX_S = 1.0
+        self._lyric_queue: list[tuple[int, str]] = []
+        self._lyric_expires_at: Optional[int] = None
+        self._samples_rendered = 0
         self.sr = sample_rate
         # `tempo` es el efectivo (el que se oye y el que ven los efectos
         # sincronizados); `base_tempo` es el de la canción, sin acelerar.
@@ -1274,6 +1289,16 @@ class Engine:
         if self.master_chain is not None:
             self.master_chain.apply(out)
         np.clip(out, -1.0, 1.0, out=out)
+        self._samples_rendered += frames
+        while (self._lyric_queue
+               and self._lyric_queue[0][0] <= self._samples_rendered):
+            self.current_lyric = self._lyric_queue.pop(0)[1]
+            self._lyric_expires_at = (self._samples_rendered
+                                       + int(self.LYRIC_MAX_S * self.sr))
+        if (self._lyric_expires_at is not None
+                and self._samples_rendered >= self._lyric_expires_at):
+            self.current_lyric = ""
+            self._lyric_expires_at = None
         return out
 
     # Tope de recuperación por llamada: si el hueco es enorme (proceso
@@ -1333,6 +1358,8 @@ class Engine:
                 self._apply_cc(ev[1], ev[2], ev[3])
             elif kind == "param":
                 self._apply_param(ev[1], ev[2], ev[3])
+            elif kind == "netcc":
+                self._apply_netcc(ev[1], ev[2])
             elif kind == "trigger":
                 self._trigger_pad(ev[1])
             elif kind == "play":
@@ -1383,6 +1410,15 @@ class Engine:
             self.set_tempo_scale(1.0 + (val / 127.0) * TEMPO_BOOST_MAX)
         elif name in EFFECT_PRESETS:
             ch.fx_amounts[name] = val / 127.0
+
+    def _apply_netcc(self, control: int, val: int):
+        """Pot de red (`pots_red` en el JSON de la canción): a diferencia de
+        `_apply_cc`/`_apply_param`, no toca nada local — solo reenvía el CC
+        crudo por TCP para que lo consuma otro nodo (p.ej. el vocoder,
+        modulando Carla). Canal fijo `NETCC_CHANNEL`, distinto de los 0-7 de
+        pista, para no confundirse con CC de un canal real."""
+        if self.midi_out is not None:
+            self.midi_out.cc(NETCC_CHANNEL, control, val)
 
     # -- núcleo del secuenciador (Player::Trigger del upstream) ----------------
 
@@ -1702,11 +1738,15 @@ class Engine:
                     self.midi_out.cc(mch, control, value)
                 # Banco de textos (control=2, ver __init__/lyric_lines): la
                 # letra se actualiza en local aunque no haya midi_out — no
-                # depende de si se está emitiendo por TCP.
+                # depende de si se está emitiendo por TCP. Encolada con
+                # LYRIC_DELAY_S: se aplica en render() cuando ese instante
+                # llegue a t+1, no ahora mismo (t=0).
                 if control == 2 and 0 <= value < len(self.lyric_lines):
                     line = self.lyric_lines[value]
                     if line.strip():
-                        self.current_lyric = line
+                        due = (self._samples_rendered
+                               + int(self.LYRIC_DELAY_S * self.sr))
+                        self._lyric_queue.append((due, line))
             elif cmd == "MDPG" and self.midi_out is not None:
                 self.midi_out.program_change(mch, param & 0x7F)
             elif cmd == "MVEL":

@@ -14,6 +14,7 @@
     "pot6": "5:metal",
     "pot8": "0:tempo"
   },
+  "pots_red": ["pot3", "pot7"],
   "pad_volume": {
     "1": 27,
     "2": 27,

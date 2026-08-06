@@ -16,6 +16,7 @@ from lgpt_engine import (
     Sample,
     TICKS_PER_STEP,
     SAMPLE_RATE,
+    NETCC_CHANNEL,
     parse_midi_instrument,
 )
 from lgpt_parser import LGPTProject
@@ -299,9 +300,26 @@ class TestMidiOut(unittest.TestCase):
             engine._process_tick()
         self.assertIn(("cc", 3, 74, 100), engine.midi_out.events)
 
+    def test_netcc(self):
+        # pots_red: no toca nada local (a diferencia de "cc"/"param"), solo
+        # reenvía por midi_out con el canal virtual NETCC_CHANNEL.
+        engine = self.make_midi_engine()
+        vol_antes = engine.channels[0].cc_vol
+        engine.push_event("netcc", 3, 90)
+        engine.render(512)
+        self.assertEqual(engine.midi_out.events, [("cc", NETCC_CHANNEL, 3, 90)])
+        self.assertEqual(engine.channels[0].cc_vol, vol_antes)
+
+    def _pasar_retardo_letra(self, engine):
+        """La letra se encola y se aplica en render(), no en el tick que la
+        dispara (ver Engine.LYRIC_DELAY_S) — hay que renderizar de sobra
+        para que el retardo termine de pasar."""
+        engine.render(int(engine.LYRIC_DELAY_S * SAMPLE_RATE) + SAMPLE_RATE)
+
     def test_mdcc_letra(self):
         # Banco de textos (control=2): la letra se actualiza en local
-        # aunque siga reenviándose el CC por midi_out como cualquier otro.
+        # (con retardo) aunque siga reenviándose el CC por midi_out ya
+        # mismo, como cualquier otro.
         engine = self.make_midi_engine()
         engine.lyric_lines = ["primera línea", "", "segunda línea"]
         note_row(engine.project, 0, note=60, instr=0x80)
@@ -309,8 +327,31 @@ class TestMidiOut(unittest.TestCase):
         engine.project.param1[1] = (2 << 8) | 0   # control=2, valor=0
         for _ in range(TICKS_PER_STEP + 1):
             engine._process_tick()
-        self.assertEqual(engine.current_lyric, "primera línea")
         self.assertIn(("cc", 3, 2, 0), engine.midi_out.events)
+        self.assertEqual(engine.current_lyric, "")   # todavía no, está encolada
+        self._pasar_retardo_letra(engine)
+        self.assertEqual(engine.current_lyric, "primera línea")
+
+    def test_mdcc_letra_desaparece_al_pasar_lyric_max_s(self):
+        # Cada palabra dura como mucho LYRIC_MAX_S en pantalla si no llega
+        # otra antes (si no, se quedaría hasta el siguiente MDCC, que puede
+        # tardar mucho más que la propia palabra cantada).
+        engine = self.make_midi_engine()
+        engine.lyric_lines = ["primera línea"]
+        note_row(engine.project, 0, note=60, instr=0x80)
+        engine.project.cmd1[1] = "MDCC"
+        engine.project.param1[1] = (2 << 8) | 0
+        for _ in range(TICKS_PER_STEP + 1):
+            engine._process_tick()
+        self._pasar_retardo_letra(engine)
+        self.assertEqual(engine.current_lyric, "primera línea")
+        # La canción sintética repite la phrase 0 en bucle: sin quitar el
+        # comando, un render tan largo puede volver a dispararlo y
+        # refrescar la caducidad. Se quita para comprobar solo el tope de
+        # tiempo, no un redisparo.
+        engine.project.cmd1[1] = "----"
+        engine.render(int(engine.LYRIC_MAX_S * SAMPLE_RATE) + SAMPLE_RATE)
+        self.assertEqual(engine.current_lyric, "")
 
     def test_mdcc_letra_valor_vacio_mantiene_la_anterior(self):
         engine = self.make_midi_engine()
@@ -321,6 +362,7 @@ class TestMidiOut(unittest.TestCase):
         engine.project.param1[1] = (2 << 8) | 1   # valor=1: línea vacía
         for _ in range(TICKS_PER_STEP + 1):
             engine._process_tick()
+        self._pasar_retardo_letra(engine)
         self.assertEqual(engine.current_lyric, "primera línea")
 
     def test_mdcc_letra_valor_fuera_de_rango_mantiene_la_anterior(self):
@@ -332,6 +374,7 @@ class TestMidiOut(unittest.TestCase):
         engine.project.param1[1] = (2 << 8) | 5   # valor=5, fuera de rango
         for _ in range(TICKS_PER_STEP + 1):
             engine._process_tick()
+        self._pasar_retardo_letra(engine)
         self.assertEqual(engine.current_lyric, "primera línea")
 
     def test_mdcc_otro_control_no_toca_la_letra(self):
@@ -345,8 +388,9 @@ class TestMidiOut(unittest.TestCase):
         engine.project.param1[1] = (81 << 8) | 1   # control=81, valor=1
         for _ in range(TICKS_PER_STEP + 1):
             engine._process_tick()
-        self.assertEqual(engine.current_lyric, "primera línea")
         self.assertIn(("cc", 3, 81, 1), engine.midi_out.events)
+        self._pasar_retardo_letra(engine)
+        self.assertEqual(engine.current_lyric, "primera línea")
 
     def test_mdpg(self):
         engine = self.make_midi_engine()

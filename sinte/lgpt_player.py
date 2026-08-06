@@ -33,6 +33,7 @@ import sys
 import threading
 import time
 import tomllib
+import unicodedata
 from pathlib import Path
 
 import numpy as np
@@ -391,15 +392,31 @@ def match_pot(pots: list, msg) -> tuple | None:
     return None
 
 
+def match_pot_red(pots_red: list, msg) -> int | None:
+    """Como `match_pot`, pero para pots configurados en `pots_red` (JSON de
+    la canción): no controlan nada local, solo se reenvían por red. Devuelve
+    el número de control con el que reenviar, o None."""
+    if msg.type != "control_change":
+        return None
+    for spec, control in pots_red:
+        mtype, ch, num = spec
+        if mtype == "control_change" and msg.channel == ch \
+                and msg.control == num:
+            return control
+    return None
+
+
 def open_midi_input(port_name: str | None, engine_ref: dict,
                     ui_queue: queue.SimpleQueue, buttons: dict,
-                    pots: dict):
+                    pots: dict, pots_red: list | None = None):
     """Abre el puerto MIDI de entrada: botones a la UI y pots/CC al engine.
 
     engine_ref es un dict mutable con la clave "engine": el callback MIDI
     siempre usa el engine actual, aunque se cambie de canción.
     Si hay pots configurados solo se procesan esos; si no, se usa el mapeo
     CC por defecto del engine (1/7/10/20).
+    pots_red (opcional): pots que no controlan nada local, solo se reenvían
+    por red (ver `pots_red` del JSON de la canción y `match_pot_red`).
     """
     if port_name == "off":
         return None
@@ -439,6 +456,7 @@ def open_midi_input(port_name: str | None, engine_ref: dict,
         if engine is None:
             return
         # pots: la lista se rellena por canción; se evalúa EN CADA mensaje
+        handled = False
         if pots:
             hit = match_pot(pots, msg)
             if hit is not None:
@@ -446,7 +464,13 @@ def open_midi_input(port_name: str | None, engine_ref: dict,
                 value = int(round(msg.value * scale))
                 for tch in chans:
                     engine.push_event("param", tch, tparam, value)
-        elif msg.type == "control_change":
+                handled = True
+        if pots_red:
+            control = match_pot_red(pots_red, msg)
+            if control is not None:
+                engine.push_event("netcc", control, msg.value)
+                handled = True
+        if not handled and not pots and msg.type == "control_change":
             engine.push_event("cc", msg.channel % 8, msg.control, msg.value)
 
     port = mido.open_input(chosen, callback=on_message)
@@ -570,6 +594,14 @@ def big_text_half(scr, y: int, x: int, text: str, attr):
                 px = x + i * 4 + c
                 if 0 <= px < w - 1:
                     scr.addstr(py, px, cell, attr)
+
+
+def lyric_glyph_text(text: str) -> str:
+    """Adapta una línea de letra a la microfuente 3x5 (solo A-Z/0-9/-/.):
+    mayúsculas y sin tildes (á->A, ñ->N...), para no dejar huecos en blanco
+    por caracteres que el glifo no tiene."""
+    decomposed = unicodedata.normalize("NFKD", text.upper())
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
 
 
 def display_name(dirname: str) -> str:
@@ -765,6 +797,23 @@ class Player:
             if not 0 <= idx < 8:
                 continue
             self.args.pots.append((spec, target, idx))
+        # pots que solo se reenvían por red (ver NETCC_CHANNEL en el engine):
+        # una lista de nombres de pot, no un dict target -> el control de red
+        # es el propio número de pot ("pot3" -> reenvía como control 3).
+        song_pots_red = set(song_cfg.get("pots_red", []))
+        self.args.pots_red.clear()
+        for key in song_pots_red:
+            entry = self.args.hw_pots.get(key)
+            if not isinstance(entry, dict):
+                continue
+            spec = parse_button_spec(entry.get("cc", ""))
+            if spec is None:
+                continue
+            try:
+                control = int(key[3:])     # "pot3" -> 3
+            except ValueError:
+                continue
+            self.args.pots_red.append((spec, control))
 
     # -- UI curses --------------------------------------------------------------
 
@@ -820,7 +869,7 @@ class Player:
         elif available:
             new_port = open_midi_input(
                 self.args.midi, self.engine_ref, self.ui_queue, self.buttons,
-                self.args.pots)
+                self.args.pots, self.args.pots_red)
             if new_port is not None:
                 self.midi_in = new_port
                 self._set_notice("MIDI reconectado")
@@ -932,8 +981,18 @@ class Player:
                          f"{pct * 100:5.1f}%"[:w - 2],
                    curses.color_pair(3))
         if engine.current_lyric:
-            scr.addstr(4, 1, engine.current_lyric[:w - 2],
-                       curses.color_pair(1) | curses.A_BOLD)
+            # Bloque completo (█), no medio-bloque (▀▄): la consola de la Pi
+            # (15x50, fuente de consola básica) no tiene esos glifos y salía
+            # distorsionada. Centrada en el hueco libre entre el BPM (fila 2)
+            # y el aviso de teclas (fila h-2).
+            lyric = lyric_glyph_text(engine.current_lyric)
+            lyric_w = max(0, len(lyric) * 4 - 1)
+            lyric_h = 5
+            x = max(0, (w - lyric_w) // 2)
+            top, bottom = 3, h - 3
+            y = top + max(0, (bottom - top + 1 - lyric_h) // 2)
+            big_text(scr, y, x, lyric, 1,
+                     curses.color_pair(1) | curses.A_BOLD)
         scr.addstr(h - 1, 1,
                    "espacio: pausa  n/p: canción  q: lista"[:w - 2],
                    curses.color_pair(3))
@@ -1358,7 +1417,7 @@ class Player:
         self.engine_ref["raw_queue"] = queue.SimpleQueue()
         self.midi_in = open_midi_input(
             self.args.midi, self.engine_ref, self.ui_queue, self.buttons,
-            self.args.pots)
+            self.args.pots, self.args.pots_red)
         if self.args.record:
             self.recorder = WavRecorder(self.args.record, self.args.samplerate)
             print(f"[audio] grabando salida en {self.args.record}")
@@ -1455,6 +1514,7 @@ def main():
     }
     args.hw_pots = cfg.get("pots", {})     # mapeo físico global (CC por knob)
     args.pots = []                          # targets (se arman por canción)
+    args.pots_red = []                      # pots reenviados por red (idem)
     args.mute = cfg.get("channels", {}).get("mute", [])
     wd = audio_cfg.get("wavs_dir") or None
     if wd:                                   # relativo -> junto al programa
