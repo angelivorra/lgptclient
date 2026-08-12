@@ -1,0 +1,20 @@
+# ROBOTRACKER — mapeo gamepad → teclado (gptokeyb) para la Odin 2.
+# dpad = cursor, A = play/pausa, B = borrar celda, X = siguiente columna,
+# Y = nueva chain/phrase (Insert), L1/R1 = salto de página,
+# L2/R2 = valor −/+ (cicla chains/phrases/instr/notas; en celda vacía
+# R2 crea), start = phrase, back = song, guide = chain.
+up = up
+down = down
+left = left
+right = right
+a = space
+b = delete
+x = tab
+y = insert
+l1 = pageup
+r1 = pagedown
+l2 = f1
+r2 = f2
+start = f5
+back = f3
+guide = f4

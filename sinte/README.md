@@ -21,6 +21,8 @@ del proyecto.
   [CLAUDE.md](../CLAUDE.md)).
 - `lgpt_setup.py` — asistente de configuración por terminal (opcional).
 - `lgpt_parser.py` — parser de `lgptsav.dat` (XML plano o comprimido LZ77).
+- `lgpt_writer.py` — writer de `lgptsav.dat` (XML plano, backup `.bak`);
+  lo usa robotracker para guardar.
 - `lgpt_engine.py` — motor de audio puro (numpy): voces, secuenciador,
   mixer. Sin dependencia de tarjeta de audio (testable headless).
 - `lgpt_player.py` — reproductor: UI curses retro (estética Pip-Boy),

@@ -1096,8 +1096,9 @@ class Engine:
 
     # -- transporte ---------------------------------------------------------
 
-    def start(self):
-        """(Re)inicia la canción desde el principio."""
+    def start(self, from_row: int = 0):
+        """(Re)inicia la canción. Con `from_row` arranca en esa fila de la
+        song (play desde el cursor, estilo Piggy); 0 = desde el principio."""
         for ch in self.channels:
             ch.playing = False
             ch.voice = None
@@ -1113,7 +1114,7 @@ class Engine:
             ch.groove = 0
             ch.g_pos = 0
             ch.g_ticks = self._groove_len(0, 0)
-            for pos in range(256):
+            for pos in range(max(0, min(from_row, 255)), 256):
                 if self._is_playable(pos, ch.idx):
                     ch.playing = True
                     self._set_song_pos(ch, pos, 0, -1)
