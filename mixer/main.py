@@ -3,27 +3,39 @@
 
 App Kivy standalone: no hay servidor ni red; `backend.MixerBackend` crea el
 Player de sinte en este proceso (misma carga de canciones, mismo
-robotraca.json, misma salida de audio) y la UI lo conduce. Sirve para
-probar y configurar cada canción: lista + play/stop, mute/vocoder/presence
-por canal, efectos por canal, knobs asignables, pads y master; Guardar
-escribe el robotraca.json.
+robotraca.json, misma salida de audio, mismo controlador MIDI físico) y la
+UI lo conduce. Sirve para probar y configurar cada canción: lista de
+canciones, mute/vocoder/presence por canal, a qué apunta cada knob y
+master; Guardar escribe el robotraca.json. El campo "fx" del JSON (niveles
+de efecto por canal) ya no se edita desde el mixer, pero se conserva al
+guardar; en su lugar hay un único osciloscopio de la mezcla final
+(`MixScope`).
 
-Lo que PERSISTE en el modelo (toggles, FX, MASTER, POT, SAVE) se
-re-sincroniza entero con `get_config()` tras arrancar, tras cambiar de
-canción y tras guardar: la UI no guarda estado propio de la config, el
-backend es la fuente de verdad. Lo que es solo en vivo (VOL/PAN/PARAM/
-NETCC/PAD) se manda sin más.
+Sin controles en vivo duplicados: el transporte (canción anterior/
+siguiente, play/pausa, stop) y los pads de WAV los dispara el controlador
+MIDI físico exactamente igual que en el player real (mismos botones del
+TOML, ver `lgpt_player.open_midi_input`); el mixer solo traduce las
+acciones de transporte que llegan por `Player.ui_queue` a las mismas
+llamadas de `MixerBackend` (ver `_bucle`/`_boton_fisico`). Los knobs
+físicos ya escriben en el engine en vivo por su cuenta (vía
+`args.pots`/`match_pot`, configurado por knob con `on_knob_param`/
+`on_knob_canal`); el mixer no necesita reenviar nada de eso.
+
+Lo que PERSISTE en el modelo (toggles, MASTER, POT, SAVE) se re-sincroniza
+entero con `get_config()` tras arrancar, tras cambiar de canción y tras
+guardar: la UI no guarda estado propio de la config, el backend es la
+fuente de verdad.
 
 Arquitectura: un único hilo trabajador ejecuta las llamadas al backend en
-orden (cola FIFO) y sondea `state()` cada ~250 ms; los resultados llegan a
-la UI por `Clock.schedule_once`. Los widgets nunca tocan el engine y el
-hilo nunca toca widgets. La flag `_syncing` evita reenviar comandos
-mientras la UI se actualiza con datos que vienen del backend.
+orden (cola FIFO), sondea `state()` cada ~250 ms y drena los botones
+físicos pendientes (`drain_buttons()`); los resultados llegan a la UI por
+`Clock.schedule_once`. Los widgets nunca tocan el engine y el hilo nunca
+toca widgets. La flag `_syncing` evita reenviar comandos mientras la UI se
+actualiza con datos que vienen del backend.
 """
 
 from __future__ import annotations
 
-import math
 import os
 import queue
 import threading
@@ -34,12 +46,11 @@ Config.set("graphics", "height", "900")
 
 from kivy.app import App
 from kivy.clock import Clock
-from kivy.graphics import Color, Ellipse, Line
+from kivy.graphics import Color, Line, Rectangle
 from kivy.lang import Builder
 from kivy.properties import (BooleanProperty, ListProperty, NumericProperty,
                              StringProperty)
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.label import Label
 from kivy.uix.slider import Slider
 from kivy.uix.widget import Widget
 
@@ -53,11 +64,14 @@ KV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 # vivos de EFFECT_PRESETS): los que entiende Engine._apply_param.
 PARAMS_EXTRA = ["tempo", "volume", "pan", "pitch", "cutoff"]
 
-# Color del knob según su modo: target = verde, red = ámbar, off = gris.
-KNOB_COLORES = {
-    "target": (0.35, 0.9, 0.4, 1),
-    "red": (0.95, 0.65, 0.15, 1),
-    "off": (0.45, 0.45, 0.5, 1),
+# Botón físico (acción de Player.ui_queue) -> método de MixerApp. Mismo
+# significado que en el player real (lgpt_player._poll_buttons, contexto
+# "song"): anterior/siguiente canción, play/pausa, stop.
+BOTONES_FISICOS = {
+    "up": "pad_anterior",
+    "down": "pad_siguiente",
+    "play": "_toggle_play",
+    "stop": "stop",
 }
 
 
@@ -84,123 +98,50 @@ class ReleaseSlider(Slider):
         pass
 
 
-class Knob(Widget):
-    """Knob circular: arrastre vertical recorre 0-127 en 270°.
+class MixScope(Widget):
+    """Osciloscopio de la mezcla final: traza la forma de onda reciente.
 
-    Se dibuja entero en canvas (sombra, cuerpo, bisel, arco de recorrido,
-    arco de valor en el color del modo, marcas y puntero): hay que
-    redibujar al mover o al cambiar tamaño/posición. No envía nada por sí
-    mismo: la app escucha `on_value` en el kv y decide qué comando mandar
-    según el target configurado (off/red/canales:param).
+    `values`: muestras (-1..1) de la mezcla final, más viejo primero, que
+    MixerApp actualiza desde `state()` (engine.scope_snapshot()) en cada
+    sondeo del hilo trabajador.
     """
-    value = NumericProperty(0)
-    modo = StringProperty("off")  # off | red | target
-
-    # el 0 está abajo a la izquierda y el 127 abajo a la derecha
-    A_MIN, A_MAX = -135.0, 135.0
+    values = ListProperty([])
 
     def __init__(self, **kw):
         super().__init__(**kw)
-        self.bind(pos=self._redraw, size=self._redraw,
-                  value=self._redraw, modo=self._redraw)
-
-    def on_value(self, *_):
-        self.value = max(0, min(127, int(round(self.value))))
-
-    @staticmethod
-    def _arco(cx, cy, r, a0, a1, paso=4.0):
-        """Puntos de un arco de a0 a a1 grados (0 = derecha, antihorario)."""
-        if a1 < a0:
-            a1 = a0
-        n = max(2, int((a1 - a0) / paso) + 1)
-        pts = []
-        for i in range(n + 1):
-            a = math.radians(a0 + (a1 - a0) * i / n)
-            pts += [cx + math.cos(a) * r, cy + math.sin(a) * r]
-        return pts
+        self.bind(pos=self._redraw, size=self._redraw, values=self._redraw)
 
     def _redraw(self, *_):
         self.canvas.clear()
         if self.width < 10 or self.height < 10:
             return
-        cx, cy = self.center
-        r = min(self.width, self.height) / 2 - 4
-        color = KNOB_COLORES.get(self.modo, KNOB_COLORES["off"])
-        # Sentido de las agujas del reloj: el 0 abajo a la izquierda y el
-        # 127 abajo a la derecha, subiendo por arriba. En canvas los ángulos
-        # crecen antihorarios, así que al subir el valor el ángulo DECRECE:
-        # -135° -> -180°(izq) -> -270°(arriba) -> -360°(dcha) -> -405°.
-        av = self.A_MIN - (self.value / 127.0) * (self.A_MAX - self.A_MIN)
+        mid_y = self.y + self.height / 2
         with self.canvas:
-            # sombra
-            Color(0, 0, 0, 0.45)
-            Ellipse(pos=(cx - r + 2, cy - r - 3), size=(2 * r, 2 * r))
-            # cuerpo
-            Color(0.15, 0.15, 0.17, 1)
-            Ellipse(pos=(cx - r, cy - r), size=(2 * r, 2 * r))
-            # bisel exterior
-            Color(0.30, 0.30, 0.34, 1)
-            Line(circle=(cx, cy, r), width=1.6)
-            # arco de recorrido (gris), por arriba
-            Color(0.32, 0.32, 0.36, 1)
-            Line(points=self._arco(cx, cy, r - 4,
-                                   self.A_MIN - 270, self.A_MIN),
-                 width=3.2, cap="round")
-            # arco de valor (color del modo): del 0 a la posición actual
-            if self.value > 0:
-                Color(*color)
-                Line(points=self._arco(cx, cy, r - 4, av, self.A_MIN),
-                     width=3.2, cap="round")
-            # marcas cada 45° por el arco de arriba
-            Color(0.55, 0.55, 0.6, 1)
-            for k in range(7):
-                ar = math.radians(self.A_MIN - k * 45)
-                Line(points=[cx + math.cos(ar) * (r + 1),
-                             cy + math.sin(ar) * (r + 1),
-                             cx + math.cos(ar) * (r - 3),
-                             cy + math.sin(ar) * (r - 3)], width=1.1)
-            # puntero
-            ar = math.radians(av)
-            Color(*color)
-            Line(points=[cx + math.cos(ar) * r * 0.30,
-                         cy + math.sin(ar) * r * 0.30,
-                         cx + math.cos(ar) * r * 0.78,
-                         cy + math.sin(ar) * r * 0.78],
-                 width=2.6, cap="round")
-            # tapa central
-            Color(0.22, 0.22, 0.25, 1)
-            Ellipse(pos=(cx - r * 0.28, cy - r * 0.28),
-                    size=(r * 0.56, r * 0.56))
-
-    def on_touch_down(self, touch):
-        if self.collide_point(*touch.pos):
-            touch.grab(self)
-            self._y0 = touch.y
-            self._v0 = self.value
-            return True
-        return super().on_touch_down(touch)
-
-    def on_touch_move(self, touch):
-        if touch.grab_current is self:
-            # 150 px de arrastre = recorrido completo
-            self.value = self._v0 + (touch.y - self._y0) * 127.0 / 150.0
-            return True
-        return super().on_touch_move(touch)
-
-    def on_touch_up(self, touch):
-        if touch.grab_current is self:
-            touch.ungrab(self)
-            return True
-        return super().on_touch_up(touch)
+            Color(0.09, 0.1, 0.1, 1)
+            Rectangle(pos=self.pos, size=self.size)
+            Color(0.24, 0.24, 0.27, 1)
+            Line(points=[self.x, mid_y, self.x + self.width, mid_y],
+                 width=1)
+            vals = self.values
+            if len(vals) < 2:
+                return
+            step = self.width / (len(vals) - 1)
+            half_h = self.height / 2 - 2
+            pts = []
+            for i, v in enumerate(vals):
+                pts += [self.x + i * step,
+                        mid_y + max(-1.0, min(1.0, v)) * half_h]
+            Color(0.3, 0.9, 0.45, 1)
+            Line(points=pts, width=1.4)
 
 
 class ChannelStrip(BoxLayout):
-    """Strip de un canal tracker (0-7): toggles M/V/P y sliders de efectos.
+    """Strip de un canal tracker (0-7): toggles M/V/P.
 
-    Los sliders de efectos se construyen en Python (MixerApp._construir_fx)
-    a partir de la lista viva `EFFECT_PRESETS` del engine: si el player
-    gana un efecto nuevo, aparece aquí solo. Se guardan en `fx_sliders`
-    ({nombre: slider}) para sincronizarlos con la config.
+    El área que antes ocupaban los sliders de efectos por canal ahora la
+    cubre el osciloscopio único de mezcla (`MixScope`, en `MixerRoot`): los
+    niveles de efecto ya guardados en el robotraca.json (campo "fx") se
+    conservan al guardar, pero el mixer ya no los edita.
     """
     canal = NumericProperty(0)
     posicion = StringProperty("-")
@@ -227,8 +168,6 @@ class MixerRoot(BoxLayout):
 
 
 class MixerApp(App):
-    pads_count = NumericProperty(0)
-
     def __init__(self, **kw):
         super().__init__(**kw)
         self.backend: MixerBackend | None = None
@@ -278,7 +217,6 @@ class MixerApp(App):
         canciones, cfg, efectos = res
         self._efectos = efectos
         self._canciones = canciones.get("songs", [])
-        self._construir_fx()
         self._syncing = True
         try:
             sp = self.root.ids.spinner_canciones
@@ -296,29 +234,11 @@ class MixerApp(App):
         self._aplicar_config(cfg)
         self._aviso(f"{len(self._canciones)} canciones")
 
-    def _construir_fx(self):
-        """Un slider por efecto y canal, según la lista viva del engine."""
-        for strip in self._strips():
-            box = strip.ids.fx_box
-            box.clear_widgets()
-            strip.fx_sliders = {}
-            for name in self._efectos:
-                col = BoxLayout(orientation="vertical", spacing=1)
-                col.add_widget(Label(text=name[:3].upper(), font_size="8sp",
-                                     size_hint_y=None, height=11,
-                                     color=(0.6, 0.6, 0.65, 1)))
-                sl = ReleaseSlider(orientation="vertical", min=0, max=100,
-                                   value=0)
-                sl.bind(on_release=lambda s, c=strip.canal, n=name:
-                        self.on_fx(c, n, int(s.value)))
-                col.add_widget(sl)
-                box.add_widget(col)
-                strip.fx_sliders[name] = sl
-
     # -- hilo trabajador ------------------------------------------------------
 
     def _bucle(self):
-        """Ejecuta la cola de llamadas al backend y sondea state()."""
+        """Ejecuta la cola de llamadas al backend, sondea state() y drena
+        los botones físicos pendientes (transporte del controlador MIDI)."""
         while not self._fin.is_set():
             try:
                 self._cola.get(timeout=POLL_SECONDS)()
@@ -326,6 +246,8 @@ class MixerApp(App):
                 pass
             if self._fin.is_set() or self.backend is None:
                 continue
+            for accion in self.backend.drain_buttons():
+                self._boton_fisico(accion)
             try:
                 estado = self.backend.state()
             except Exception as exc:
@@ -333,6 +255,13 @@ class MixerApp(App):
                                     self._aviso(f"state: {e}"))
                 continue
             Clock.schedule_once(lambda dt, e=estado: self._aplicar_state(e))
+
+    def _boton_fisico(self, accion):
+        """Traduce un botón del controlador MIDI (up/down/play/stop) a la
+        misma acción que tendría en el player real (ver BOTONES_FISICOS)."""
+        metodo = BOTONES_FISICOS.get(accion)
+        if metodo is not None:
+            getattr(self, metodo)()
 
     def _enviar(self, tarea, on_result=None):
         """Encola una llamada al backend; el resultado vuelve a la UI."""
@@ -380,28 +309,21 @@ class MixerApp(App):
             self._aviso(f"canción: {self._canciones[i]}")
         self._enviar(tarea, fin)
 
-    def play(self):
-        self._comando_simple(lambda: self.backend.play(), "PLAY")
-
-    def pause(self):
-        self._comando_simple(lambda: self.backend.pause(), "PAUSE")
-
     def stop(self):
         self._comando_simple(lambda: self.backend.stop(), "STOP")
 
-    # Pads de transporte (como los botones del player curses)
-    def pad_play(self):
-        self.play()
-
-    def pad_stop(self):
-        self.stop()
+    def _toggle_play(self):
+        """Botón físico "play": play/pausa, como en el player real."""
+        self._comando_simple(lambda: self.backend.toggle_play(), "PLAY")
 
     def pad_siguiente(self):
+        """Botón físico "down": canción siguiente, como en el player real."""
         if self._listo() and self._canciones:
             self._seleccionar_indice(
                 (self._song_idx + 1) % len(self._canciones))
 
     def pad_anterior(self):
+        """Botón físico "up": canción anterior, como en el player real."""
         if self._listo() and self._canciones:
             self._seleccionar_indice(
                 (self._song_idx - 1) % len(self._canciones))
@@ -431,40 +353,9 @@ class MixerApp(App):
         self._enviar(lambda: self.backend.set_presence(canal, on),
                      lambda r: self._check(r, "PRESENCE"))
 
-    def on_fx(self, canal, preset, pct):
-        if not self._listo():
-            return
-        val = round(pct * 127 / 100)
-        self._enviar(lambda: self.backend.set_fx(canal, preset, val),
-                     lambda r: self._check(r, "FX"))
-
-    # -- knobs ----------------------------------------------------------------
-
-    def on_knob(self, n, val):
-        """Giro del knob n (1-8): en vivo, sin persistir.
-
-        red -> NETCC (reenvío por red); con param y canales -> PARAM por
-        cada canal seleccionado; off o sin canales -> nada.
-        """
-        if not self._listo():
-            return
-        kw = self._knob_widget(n)
-        if kw is None:
-            return
-        if kw.param == "off":
-            return
-        if kw.param == "red":
-            self._enviar(lambda: self.backend.netcc(n, val))
-            return
-        if not kw.canales:
-            return
-
-        def tarea():
-            r = "OK"
-            for ch in kw.canales:
-                r = self.backend.param(ch, kw.param, val)
-            return r
-        self._enviar(tarea)
+    # -- knobs: solo configuración de a qué apunta cada uno en la canción ----
+    # (el valor en vivo lo manda el pot físico directo al engine, ver
+    # lgpt_player.open_midi_input/match_pot/match_pot_red).
 
     def on_knob_param(self, n, param):
         """Cambia qué aplica el knob (spinner): off / red / efecto."""
@@ -501,14 +392,6 @@ class MixerApp(App):
             "red" if spec == "red" else "target")
         self._enviar(lambda: self.backend.set_pot(n, spec),
                      lambda r: self._check(r, f"POT{n}"))
-
-    # -- pads -----------------------------------------------------------------
-
-    def pad(self, n):
-        if self.backend is None:
-            return
-        self._enviar(lambda: self.backend.pad(n),
-                     lambda r: self._check(r, "PAD"))
 
     # -- barra inferior -------------------------------------------------------
 
@@ -558,15 +441,11 @@ class MixerApp(App):
             mute = set(cfg.get("mute", []))
             voc = set(cfg.get("vocoder", []))
             pres = set(cfg.get("presence", []))
-            fx = cfg.get("fx", {})
             for strip in self._strips():
                 c = strip.canal
                 strip.mute = c in mute
                 strip.voc = c in voc
                 strip.pres = c in pres
-                fx_c = fx.get(str(c), {}) if isinstance(fx, dict) else {}
-                for name, sl in getattr(strip, "fx_sliders", {}).items():
-                    sl.value = fx_c.get(name, 0)
             master = cfg.get("master", 100)
             try:
                 master = max(0, min(200, int(master)))
@@ -595,7 +474,7 @@ class MixerApp(App):
             self._syncing = False
 
     def _aplicar_state(self, e):
-        """Datos vivos del engine: transporte, BPM, posiciones y pads."""
+        """Datos vivos del engine: transporte, BPM, posiciones y mezcla."""
         self._song_idx = e.get("song", self._song_idx)
         lbl = self.root.ids.lbl_playing
         if e.get("playing"):
@@ -610,7 +489,7 @@ class MixerApp(App):
         for strip in self._strips():
             c = strip.canal
             strip.posicion = str(pos[c]) if c < len(pos) else "-"
-        self.pads_count = e.get("pads") or 0
+        self.root.ids.scope.values = e.get("scope") or []
 
     # -- utilidades ------------------------------------------------------------
 

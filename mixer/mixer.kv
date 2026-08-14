@@ -4,10 +4,13 @@
 # acentos verde/ámbar). Toda la UI en español. Los handlers llaman a
 # métodos de MixerApp, que encolan llamadas al backend (engine de sinte
 # en este proceso) en el hilo trabajador.
-# La zona inferior imita al LPD8: pads a la izquierda en dos filas (los 4
-# de la izquierda son transporte: anterior/siguiente/play/stop; los otros
-# 4 disparan los WAV de sinte/wavs) y knobs a la derecha en dos filas.
-# El Knob se dibuja en Python (ver main.py), aquí no lleva canvas.
+# Sin interacción en vivo duplicada: transporte (up/down/play/stop) y
+# pads de WAV los dispara el controlador MIDI físico, igual que en el
+# player real (ver MixerApp._bucle/_boton_fisico). Los knobs también se
+# giran en el controlador; aquí solo se configura a qué canal/efecto
+# apunta cada uno en la canción (persiste en "pots" del robotraca.json).
+# El osciloscopio de mezcla se dibuja en Python (ver main.py), aquí no
+# lleva canvas propio.
 
 <ChannelStrip>:
     orientation: "vertical"
@@ -61,11 +64,6 @@
             background_down: ""
             background_color: (0.3, 0.75, 0.35, 1) if self.state == "down" else (0.25, 0.25, 0.28, 1)
             on_state: app.on_presence(root.canal, self.state == "down")
-    # sliders de efectos: se construyen en Python desde EFFECT_PRESETS
-    # (MixerApp._construir_fx), así un efecto nuevo del player aparece solo
-    BoxLayout:
-        id: fx_box
-        spacing: 1
 
 <KnobWidget>:
     orientation: "vertical"
@@ -77,27 +75,19 @@
         bold: True
         font_size: '12sp'
         color: 0.85, 0.85, 0.85, 1
-    Knob:
-        id: knob
-        modo: root.modo
-        on_value: app.on_knob(root.knob_n, int(self.value))
-    Label:
-        text: str(int(knob.value))
-        size_hint_y: None
-        height: 13
-        font_size: '10sp'
-        color: 0.6, 0.6, 0.65, 1
-    # qué aplica el knob: off / red / efecto o parámetro (valores los
-    # rellena la app con la lista viva de efectos del engine)
+    # Solo configuración: a qué apunta este pot físico en la canción
+    # (off / red / efecto o parámetro). El valor en vivo lo pone el knob
+    # físico directamente sobre el engine; el color indica el modo
+    # resultante (gris=off, ámbar=red, verde=target).
     Spinner:
         id: param_spinner
         text: root.param
         values: ["off", "red"]
         size_hint_y: None
-        height: 24
+        height: 26
         font_size: '11sp'
         background_normal: ""
-        background_color: 0.2, 0.2, 0.23, 1
+        background_color: (0.3, 0.75, 0.35, 1) if root.modo == "target" else ((0.85, 0.6, 0.12, 1) if root.modo == "red" else (0.2, 0.2, 0.23, 1))
         on_text: app.on_knob_param(root.knob_n, self.text)
     # a qué canales afecta (1-8)
     GridLayout:
@@ -170,22 +160,6 @@
             background_color: (0.3, 0.55, 0.8, 1) if self.state == "down" else (0.22, 0.22, 0.25, 1)
             on_state: app.on_knob_canal(root.knob_n, 7, self.state == "down")
 
-<PadTransporte@Button>:
-    font_size: '14sp'
-    bold: True
-    background_normal: ""
-    background_color: 0.24, 0.24, 0.28, 1
-
-<PadWav@Button>:
-    n: 1
-    text: "WAV " + str(self.n)
-    font_size: '14sp'
-    bold: True
-    background_normal: ""
-    disabled: self.n > app.pads_count
-    background_color: (0.2, 0.45, 0.3, 1) if not self.disabled else (0.16, 0.16, 0.18, 1)
-    on_release: app.pad(self.n)
-
 <MixerRoot>:
     orientation: "vertical"
     padding: 6
@@ -197,7 +171,9 @@
             pos: self.pos
             size: self.size
 
-    # -- barra superior: título, canciones y transporte ----------------------
+    # -- barra superior: título, canciones y estado de transporte ------------
+    # Sin botones Play/Pausa/Stop: el transporte lo maneja el controlador
+    # MIDI físico (up/down/play/stop), igual que en el player real.
     BoxLayout:
         size_hint_y: None
         height: 40
@@ -214,24 +190,6 @@
             text: "— canciones —"
             background_color: 0.25, 0.25, 0.28, 1
             on_text: app.seleccionar_cancion(self.text)
-        Button:
-            text: "Play"
-            size_hint_x: None
-            width: 65
-            background_color: 0.2, 0.5, 0.3, 1
-            on_release: app.play()
-        Button:
-            text: "Pausa"
-            size_hint_x: None
-            width: 65
-            background_color: 0.65, 0.5, 0.12, 1
-            on_release: app.pause()
-        Button:
-            text: "Stop"
-            size_hint_x: None
-            width: 65
-            background_color: 0.55, 0.2, 0.2, 1
-            on_release: app.stop()
         Label:
             id: lbl_playing
             text: "PARADA"
@@ -253,9 +211,11 @@
             width: 85
             color: 0.5, 0.9, 0.55, 1
 
-    # -- fila central: 8 channel strips --------------------------------------
+    # -- fila central: 8 channel strips (altura fija: solo nombre/pos/M-V-P) --
     BoxLayout:
         id: strips
+        size_hint_y: None
+        height: 90
         spacing: 4
         ChannelStrip:
             canal: 0
@@ -274,87 +234,54 @@
         ChannelStrip:
             canal: 7
 
-    # -- zona inferior: pads (izquierda) y knobs (derecha), dos filas -------
+    # -- osciloscopio de la mezcla final (ocupa el hueco que dejan los strips) -
     BoxLayout:
-        size_hint_y: None
-        height: 400
+        size_hint_y: 1
         spacing: 6
-
-        # Pads 2x4: los 4 de la izquierda son transporte (como los botones
-        # del player), los 4 de la derecha disparan los WAV de sinte/wavs
-        BoxLayout:
-            orientation: "vertical"
+        Label:
+            text: "MEZCLA"
             size_hint_x: None
-            width: 420
-            spacing: 2
-            Label:
-                text: "PADS"
-                size_hint_y: None
-                height: 16
-                font_size: '11sp'
-                bold: True
-                color: 0.55, 0.55, 0.6, 1
-            GridLayout:
-                cols: 4
-                spacing: 4
-                padding: 2
-                PadTransporte:
-                    text: "|< ANT"
-                    background_color: 0.25, 0.3, 0.45, 1
-                    on_release: app.pad_anterior()
-                PadTransporte:
-                    text: "SIG >|"
-                    background_color: 0.25, 0.3, 0.45, 1
-                    on_release: app.pad_siguiente()
-                PadWav:
-                    n: 1
-                PadWav:
-                    n: 2
-                PadTransporte:
-                    text: "> PLAY"
-                    background_color: 0.2, 0.5, 0.3, 1
-                    on_release: app.pad_play()
-                PadTransporte:
-                    text: "[] STOP"
-                    background_color: 0.55, 0.2, 0.2, 1
-                    on_release: app.pad_stop()
-                PadWav:
-                    n: 3
-                PadWav:
-                    n: 4
+            width: 70
+            font_size: '11sp'
+            bold: True
+            color: 0.55, 0.55, 0.6, 1
+        MixScope:
+            id: scope
 
-        # Knobs 2x4
-        BoxLayout:
-            orientation: "vertical"
-            spacing: 2
-            Label:
-                text: "KNOBS"
-                size_hint_y: None
-                height: 16
-                font_size: '11sp'
-                bold: True
-                color: 0.55, 0.55, 0.6, 1
-            GridLayout:
-                id: knobs
-                cols: 4
-                spacing: 4
-                padding: 2
-                KnobWidget:
-                    knob_n: 1
-                KnobWidget:
-                    knob_n: 2
-                KnobWidget:
-                    knob_n: 3
-                KnobWidget:
-                    knob_n: 4
-                KnobWidget:
-                    knob_n: 5
-                KnobWidget:
-                    knob_n: 6
-                KnobWidget:
-                    knob_n: 7
-                KnobWidget:
-                    knob_n: 8
+    # -- zona inferior: solo configuración de knobs (target por canción) ----
+    BoxLayout:
+        orientation: "vertical"
+        size_hint_y: None
+        height: 170
+        spacing: 2
+        Label:
+            text: "KNOBS (target por canción; el valor en vivo lo pone el controlador físico)"
+            size_hint_y: None
+            height: 16
+            font_size: '11sp'
+            bold: True
+            color: 0.55, 0.55, 0.6, 1
+        GridLayout:
+            id: knobs
+            cols: 4
+            spacing: 4
+            padding: 2
+            KnobWidget:
+                knob_n: 1
+            KnobWidget:
+                knob_n: 2
+            KnobWidget:
+                knob_n: 3
+            KnobWidget:
+                knob_n: 4
+            KnobWidget:
+                knob_n: 5
+            KnobWidget:
+                knob_n: 6
+            KnobWidget:
+                knob_n: 7
+            KnobWidget:
+                knob_n: 8
 
     # -- barra inferior: master, guardar/recargar y estado -------------------
     BoxLayout:

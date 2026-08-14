@@ -11,8 +11,12 @@ guardar el resultado en el robotraca.json de la canción.
 Se reutiliza todo lo del player: la carga de canciones (`_load_song`, que
 ya aplica el robotraca.json al arrancar el engine), los targets de los
 knobs (`args.pots`/`args.pots_red`, los mismos que leen los pots físicos)
-y la entrada MIDI del controlador, si está enchufado (los knobs físicos
-funcionan igual que en la Pi).
+y la entrada MIDI del controlador, si está enchufado (los knobs y los
+botones de transporte físicos funcionan igual que en la Pi). Los botones
+de transporte (up/down/play/stop, `[buttons]` del TOML) no controlan nada
+por sí solos: `lgpt_player.open_midi_input` los deja en `Player.ui_queue`,
+y es `drain_buttons()` quien los expone para que el mixer los traduzca a
+las mismas acciones que el player real (ver `MixerApp._boton_fisico`).
 
 Los cambios en vivo entran al engine por `Engine.push_event`, thread-safe
 con el callback de audio. Lo que PERSISTE en el robotraca.json (mute,
@@ -28,6 +32,7 @@ que la UI enseñe el resultado tal cual.
 from __future__ import annotations
 
 import json
+import queue
 import sys
 import threading
 import tomllib
@@ -113,7 +118,8 @@ class MixerBackend:
             stream=None,
             midi=midi_cfg.get("input", "") if midi else "off",
             midi_out="",
-            buttons={},
+            buttons={action: parse_button_spec(spec)
+                     for action, spec in cfg.get("buttons", {}).items()},
             hw_pots=cfg.get("pots", {}),
             pots=[],                       # targets (se arman por canción)
             pots_red=[],
@@ -217,6 +223,7 @@ class MixerBackend:
             "fx": {},
             "master": 100,
             "pads": 0,
+            "scope": [],
         }
         if engine is not None:
             state.update({
@@ -236,6 +243,7 @@ class MixerBackend:
                 "master": round(100 * engine.master / engine.base_master)
                 if engine.base_master else 100,
                 "pads": len(engine.pad_samples),
+                "scope": engine.scope_snapshot(),
             })
         return state
 
@@ -273,6 +281,30 @@ class MixerBackend:
 
     def stop(self) -> str:
         return self._transport("stop")
+
+    def toggle_play(self) -> str:
+        """Botón físico "play": alterna play/pausa, como en el player
+        real (lgpt_player._poll_buttons, contexto "song")."""
+        engine = self._engine()
+        if engine is None:
+            return "ERR,no hay canción cargada"
+        engine.push_event("pause" if engine.playing else "play")
+        return "OK"
+
+    def drain_buttons(self) -> list[str]:
+        """Acciones de botones físicos pendientes ("up"/"down"/"play"/
+        "stop", ver `[buttons]` del TOML): `open_midi_input` las deja en
+        `Player.ui_queue` sin actuar sobre ellas (solo las de tipo
+        "sampleN" disparan un WAV directamente). El mixer drena la cola
+        aquí para traducirlas a las mismas acciones que tendría el player
+        real."""
+        acciones = []
+        while True:
+            try:
+                acciones.append(self.player.ui_queue.get_nowait())
+            except queue.Empty:
+                break
+        return acciones
 
     # -- canal: toggles que persisten -------------------------------------------
 
