@@ -64,6 +64,11 @@ PRESENCE_GAIN_MAX = 3.0
 PRESENCE_ATTACK = 0.15      # sube rápido la compensación (efecto recién activado)
 PRESENCE_RELEASE = 0.04     # baja despacio (evita bombeo con la música)
 
+# Osciloscopio de la mezcla final (Engine._scope_ring, ver render() y
+# scope_snapshot()): anillo de ~0.3 s de la mezcla (mono) que el mixer
+# sondea y submuestrea para dibujar la forma de onda reciente.
+SCOPE_LEN = 16384
+
 # Pan law original (LittleGPTracker/sources/Application/Instruments/
 # SampleInstrumentDatas.h), 255 entradas en punto fijo 16.16.
 # Gain L = panlaw[pan] / 65536, gain R = panlaw[254 - pan] / 65536.
@@ -737,6 +742,62 @@ class AcidFx:
         buf *= 1.0 + self.COMP * amount
 
 
+class OverdriveFx:
+    """Distorsión por saturación suave (Fast overdrive,
+    foverdrive_1196.so): hueco distinto a "valve" (bitcrush digital) y
+    "acid" (filtro resonante) — aquí la textura es la de un overdrive
+    analógico clásico, sin filtro ni cambio de brillo.
+
+    `amount` 0-1 mapea linealmente a Drive 1-3 (todo el rango del
+    plugin): medido con el bajo real, ya en amount=0 hay algo de
+    saturación (el plugin no tiene un "bypass" limpio) y en amount=1 el
+    crest factor baja de 1.51 a 1.32 con armónicos nuevos hasta el 8º.
+    Probado con una señal más fuerte (pico 0.93 en seco): el pico de
+    salida no supera 0.98 en todo el rango, no hace falta limitar aparte.
+
+    Sin alternativa en numpy a propósito, igual que el resto de la
+    cadena LADSPA: si el plugin no está instalado, falla al crear el
+    efecto en vez de aproximarlo a mano."""
+
+    def __init__(self, sr: int):
+        from ladspa_fx import LadspaStereoOverdrive
+        self.plugin = LadspaStereoOverdrive(sr)
+
+    def apply(self, buf: np.ndarray, amount: float):
+        if amount <= 0.001:
+            return
+        self.plugin.set(1.0 + 2.0 * amount)
+        self.plugin.run(buf)
+
+
+class CrossoverFx:
+    """Distorsión "crossover" (zona muerta en el cruce por cero,
+    crossover_dist_1404.so): textura más áspera/buzz que "valve"/
+    "overdrive", con `Smoothing` fijo a 0.5 (ver `LadspaCrossoverDist`).
+
+    `amount` 0-1 mapea linealmente a Crossover amplitude 0-0.2 (el doble
+    del hint oficial del plugin, 0-0.1: dentro del hint el efecto es
+    demasiado sutil con señales de nivel alto, ver `LadspaCrossoverDist`).
+    Medido con el bajo real: subir `amount` en realidad BAJA el RMS/pico
+    de la señal (la zona muerta quita energía cerca del cruce por cero)
+    pero añade armónicos 3º/5º/7º que en seco no existen -eso es lo que se
+    oye como distorsión, no un cambio de volumen-, así que a diferencia
+    del resto de efectos de la cadena no sube de nivel según se abre el
+    knob. Si se nota poco en un canal alto de volumen, conviene activar
+    "presence" en ese canal (P en el mixer): compensa justo esta caída de
+    RMS comparando la señal antes/después de toda la cadena de efectos."""
+
+    def __init__(self, sr: int):
+        from ladspa_fx import LadspaStereoCrossoverDist
+        self.plugin = LadspaStereoCrossoverDist(sr)
+
+    def apply(self, buf: np.ndarray, amount: float):
+        if amount <= 0.001:
+            return
+        self.plugin.set(0.2 * amount)
+        self.plugin.run(buf)
+
+
 class DelayFx:
     """Eco (Delayorama, delayorama_1402.so): 3 taps a 0.4/0.8/1.2s que
     decaen (cada uno <50% del anterior), el pot mueve un único dry/wet
@@ -848,6 +909,8 @@ EFFECT_PRESETS = {
     "delay": DelayFx,
     "metal": MetalFx,
     "bode": BodeFx,
+    "overdrive": OverdriveFx,
+    "crossover": CrossoverFx,
 }
 
 
@@ -1066,6 +1129,10 @@ class Engine:
         self._rings: list[Optional[np.ndarray]] = [None] * CHANNEL_COUNT
         self._ring_pos = [0] * CHANNEL_COUNT
         self.set_audio_delay(audio_delay)
+        # Anillo de la mezcla final (mono, ver render()), leído por el
+        # mixer vía scope_snapshot() para dibujar el osciloscopio.
+        self._scope_ring = np.zeros(SCOPE_LEN, dtype=np.float32)
+        self._scope_pos = 0
         # Banco de WAVs para los pads (001.wav -> pad 0, 002.wav -> pad 1...)
         self.pad_samples: list[tuple[np.ndarray, int]] = []
         self.pad_voice: Optional[Voice] = None
@@ -1300,6 +1367,7 @@ class Engine:
         if self.master_chain is not None:
             self.master_chain.apply(out)
         np.clip(out, -1.0, 1.0, out=out)
+        self._write_scope(out)
         self._samples_rendered += frames
         while (self._lyric_queue
                and self._lyric_queue[0][0] <= self._samples_rendered):
@@ -1311,6 +1379,33 @@ class Engine:
             self.current_lyric = ""
             self._lyric_expires_at = None
         return out
+
+    def _write_scope(self, out: np.ndarray):
+        """Vuelca la mezcla final (mono) en el anillo del osciloscopio."""
+        mono = out.mean(axis=1).astype(np.float32)
+        n = len(mono)
+        if n >= SCOPE_LEN:
+            self._scope_ring[:] = mono[-SCOPE_LEN:]
+            self._scope_pos = 0
+            return
+        ring = self._scope_ring
+        pos = self._scope_pos
+        end = pos + n
+        if end <= SCOPE_LEN:
+            ring[pos:end] = mono
+        else:
+            k = SCOPE_LEN - pos
+            ring[pos:] = mono[:k]
+            ring[:n - k] = mono[k:]
+        self._scope_pos = end % SCOPE_LEN
+
+    def scope_snapshot(self, n: int = 200) -> list:
+        """Últimas `n` muestras (decimadas) de la mezcla final, más viejo
+        primero, para el osciloscopio del mixer."""
+        ordered = np.concatenate((self._scope_ring[self._scope_pos:],
+                                  self._scope_ring[:self._scope_pos]))
+        step = max(1, len(ordered) // n)
+        return ordered[::step][:n].tolist()
 
     # Tope de recuperación por llamada: si el hueco es enorme (proceso
     # suspendido, no un xrun normal), no tiene sentido recorrer miles de

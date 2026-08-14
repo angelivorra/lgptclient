@@ -426,6 +426,118 @@ class LadspaStereoBodeShifter:
         buf[:, 1] = right
 
 
+FOVERDRIVE_PATH = "/usr/lib/ladspa/foverdrive_1196.so"
+FOVERDRIVE_ID = 1196
+
+# Puertos del Fast overdrive (confirmados con `analyseplugin`)
+FOV_DRIVE = 0       # 1-3
+FOV_INPUT = 1
+FOV_OUTPUT = 2
+
+
+class LadspaOverdrive(LadspaPlugin):
+    """Fast overdrive (foverdrive_1196.so): saturación suave, un canal.
+
+    Medido con una señal tipo bajo (80 Hz + 2º armónico): ya en el mínimo
+    del rango del plugin (drive=1) sube el RMS de 0.437 a 0.515 y el crest
+    factor baja de 1.51 a 1.48 (ya satura algo); a drive=3 (máximo) el RMS
+    llega a 0.663 y el crest factor a 1.32, con armónicos nuevos audibles
+    (3º-8º) que en seco no existían. Probado también con una señal más
+    fuerte (pico 0.93 en seco): el pico de salida no pasa de 0.98 en todo
+    el rango, así que no hace falta limitar aparte."""
+
+    def __init__(self, sample_rate: int, path: str = FOVERDRIVE_PATH):
+        super().__init__(path, FOVERDRIVE_ID, sample_rate)
+
+    def set(self, drive: float):
+        self.set_control(FOV_DRIVE, min(max(drive, 1.0), 3.0))
+
+    def run(self, buf: np.ndarray):
+        super().run(buf, FOV_INPUT, FOV_OUTPUT)
+
+
+class LadspaStereoOverdrive:
+    """Dos instancias mono del Fast overdrive para el buffer estéreo."""
+
+    def __init__(self, sample_rate: int):
+        self.left = LadspaOverdrive(sample_rate)
+        self.right = LadspaOverdrive(sample_rate)
+
+    def set(self, drive: float):
+        self.left.set(drive)
+        self.right.set(drive)
+
+    def run(self, buf: np.ndarray):
+        """buf (n, 2) float32, in-place."""
+        left = np.ascontiguousarray(buf[:, 0])
+        self.left.run(left)
+        buf[:, 0] = left
+        right = np.ascontiguousarray(buf[:, 1])
+        self.right.run(right)
+        buf[:, 1] = right
+
+
+CROSSOVER_DIST_PATH = "/usr/lib/ladspa/crossover_dist_1404.so"
+CROSSOVER_DIST_ID = 1404
+
+# Puertos del Crossover distortion (confirmados con `analyseplugin`)
+CXD_AMPLITUDE = 0    # hint oficial 0-0.1; ver LadspaCrossoverDist.set()
+CXD_SMOOTHING = 1    # 0-1: suaviza los bordes de esa zona muerta
+CXD_INPUT = 2
+CXD_OUTPUT = 3
+
+
+class LadspaCrossoverDist(LadspaPlugin):
+    """Crossover distortion (crossover_dist_1404.so): zona muerta en el
+    cruce por cero, como el crossover de un ampli en clase B, un canal.
+
+    `Smoothing` no cambia RMS/pico de forma medible (probado 0-1 con una
+    señal tipo bajo): se deja fijo a 0.5 (suaviza los bordes de la zona
+    muerta sin perder mordiente) y solo `amount` mueve `Crossover
+    amplitude`.
+
+    El hint oficial del plugin es 0-0.1, pero ahí el efecto es sutil con
+    señales de nivel alto (la zona muerta es pequeña frente al barrido de
+    la señal): a 0.1 con el bajo real el 3º armónico llega a un 8% del
+    fundamental. Probado hasta 0.3 con senoidal, bajo real y un pluck con
+    decaimiento (ninguno da NaN/inf ni deja de ser monótono): se admite
+    hasta 0.2, el doble del hint, donde el 3º armónico ya es un 17-25% del
+    fundamental (bastante más audible) sin que suene "cortado"/con gating
+    como empieza a pasar de 0.3 para arriba."""
+
+    def __init__(self, sample_rate: int, path: str = CROSSOVER_DIST_PATH):
+        super().__init__(path, CROSSOVER_DIST_ID, sample_rate)
+        self.set_control(CXD_SMOOTHING, 0.5)
+
+    def set(self, amplitude: float):
+        self.set_control(CXD_AMPLITUDE, min(max(amplitude, 0.0), 0.2))
+
+    def run(self, buf: np.ndarray):
+        super().run(buf, CXD_INPUT, CXD_OUTPUT)
+
+
+class LadspaStereoCrossoverDist:
+    """Dos instancias mono del Crossover distortion para el buffer
+    estéreo."""
+
+    def __init__(self, sample_rate: int):
+        self.left = LadspaCrossoverDist(sample_rate)
+        self.right = LadspaCrossoverDist(sample_rate)
+
+    def set(self, amplitude: float):
+        self.left.set(amplitude)
+        self.right.set(amplitude)
+
+    def run(self, buf: np.ndarray):
+        """buf (n, 2) float32, in-place."""
+        left = np.ascontiguousarray(buf[:, 0])
+        self.left.run(left)
+        buf[:, 0] = left
+        right = np.ascontiguousarray(buf[:, 1])
+        self.right.run(right)
+        buf[:, 1] = right
+
+
 DJ_EQ_PATH = "/usr/lib/ladspa/dj_eq_1901.so"
 DJ_EQ_ID = 1901
 DJ_EQ_LO, DJ_EQ_MID, DJ_EQ_HI = 0, 1, 2
