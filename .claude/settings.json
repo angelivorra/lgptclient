@@ -149,7 +149,10 @@
       "Bash(sinte/.venv/bin/python bin/genera_textos.py)",
       "Bash(/usr/bin/ansible-playbook ansible/actualiza-sinte.yaml -i ansible/inventario)",
       "Bash(.venv/bin/python /tmp/claude-1000/-home-angel-git-lgptclient/86dff761-a7b3-4c7b-b158-afd03def1f16/scratchpad/diag_acrd_bulebule.py)",
-      "Bash(python3 -c \"import json; json.load\\(open\\('/home/angel/git/lgptclient/sinte/songs/lgpt_Bulebule/robotraca.json'\\)\\)\")"
+      "Bash(python3 -c \"import json; json.load\\(open\\('/home/angel/git/lgptclient/sinte/songs/lgpt_Bulebule/robotraca.json'\\)\\)\")",
+      "Bash(.venv/bin/python -m unittest discover -s tests -v)",
+      "Bash(.venv/bin/python -m unittest tests.test_events -v)",
+      "Bash(.venv/bin/python -m unittest tests.test_events -q)"
     ],
     "additionalDirectories": [
       "/home/angel/LGPT/bin",
