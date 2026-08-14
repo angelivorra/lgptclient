@@ -6,12 +6,15 @@ o con pytest: .venv/bin/python -m pytest tests/
 """
 
 import math
+import sys
 import unittest
 from pathlib import Path
 
 import numpy as np
 
-from lgpt_engine import (
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from lgpt_engine import (  # noqa: E402
     Engine,
     Sample,
     TICKS_PER_STEP,

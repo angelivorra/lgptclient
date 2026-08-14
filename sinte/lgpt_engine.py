@@ -1240,12 +1240,22 @@ class Engine:
                         dry_ref = block.copy()
                     fx = ch.fx_objs.get(name)
                     if fx is None:
-                        fx = cls(self.sr)
+                        try:
+                            fx = cls(self.sr)
+                        except Exception as exc:
+                            # Plugin LADSPA no disponible (p.ej. la app mixer
+                            # en un PC sin swh-plugins): el canal suena en
+                            # seco en vez de morir el callback de audio. Se
+                            # guarda el fallo para no reintentar cada bloque.
+                            fx = False
+                            print(f"[engine] fx {name} canal {ch.idx} "
+                                  f"desactivado: {exc}")
                         ch.fx_objs[name] = fx
-                    set_tempo = getattr(fx, "set_tempo", None)
-                    if set_tempo is not None:
-                        set_tempo(self.tempo)
-                    fx.apply(block, amount)
+                    if fx:
+                        set_tempo = getattr(fx, "set_tempo", None)
+                        if set_tempo is not None:
+                            set_tempo(self.tempo)
+                        fx.apply(block, amount)
             if dry_ref is not None:
                 dry_rms = float(np.sqrt((dry_ref ** 2).mean())) + 1e-6
                 wet_rms = float(np.sqrt((block ** 2).mean())) + 1e-6
@@ -1363,6 +1373,14 @@ class Engine:
                 self._apply_netcc(ev[1], ev[2])
             elif kind == "trigger":
                 self._trigger_pad(ev[1])
+            elif kind == "mute":
+                # mute en vivo (app mixer): mismo efecto que el campo "mute"
+                # del robotraca.json al cargar la canción
+                (self.muted.add if ev[2] else self.muted.discard)(ev[1])
+            elif kind == "vocoder":
+                self.channels[ev[1]].vocoder_out = bool(ev[2])
+            elif kind == "presence":
+                self.channels[ev[1]].fx_presence = bool(ev[2])
             elif kind == "play":
                 if self.finished:
                     self.start()

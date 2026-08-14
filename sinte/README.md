@@ -106,6 +106,22 @@ Si se configura `[audio] delay` (o `--delay`), solo el audio se retrasa:
 útil cuando otro programa recibe el MIDI por red y suena con latencia —
 el audio local se retrasa lo mismo para mantenerse sincronizado.
 
+## App mixer (editor de robotraca.json)
+
+La carpeta `mixer/` del repo es una app de escritorio Kivy **standalone**:
+embebe este mismo engine en su proceso (crea el `Player` sin curses ni
+EventServer) para probar y configurar cada canción — play/stop, mute,
+canal vocoder, presence, efectos por canal, targets de los knobs, pads y
+master — y guardar el resultado en el `robotraca.json`. Usa piezas de
+aquí que conviene no romper:
+
+- `Player._load_song` / `_apply_song_config` (esta última aplica también
+  el campo `fx` del JSON: `{"fx": {"2": {"acid": 80}}}`, valores 0-100).
+- Los eventos `mute` / `vocoder` / `presence` de `Engine.push_event`
+  (cambios en vivo thread-safe con el callback de audio).
+- Si un plugin LADSPA falta (PC sin swh-plugins), el canal suena en seco
+  y el preset queda desactivado en vez de morir el callback de audio.
+
 ## Despliegue en la Raspberry Pi
 
 ```sh

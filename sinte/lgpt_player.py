@@ -40,7 +40,8 @@ import numpy as np
 import sounddevice as sd
 
 from event_server import EventMidiOut, EventServer
-from lgpt_engine import Engine, MasterChain, MidiOut, SAMPLE_RATE
+from lgpt_engine import EFFECT_PRESETS, Engine, MasterChain, MidiOut, \
+    SAMPLE_RATE
 
 DEFAULT_SONGS_DIR = "/home/angel/Documentos/canciones/"
 CONFIG_PATH = Path(__file__).resolve().parent / "lttileplayer.toml"
@@ -760,6 +761,26 @@ class Player:
         vocoder_channels = set(song_cfg.get("vocoder", []))
         for ch in engine.channels:
             ch.vocoder_out = ch.idx in vocoder_channels
+        # Cantidad de cada efecto por canal (0-100), persistida por el mixer:
+        # {"fx": {"2": {"acid": 80, "delay": 40}}}. Son los mismos nombres de
+        # EFFECT_PRESETS que usan los targets de los pots.
+        fx_cfg = song_cfg.get("fx", {})
+        if isinstance(fx_cfg, dict):
+            for ch_str, amounts in fx_cfg.items():
+                try:
+                    ci = int(ch_str)
+                except (TypeError, ValueError):
+                    continue
+                if not 0 <= ci < len(engine.channels) \
+                        or not isinstance(amounts, dict):
+                    continue
+                for name, val in amounts.items():
+                    if name in EFFECT_PRESETS:
+                        try:
+                            engine.channels[ci].fx_amounts[name] = \
+                                float(val) / 100.0
+                        except (TypeError, ValueError):
+                            pass
         # Volumen general de la canción (0-200, 100 = el del proyecto LGPT).
         # Sirve para igualar la sonoridad entre canciones sin tocar el
         # lgptsav.dat: unas están mezcladas más fuerte que otras.

@@ -17,6 +17,7 @@ sinte/ (reproductor LGPT + entrada MIDI de un controlador) → TCP 8888 (CONFIG/
 | Directorio | Descripción |
 |---|---|
 | `sinte/` | Reproductor standalone de canciones LGPT (motor, parser, efectos, UI curses, servidor de eventos TCP) para el host `sintetizador`. Ver `sinte/README.md`. |
+| `mixer/` | App de escritorio Kivy standalone: editor visual del `robotraca.json` de cada canción (play/stop, mute, canal vocoder, efectos por canal, knobs, pads, master) con el engine de `sinte/` embebido en el proceso. Se lanza con `mixer/run.sh` |
 | `bin/` | `cliente_final/` (cliente real de maleta/sombrilla: GPIO, display, orquestación de eventos), perfiles `cliente.*.json`, y utilidades de generación de imágenes/samples (`genera*.py`) |
 | `flaskr/` | Dashboard web Flask — monitorización de CPU/RAM/disco y estado de servicios; se despliega a maleta y sombrilla (el sinte no lo sirve: solo corre el player en kiosk) |
 | `vocoder/` | App Flask + preset de Carla para el nodo vocoder |
