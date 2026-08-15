@@ -153,7 +153,9 @@
       "Bash(.venv/bin/python -m unittest discover -s tests -v)",
       "Bash(.venv/bin/python -m unittest tests.test_events -v)",
       "Bash(.venv/bin/python -m unittest tests.test_events -q)",
-      "Bash(gh pr *)"
+      "Bash(gh pr *)",
+      "Bash(.venv/bin/python -m unittest discover -s tests -q)",
+      "Bash(python3 -m py_compile sinte/lgpt_engine.py mixer/main.py mixer/backend.py)"
     ],
     "additionalDirectories": [
       "/home/angel/LGPT/bin",
