@@ -1134,12 +1134,13 @@ class Engine:
         self._scope_ring = np.zeros(SCOPE_LEN, dtype=np.float32)
         self._scope_pos = 0
         # Banco de WAVs para los pads (001.wav -> pad 0, 002.wav -> pad 1...)
+        self.wavs_dir = Path(wavs_dir) if wavs_dir else None
         self.pad_samples: list[tuple[np.ndarray, int]] = []
         self.pad_voice: Optional[Voice] = None
         self.pad_volume_default = 0.6       # volumen por defecto (0-1)
         self.pad_volume_map: dict[int, float] = {}   # por pad (índice)
-        if wavs_dir:
-            self._load_pad_samples(Path(wavs_dir))
+        if self.wavs_dir:
+            self._load_pad_samples(self.wavs_dir)
 
     def _load_pad_samples(self, wavs_dir: Path):
         if not wavs_dir.is_dir():
@@ -1150,6 +1151,13 @@ class Engine:
                 self.pad_samples.append((np.ascontiguousarray(data), sr))
             except Exception as exc:
                 print(f"[engine] pad {wav.name}: {exc}")
+
+    def reload_pad_samples(self):
+        """Vuelve a leer el banco de pads de `wavs_dir` (p.ej. tras
+        reasignar un WAV desde el mixer, ver MixerBackend.assign_pad)."""
+        self.pad_samples.clear()
+        if self.wavs_dir:
+            self._load_pad_samples(self.wavs_dir)
 
     def set_audio_delay(self, seconds: float):
         """Configura el retardo de la salida de audio (0 = sin delay)."""

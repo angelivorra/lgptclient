@@ -163,6 +163,19 @@ class KnobWidget(BoxLayout):
     modo = StringProperty("off")
 
 
+class PadAssignWidget(BoxLayout):
+    """Qué WAV suena en un pad (1-4): solo configuración, el disparo en
+    vivo lo hace el pad físico (sample1-4 del TOML), no un botón aquí.
+
+    wav: ruta relativa a wavs_dir del último WAV elegido (o "—" si no se
+    ha tocado desde el mixer en esta sesión). vol: volumen efectivo
+    0-100% de este pad EN ESTA CANCIÓN (persiste por canción, a
+    diferencia de wav que es el mismo banco para todas)."""
+    pad_n = NumericProperty(1)
+    wav = StringProperty("—")
+    vol = NumericProperty(60)
+
+
 class MixerRoot(BoxLayout):
     pass
 
@@ -202,19 +215,21 @@ class MixerApp(App):
 
     def _arrancar_backend(self):
         """Crea el backend (abre el audio) y devuelve canciones + config +
-        la lista viva de efectos del engine."""
+        la lista viva de efectos del engine + los WAV disponibles/
+        asignados para los pads."""
         try:
             self.backend = MixerBackend()
         except Exception as exc:
             return exc
         return (self.backend.songs(), self.backend.get_config(),
-                self.backend.effects())
+                self.backend.effects(), self.backend.wav_candidates(),
+                self.backend.pad_assignments())
 
     def _on_arrancado(self, res):
         if self.backend is None:
             self._aviso(f"sin audio: {res}")
             return
-        canciones, cfg, efectos = res
+        canciones, cfg, efectos, wavs, asignados = res
         self._efectos = efectos
         self._canciones = canciones.get("songs", [])
         self._syncing = True
@@ -229,6 +244,11 @@ class MixerApp(App):
                 if kw is not None:
                     kw.ids.param_spinner.values = \
                         ["off", "red"] + efectos + PARAMS_EXTRA
+            for n in range(1, 5):
+                pw = self._pad_widget(n)
+                if pw is not None:
+                    pw.ids.wav_spinner.values = wavs
+                    pw.wav = asignados.get(str(n), "—")
         finally:
             self._syncing = False
         self._aplicar_config(cfg)
@@ -393,6 +413,26 @@ class MixerApp(App):
         self._enviar(lambda: self.backend.set_pot(n, spec),
                      lambda r: self._check(r, f"POT{n}"))
 
+    # -- pads: qué WAV suena en cada uno (banco global, no por canción) ------
+    # (el disparo en vivo lo hace el pad físico, ver MixerApp._boton_fisico
+    # y MixerBackend.drain_buttons/pad).
+
+    def on_pad_assign(self, n, rel_path):
+        if not self._listo() or rel_path in ("—", ""):
+            return
+        pw = self._pad_widget(n)
+        if pw is not None:
+            pw.wav = rel_path
+        self._enviar(lambda: self.backend.assign_pad(n, rel_path),
+                     lambda r: self._check(r, f"PAD{n}"))
+
+    def on_pad_volume(self, n, pct):
+        """Volumen del pad n (0-100%), por canción."""
+        if not self._listo():
+            return
+        self._enviar(lambda: self.backend.set_pad_volume(n, pct),
+                     lambda r: self._check(r, f"PADVOL{n}"))
+
     # -- barra inferior -------------------------------------------------------
 
     def on_master(self, pct):
@@ -470,6 +510,15 @@ class MixerApp(App):
                     kw.param = nombre
                     kw.canales = list(canales)
                     kw.modo = "target"
+            vol_pct = cfg.get("pad_volume_pct") or {}
+            for n in range(1, 5):
+                pw = self._pad_widget(n)
+                if pw is None:
+                    continue
+                try:
+                    pw.vol = max(0, min(100, int(vol_pct.get(str(n), 60))))
+                except (TypeError, ValueError):
+                    pw.vol = 60
         finally:
             self._syncing = False
 
@@ -500,6 +549,12 @@ class MixerApp(App):
         for kw in self.root.ids.knobs.children:
             if kw.knob_n == n:
                 return kw
+        return None
+
+    def _pad_widget(self, n):
+        for pw in self.root.ids.pads.children:
+            if pw.pad_n == n:
+                return pw
         return None
 
     def _check(self, r, que):

@@ -4,13 +4,15 @@
 # acentos verde/ámbar). Toda la UI en español. Los handlers llaman a
 # métodos de MixerApp, que encolan llamadas al backend (engine de sinte
 # en este proceso) en el hilo trabajador.
-# Sin interacción en vivo duplicada: transporte (up/down/play/stop) y
-# pads de WAV los dispara el controlador MIDI físico, igual que en el
-# player real (ver MixerApp._bucle/_boton_fisico). Los knobs también se
-# giran en el controlador; aquí solo se configura a qué canal/efecto
-# apunta cada uno en la canción (persiste en "pots" del robotraca.json).
-# El osciloscopio de mezcla se dibuja en Python (ver main.py), aquí no
-# lleva canvas propio.
+# Sin interacción en vivo duplicada: el transporte (up/down/play/stop) y
+# el disparo de los pads de WAV los hace el controlador MIDI físico,
+# igual que en el player real (ver MixerApp._bucle/_boton_fisico). Los
+# knobs también se giran en el controlador; aquí solo se configura a qué
+# canal/efecto apunta cada uno en la canción (persiste en "pots" del
+# robotraca.json), igual que los pads solo configuran aquí QUÉ wav suena
+# en cada uno (banco global wavs/00N.wav, no por canción — ver
+# MixerBackend.assign_pad). El osciloscopio de mezcla se dibuja en Python
+# (ver main.py), aquí no lleva canvas propio.
 
 <ChannelStrip>:
     orientation: "vertical"
@@ -160,6 +162,48 @@
             background_color: (0.3, 0.55, 0.8, 1) if self.state == "down" else (0.22, 0.22, 0.25, 1)
             on_state: app.on_knob_canal(root.knob_n, 7, self.state == "down")
 
+<PadAssignWidget>:
+    orientation: "vertical"
+    spacing: 2
+    Label:
+        text: "Pad " + str(root.pad_n)
+        size_hint_y: None
+        height: 16
+        bold: True
+        font_size: '12sp'
+        color: 0.85, 0.85, 0.85, 1
+    # qué WAV suena en este pad (banco global wavs/00N.wav, ver
+    # MixerBackend.assign_pad); la lista sale de wavs/ recursivo, incluida
+    # wavs/candidatos2 con los sonidos aún sin activar.
+    Spinner:
+        id: wav_spinner
+        text: root.wav
+        values: []
+        size_hint_y: None
+        height: 26
+        font_size: '10sp'
+        background_normal: ""
+        background_color: 0.2, 0.2, 0.23, 1
+        on_text: app.on_pad_assign(root.pad_n, self.text)
+    # volumen de este pad (0-100%), por canción (robotraca.json
+    # "pad_volume"; ver MixerBackend.set_pad_volume)
+    BoxLayout:
+        size_hint_y: None
+        height: 20
+        spacing: 4
+        ReleaseSlider:
+            id: vol_slider
+            min: 0
+            max: 100
+            value: root.vol
+            on_release: app.on_pad_volume(root.pad_n, int(self.value))
+        Label:
+            text: str(int(vol_slider.value)) + "%"
+            size_hint_x: None
+            width: 34
+            font_size: '9sp'
+            color: 0.6, 0.6, 0.65, 1
+
 <MixerRoot>:
     orientation: "vertical"
     padding: 6
@@ -248,40 +292,73 @@
         MixScope:
             id: scope
 
-    # -- zona inferior: solo configuración de knobs (target por canción) ----
+    # -- zona inferior: solo configuración (qué WAV por pad, target por --
+    # -- knob); el valor/disparo en vivo los hace el controlador físico --
     BoxLayout:
-        orientation: "vertical"
         size_hint_y: None
         height: 170
-        spacing: 2
-        Label:
-            text: "KNOBS (target por canción; el valor en vivo lo pone el controlador físico)"
-            size_hint_y: None
-            height: 16
-            font_size: '11sp'
-            bold: True
-            color: 0.55, 0.55, 0.6, 1
-        GridLayout:
-            id: knobs
-            cols: 4
-            spacing: 4
-            padding: 2
-            KnobWidget:
-                knob_n: 1
-            KnobWidget:
-                knob_n: 2
-            KnobWidget:
-                knob_n: 3
-            KnobWidget:
-                knob_n: 4
-            KnobWidget:
-                knob_n: 5
-            KnobWidget:
-                knob_n: 6
-            KnobWidget:
-                knob_n: 7
-            KnobWidget:
-                knob_n: 8
+        spacing: 6
+
+        # Qué WAV suena en cada uno de los 4 pads (banco global, ver
+        # MixerBackend.assign_pad); el disparo en vivo lo hace el pad
+        # físico (sample1-4 en el TOML), no hay botón aquí.
+        BoxLayout:
+            orientation: "vertical"
+            size_hint_x: None
+            width: 260
+            spacing: 2
+            Label:
+                text: "PADS (qué WAV y volumen)"
+                size_hint_y: None
+                height: 16
+                font_size: '11sp'
+                bold: True
+                color: 0.55, 0.55, 0.6, 1
+            GridLayout:
+                id: pads
+                cols: 2
+                spacing: 4
+                padding: 2
+                PadAssignWidget:
+                    pad_n: 1
+                PadAssignWidget:
+                    pad_n: 2
+                PadAssignWidget:
+                    pad_n: 3
+                PadAssignWidget:
+                    pad_n: 4
+
+        BoxLayout:
+            orientation: "vertical"
+            spacing: 2
+            Label:
+                text: "KNOBS (target por canción; el valor en vivo lo pone el controlador físico)"
+                size_hint_y: None
+                height: 16
+                font_size: '11sp'
+                bold: True
+                color: 0.55, 0.55, 0.6, 1
+            GridLayout:
+                id: knobs
+                cols: 4
+                spacing: 4
+                padding: 2
+                KnobWidget:
+                    knob_n: 1
+                KnobWidget:
+                    knob_n: 2
+                KnobWidget:
+                    knob_n: 3
+                KnobWidget:
+                    knob_n: 4
+                KnobWidget:
+                    knob_n: 5
+                KnobWidget:
+                    knob_n: 6
+                KnobWidget:
+                    knob_n: 7
+                KnobWidget:
+                    knob_n: 8
 
     # -- barra inferior: master, guardar/recargar y estado -------------------
     BoxLayout:

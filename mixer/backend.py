@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import queue
+import shutil
 import sys
 import threading
 import tomllib
@@ -206,7 +207,22 @@ class MixerBackend:
     def get_config(self) -> dict:
         with self._lock:
             self._sync_model()
-            return dict(self._cfg)
+            cfg = dict(self._cfg)
+        cfg["pad_volume_pct"] = self._pad_volume_pct()
+        return cfg
+
+    def _pad_volume_pct(self) -> dict:
+        """Volumen efectivo (0-100%) de cada uno de los 8 pads, para
+        mostrarlo en el mixer: no toca el modelo persistido ("pad_volume"
+        puede ser un número global o un dict parcial, ver
+        lgpt_player._apply_song_config), solo lee lo que YA aplicó el
+        engine al cargar la canción."""
+        engine = self._engine()
+        if engine is None:
+            return {str(i): round(self.args.pad_volume) for i in range(1, 9)}
+        return {str(i + 1): round(100 * engine.pad_volume_map.get(
+                    i, engine.pad_volume_default))
+                for i in range(8)}
 
     def state(self) -> dict:
         engine = self._engine()
@@ -455,6 +471,86 @@ class MixerBackend:
         if not 1 <= n <= 8:
             return f"ERR,pad fuera de rango: {n}"
         engine.push_event("trigger", n - 1)
+        return "OK"
+
+    def _wavs_root(self) -> Path | None:
+        wd = self.args.wavs_dir
+        if not wd:
+            return None
+        p = Path(wd)
+        return p if p.is_dir() else None
+
+    def wav_candidates(self) -> list[str]:
+        """Rutas relativas (a wavs_dir) de todos los .wav disponibles para
+        asignar a un pad: recursivo, incluye subcarpetas como
+        wavs/candidatos2 donde se guardan los sonidos aún sin activar."""
+        root = self._wavs_root()
+        if root is None:
+            return []
+        return sorted(str(p.relative_to(root)) for p in root.rglob("*.wav"))
+
+    def pad_assignments(self) -> dict:
+        """Último WAV elegido por pad desde el mixer, solo para mostrarlo
+        en la UI (wavs/pads.json): el engine no lee este fichero, siempre
+        carga wavs/00N.wav tal cual estén en el momento de arrancar."""
+        root = self._wavs_root()
+        if root is None:
+            return {}
+        try:
+            return json.loads((root / "pads.json").read_text())
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def assign_pad(self, pad: int, rel_path: str) -> str:
+        """Copia `rel_path` (relativo a wavs_dir) a wavs_dir/00{pad}.wav
+        -mismo mecanismo manual descrito en wavs/candidatos2/LICENCIAS.md-
+        y recarga el banco de pads del engine en vivo, sin esperar a
+        cambiar de canción."""
+        if not 1 <= pad <= 8:
+            return f"ERR,pad fuera de rango: {pad}"
+        root = self._wavs_root()
+        if root is None:
+            return "ERR,sin wavs_dir configurado"
+        src = root / rel_path
+        if not src.is_file():
+            return f"ERR,no existe: {rel_path}"
+        dest = root / f"{pad:03d}.wav"
+        if src.resolve() != dest.resolve():
+            try:
+                shutil.copyfile(src, dest)
+            except OSError as exc:
+                return f"ERR,{exc}"
+        meta = self.pad_assignments()
+        meta[str(pad)] = rel_path
+        try:
+            (root / "pads.json").write_text(
+                json.dumps(meta, indent=2, sort_keys=True) + "\n")
+        except OSError:
+            pass
+        engine = self._engine()
+        if engine is not None:
+            engine.reload_pad_samples()
+        return "OK"
+
+    def set_pad_volume(self, pad: int, pct: int) -> str:
+        """Volumen del pad (1-8) en tanto por ciento (0-100): en vivo
+        sobre el engine actual (pad_volume_map) y persistido POR CANCIÓN
+        en el campo "pad_volume" de robotraca.json -mismo campo que ya
+        lee `lgpt_player._apply_song_config`-, siempre como dict
+        {"pad": pct} para no pisar el volumen de los demás pads."""
+        if not 1 <= pad <= 8:
+            return f"ERR,pad fuera de rango: {pad}"
+        pct = max(0, min(100, pct))
+        engine = self._engine()
+        if engine is None:
+            return "ERR,no hay canción cargada"
+        engine.pad_volume_map[pad - 1] = pct / 100.0
+        with self._lock:
+            self._sync_model()
+            pv = self._cfg.get("pad_volume")
+            pv = dict(pv) if isinstance(pv, dict) else {}
+            pv[str(pad)] = pct
+            self._cfg["pad_volume"] = pv
         return "OK"
 
     # -- persistencia -------------------------------------------------------------
