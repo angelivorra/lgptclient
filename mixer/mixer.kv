@@ -255,6 +255,35 @@
             width: 85
             color: 0.5, 0.9, 0.55, 1
 
+    # -- traer/actualizar canciones desde la carpeta de trabajo de LGPT -----
+    # (importa-cancion.sh: copia lgptsav.dat y samples, conserva el
+    # robotraca.json de cada canción; ver MixerBackend.import_song).
+    BoxLayout:
+        size_hint_y: None
+        height: 32
+        spacing: 6
+        Label:
+            text: "LGPT:"
+            size_hint_x: None
+            width: 45
+            color: 0.55, 0.55, 0.6, 1
+        Spinner:
+            id: spinner_origen
+            text: "— origen —"
+            background_color: 0.25, 0.25, 0.28, 1
+        Button:
+            text: "Importar/Actualizar"
+            size_hint_x: None
+            width: 160
+            background_color: 0.2, 0.5, 0.3, 1
+            on_release: app.importar_cancion()
+        Button:
+            text: "Actualizar todas"
+            size_hint_x: None
+            width: 130
+            background_color: 0.25, 0.25, 0.28, 1
+            on_release: app.actualizar_todas()
+
     # -- fila central: 8 channel strips (altura fija: solo nombre/pos/M-V-P) --
     BoxLayout:
         id: strips

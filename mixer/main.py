@@ -216,20 +216,20 @@ class MixerApp(App):
     def _arrancar_backend(self):
         """Crea el backend (abre el audio) y devuelve canciones + config +
         la lista viva de efectos del engine + los WAV disponibles/
-        asignados para los pads."""
+        asignados para los pads + las canciones de origen (LGPT)."""
         try:
             self.backend = MixerBackend()
         except Exception as exc:
             return exc
         return (self.backend.songs(), self.backend.get_config(),
                 self.backend.effects(), self.backend.wav_candidates(),
-                self.backend.pad_assignments())
+                self.backend.pad_assignments(), self.backend.origin_songs())
 
     def _on_arrancado(self, res):
         if self.backend is None:
             self._aviso(f"sin audio: {res}")
             return
-        canciones, cfg, efectos, wavs, asignados = res
+        canciones, cfg, efectos, wavs, asignados, origen = res
         self._efectos = efectos
         self._canciones = canciones.get("songs", [])
         self._syncing = True
@@ -239,6 +239,7 @@ class MixerApp(App):
             cur = canciones.get("current", 0)
             if self._canciones and 0 <= cur < len(self._canciones):
                 sp.text = self._canciones[cur]
+            self.root.ids.spinner_origen.values = origen
             for n in range(1, 9):
                 kw = self._knob_widget(n)
                 if kw is not None:
@@ -328,6 +329,53 @@ class MixerApp(App):
                 self._syncing = False
             self._aviso(f"canción: {self._canciones[i]}")
         self._enviar(tarea, fin)
+
+    # -- traer/actualizar canciones desde LGPT ------------------------------
+
+    def importar_cancion(self):
+        """Trae o actualiza la canción elegida en spinner_origen desde
+        la carpeta de trabajo de LGPT (importa-cancion.sh)."""
+        if not self._listo():
+            return
+        nombre = self.root.ids.spinner_origen.text
+        if nombre in ("", "— origen —"):
+            self._aviso("elige antes una canción de origen")
+            return
+        self._aviso(f"importando {nombre}…")
+        self._enviar(lambda: self.backend.import_song(nombre),
+                     self._fin_importar)
+
+    def actualizar_todas(self):
+        """Actualiza desde LGPT todas las canciones ya presentes en
+        songs/ (importa-cancion.sh --todas); no trae canciones nuevas."""
+        if not self._listo():
+            return
+        self._aviso("actualizando todas las canciones desde LGPT…")
+        self._enviar(self.backend.import_all_songs, self._fin_importar)
+
+    def _fin_importar(self, r):
+        if r != "OK":
+            self._aviso(f"importar: {r}")
+            return
+        self._enviar(self.backend.songs, self._on_canciones_actualizadas)
+
+    def _on_canciones_actualizadas(self, canciones):
+        """Tras importar: la lista de canciones (y sus índices) puede
+        haber cambiado; se resincroniza el spinner sin tocar la canción
+        que esté sonando ahora mismo (import_song/import_all_songs solo
+        tocan ficheros en disco, no recargan el engine en vivo)."""
+        self._syncing = True
+        try:
+            self._canciones = canciones.get("songs", [])
+            self.root.ids.spinner_canciones.values = self._canciones
+            cur = canciones.get("current", 0)
+            if self._canciones and 0 <= cur < len(self._canciones):
+                self.root.ids.spinner_canciones.text = self._canciones[cur]
+                self._song_idx = cur
+        finally:
+            self._syncing = False
+        self._aviso("canciones actualizadas — reselecciona una para "
+                    "cargar los cambios en el engine")
 
     def stop(self):
         self._comando_simple(lambda: self.backend.stop(), "STOP")

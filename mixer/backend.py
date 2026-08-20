@@ -34,6 +34,7 @@ from __future__ import annotations
 import json
 import queue
 import shutil
+import subprocess
 import sys
 import threading
 import tomllib
@@ -47,8 +48,13 @@ if str(SINTE_DIR) not in sys.path:
 import sounddevice as sd  # noqa: E402
 
 from lgpt_engine import EFFECT_PRESETS  # noqa: E402
-from lgpt_player import Player, open_midi_input, parse_button_spec, \
-    parse_pot_target as _parse_pot_target  # noqa: E402
+from lgpt_player import Player, find_projects, open_midi_input, \
+    parse_button_spec, parse_pot_target as _parse_pot_target  # noqa: E402
+
+# Carpeta de trabajo de LGPT (sincronizada con MEGA): de ahí se traen o
+# actualizan las canciones hacia songs/ (ver importa-cancion.sh).
+LGPT_SONGS_DIR = Path("/home/angel/LGPT/songs")
+IMPORT_SCRIPT = SINTE_DIR / "importa-cancion.sh"
 
 # Claves del robotraca.json que edita el mixer, con su valor por defecto.
 _MODEL_DEFAULTS = {
@@ -198,6 +204,53 @@ class MixerBackend:
     def songs(self) -> dict:
         return {"songs": [p.name for p in self.player.projects],
                 "current": self.player.index}
+
+    def origin_songs(self) -> list[str]:
+        """Proyectos disponibles en la carpeta de trabajo de LGPT
+        (LGPT_SONGS_DIR), para elegir cuál importar/actualizar hacia
+        songs/. Puede haber más que en songs/ (canciones aún no traídas)
+        o los mismos nombres (para actualizarlas)."""
+        return [p.name for p in find_projects(LGPT_SONGS_DIR)]
+
+    def _reimportar(self, args: list[str]) -> str:
+        """Ejecuta importa-cancion.sh y rescanea self.player.projects,
+        conservando qué canción queda seleccionada (el rescan puede
+        cambiar los índices si entra una canción nueva por delante
+        alfabéticamente)."""
+        actual = None
+        if self.player.projects:
+            actual = self.player.projects[self.player.index].name
+        try:
+            res = subprocess.run(
+                ["bash", str(IMPORT_SCRIPT), *args],
+                capture_output=True, text=True, timeout=300)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return f"ERR,{exc}"
+        if res.returncode != 0:
+            msg = (res.stderr or res.stdout).strip().splitlines()
+            return f"ERR,{msg[-1] if msg else 'fallo desconocido'}"
+        self.player.projects = find_projects(Path(self.args.songs))
+        if actual is not None:
+            for i, p in enumerate(self.player.projects):
+                if p.name == actual:
+                    self.player.index = i
+                    break
+        return "OK"
+
+    def import_song(self, nombre: str) -> str:
+        """Trae o actualiza UNA canción desde LGPT_SONGS_DIR (mismo
+        comportamiento que `importa-cancion.sh <nombre>`: copia
+        lgptsav.dat y samples, conserva el robotraca.json si ya
+        existía)."""
+        if not nombre:
+            return "ERR,elige una canción de origen"
+        return self._reimportar([nombre, str(LGPT_SONGS_DIR)])
+
+    def import_all_songs(self) -> str:
+        """Actualiza TODAS las canciones que ya están en songs/ desde
+        LGPT_SONGS_DIR (`importa-cancion.sh --todas`); no trae canciones
+        nuevas que aún no se hayan importado nunca."""
+        return self._reimportar(["--todas", str(LGPT_SONGS_DIR)])
 
     def effects(self) -> list:
         """Efectos disponibles, en el orden de la cadena. Vivo: si el
