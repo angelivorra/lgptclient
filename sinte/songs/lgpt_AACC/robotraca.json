@@ -1,0 +1,18 @@
+{
+  "fx": {},
+  "mute": [],
+  "pad_volume": {
+    "1": 21,
+    "2": 57
+  },
+  "pots": {
+    "pot1": "2:acid",
+    "pot5": "2:valve",
+    "pot8": "0:tempo"
+  },
+  "pots_red": [],
+  "presence": [
+    2
+  ],
+  "vocoder": []
+}
