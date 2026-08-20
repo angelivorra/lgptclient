@@ -70,6 +70,16 @@
       }
     },
     {
+      "label": "Mixer",
+      "type": "shell",
+      "command": "${workspaceFolder}/mixer/run.sh",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
       "label": "Genera Imágenes",
       "type": "shell",
       "command": "${workspaceFolder}/venv/bin/python ${workspaceFolder}/bin/genera.py ${input:terminal}",
