@@ -155,7 +155,10 @@
       "Bash(.venv/bin/python -m unittest tests.test_events -q)",
       "Bash(gh pr *)",
       "Bash(.venv/bin/python -m unittest discover -s tests -q)",
-      "Bash(python3 -m py_compile sinte/lgpt_engine.py mixer/main.py mixer/backend.py)"
+      "Bash(python3 -m py_compile sinte/lgpt_engine.py mixer/main.py mixer/backend.py)",
+      "Bash(chmod +x /home/angel/git/lgptclient/sinte/importa-cancion.sh)",
+      "Bash(sinte/.venv/bin/python -c ' *)",
+      "Bash(git -C /home/angel/git/lgptclient status --short sinte/songs/)"
     ],
     "additionalDirectories": [
       "/home/angel/LGPT/bin",
