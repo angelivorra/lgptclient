@@ -31,6 +31,7 @@ como ya hace `lgpt_engine.py`/`ladspa_fx.py`).
 | `decimator` | Decimator | `decimator_1202.so` (1202) | bits 24→16, rate 100%→20% |
 | `tape_delay` | Tape Delay Simulation | `tape_delay_1211.so` (1211) | tap -6dB, dry -2dB |
 | `acid_lp` | C* AutoFilter (o SVF si no hay CAPS) | `caps.so` (2593) / `svf_1214.so` (1214) | barrido 3800→160Hz + resonancia |
+| `acid_lfo` | C* AutoFilter, LFO interno triangular | `caps.so` (2593) | `amount` = rate del LFO (0.10→0.40 = ciclo 12s→1.2s, medido con envolvente de seno); cutoff base 300 Hz, Q 0.85 y depth 1 fijos. El vaivén va solo, tipo acid moderno (AACC_kimi) |
 
 También hay clases ya escritas en `ladspa_fx.py` pero **sin preset asignado**
 en `EFFECT_PRESETS` (listas para usar, solo falta darles nombre y curva de

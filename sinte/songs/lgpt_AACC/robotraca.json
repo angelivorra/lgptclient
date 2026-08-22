@@ -7,12 +7,15 @@
   },
   "pots": {
     "pot1": "2:acid",
+    "pot2": "3:metal",
     "pot5": "2:valve",
+    "pot6": "3:crossover",
     "pot8": "0:tempo"
   },
   "pots_red": [],
   "presence": [
-    2
+    2,
+    3
   ],
   "vocoder": []
 }

@@ -1,15 +1,23 @@
 {
+  "fx": {},
+  "master": 125,
   "mute": [
     6
   ],
-  "vocoder": [6],
   "pots": {
     "pot1": "1,2:acid",
-    "pot5": "1,2:valve",
     "pot2": "4:bode",
+    "pot4": "1,2:delay",
+    "pot5": "1,2:valve",
     "pot6": "4:metal",
     "pot8": "0:tempo"
   },
-  "pots_red": ["pot3", "pot7"],
-  "master": 125
+  "pots_red": [
+    "pot3",
+    "pot7"
+  ],
+  "presence": [],
+  "vocoder": [
+    6
+  ]
 }

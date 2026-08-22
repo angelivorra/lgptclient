@@ -630,6 +630,15 @@ class Player:
         if not self.projects:
             sys.exit(f"No se encuentran proyectos LGPT en {args.songs}")
         self.index = 0
+        song_filter = getattr(args, "song", None)
+        if song_filter:
+            for i, p in enumerate(self.projects):
+                if song_filter.lower() in p.name.lower():
+                    self.index = i
+                    break
+            else:
+                print(f"[player] --song {song_filter!r} no encontrado, "
+                      f"uso {self.projects[0].name}")
         self.engine_ref: dict = {}
         self.midi_in = None
         self._midi_retry_next = 0.0   # ver _ensure_midi_input: reconexión en caliente
@@ -749,6 +758,8 @@ class Player:
             except (OSError, json.JSONDecodeError) as exc:
                 print(f"[config] {cfg_file.name}: {exc}")
         engine.muted = set(song_cfg.get("mute", []))
+        if getattr(self.args, "mute_override", None) is not None:
+            engine.muted = set(self.args.mute_override)
         # Compensación de presencia al final de la cadena de FX (ver
         # Engine.render/Channel.fx_presence): opt-in por canal, solo para
         # la pista en la que se esté trabajando, no global.
@@ -1439,6 +1450,10 @@ class Player:
         self.midi_in = open_midi_input(
             self.args.midi, self.engine_ref, self.ui_queue, self.buttons,
             self.args.pots, self.args.pots_red)
+        if getattr(self.args, "song", None) is not None:
+            # --song fuerza selección por CLI: no tiene sentido pedirla y
+            # quedarse en silencio esperando un botón MIDI o el menú curses.
+            self._load_song(self.index)
         if self.args.record:
             self.recorder = WavRecorder(self.args.record, self.args.samplerate)
             print(f"[audio] grabando salida en {self.args.record}")
@@ -1500,7 +1515,17 @@ def main():
                         help="graba la salida de audio a un archivo WAV")
     parser.add_argument("--stream", type=int, default=None, metavar="PUERTO",
                         help="emite la salida por TCP (PCM s16le)")
+    parser.add_argument("--song", default=None,
+                        help="subcadena del nombre de la carpeta lgpt_* a "
+                             "seleccionar (por defecto, la primera alfabética)")
+    parser.add_argument("--mute", default=None, metavar="0,1,4",
+                        help="canales a silenciar (0-7), separados por comas; "
+                             "sobreescribe el 'mute' de robotraca.json")
     args = parser.parse_args()
+    args.mute_override = (
+        [int(x) for x in args.mute.split(",") if x.strip() != ""]
+        if args.mute else None
+    )
 
     cfg = load_config(Path(args.config))
     audio_cfg = cfg.get("audio", {})

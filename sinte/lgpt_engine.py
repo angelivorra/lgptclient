@@ -742,6 +742,51 @@ class AcidFx:
         buf *= 1.0 + self.COMP * amount
 
 
+class AcidLfoFx:
+    """Filtro acid automodulado (C* AutoFilter, caps.so): a diferencia de
+    `AcidFx` (cutoff manual con el pot), aquí el barrido lo hace el LFO
+    interno triangular del plugin — el movimiento "que va solo" del acid
+    moderno (referencia: Daniel Deluxe - The Orb).
+
+    Medido con envolvente de seno a 2500 Hz (el LFO sigue activo con
+    lfo/env = 0; ese puerto solo mezcla LFO contra envelope follower):
+    rate 0.10 -> ciclo ~12s, 0.15 -> 5.6s, 0.20 -> 3.3s, 0.25 -> 2.2s,
+    0.30 -> 1.5s, 0.40 -> 1.2s. `amount` 0-1 mapea a rate 0.10-0.40, así
+    que el knob controla la VELOCIDAD del vaivén, no el cutoff. A 130 BPM
+    (AACC) amount=0.30 da un ciclo de ~2 compases.
+
+    Cutoff base 300 Hz + Q 0.85 + depth 1 (fijos): el swing medido cubre
+    ~200-3400 Hz, el recorrido acid completo. Shape triangular (la deja
+    el wrapper a 1.0): subida y bajada simétricas, sin el chasquido de la
+    cuadrada. COMP modesto: con el filtro abriéndose y cerrándose solo,
+    subir mucho el nivel en los picos de apertura desbalancearía la mezcla.
+
+    Sin alternativa en numpy a propósito, igual que `AcidFx`: si el plugin
+    LADSPA no está instalado, falla al crear el efecto en vez de
+    aproximarlo a mano."""
+
+    RATE_MIN = 0.10      # ciclo ~12s
+    RATE_MAX = 0.40      # ciclo ~1.2s
+    BASE_FREQ = 300.0
+    RES = 0.85
+    COMP = 0.25
+
+    def __init__(self, sr: int):
+        from ladspa_fx import AF_RATE, LadspaStereoAutoFilter
+        self._rate_port = AF_RATE
+        self.plugin = LadspaStereoAutoFilter(sr)
+        self.plugin.set(self.BASE_FREQ, self.RES)
+
+    def apply(self, buf: np.ndarray, amount: float):
+        if amount <= 0.001:
+            return
+        rate = self.RATE_MIN + (self.RATE_MAX - self.RATE_MIN) * amount
+        self.plugin.left.set_control(self._rate_port, rate)
+        self.plugin.right.set_control(self._rate_port, rate)
+        self.plugin.run(buf)
+        buf *= 1.0 + self.COMP * amount
+
+
 class OverdriveFx:
     """Distorsión por saturación suave (Fast overdrive,
     foverdrive_1196.so): hueco distinto a "valve" (bitcrush digital) y
@@ -901,11 +946,12 @@ class BodeFx:
 
 # Presets disponibles para los pots (target = "canal:nombre"). El orden de
 # este dict es el orden de la cadena de efectos: drive (valve) -> filtro
-# (acid) -> delay -> metal -> bode, para que el desplazamiento de
-# frecuencia procese la señal ya distorsionada/filtrada/resonante.
+# (acid / acid_lfo) -> delay -> metal -> bode, para que el desplazamiento
+# de frecuencia procese la señal ya distorsionada/filtrada/resonante.
 EFFECT_PRESETS = {
     "valve": ValveFx,
     "acid": AcidFx,
+    "acid_lfo": AcidLfoFx,
     "delay": DelayFx,
     "metal": MetalFx,
     "bode": BodeFx,
