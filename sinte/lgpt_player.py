@@ -792,6 +792,26 @@ class Player:
                                 float(val) / 100.0
                         except (TypeError, ValueError):
                             pass
+        # Mezcla dry/wet de cada efecto por canal (0-100), persistida por el
+        # mixer: {"fx_mix": {"2": {"acid": 50}}}. Ausencia = 100 (100% wet,
+        # igual que sin esto).
+        fx_mix_cfg = song_cfg.get("fx_mix", {})
+        if isinstance(fx_mix_cfg, dict):
+            for ch_str, amounts in fx_mix_cfg.items():
+                try:
+                    ci = int(ch_str)
+                except (TypeError, ValueError):
+                    continue
+                if not 0 <= ci < len(engine.channels) \
+                        or not isinstance(amounts, dict):
+                    continue
+                for name, val in amounts.items():
+                    if name in EFFECT_PRESETS:
+                        try:
+                            engine.channels[ci].fx_mix[name] = \
+                                float(val) / 100.0
+                        except (TypeError, ValueError):
+                            pass
         # Volumen general de la canción (0-200, 100 = el del proyecto LGPT).
         # Sirve para igualar la sonoridad entre canciones sin tocar el
         # lgptsav.dat: unas están mezcladas más fuerte que otras.

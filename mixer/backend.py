@@ -62,6 +62,7 @@ _MODEL_DEFAULTS = {
     "vocoder": [],
     "presence": [],
     "fx": {},
+    "fx_mix": {},
     "pots": {},
     "pots_red": [],
 }
@@ -423,6 +424,30 @@ class MixerBackend:
                 fx.pop(preset, None)
                 if not fx:
                     self._cfg["fx"].pop(str(ch), None)
+        return "OK"
+
+    def set_fx_mix(self, ch: int, preset: str, pct: int) -> str:
+        """Mezcla dry/wet de un efecto de un canal (0-100%): en vivo y
+        persistida (campo fx_mix). 100 = solo wet, comportamiento de hoy;
+        no viene de un pot físico, por eso no hay conversión MIDI 0-127."""
+        engine = self._engine()
+        if engine is None:
+            return "ERR,no hay canción cargada"
+        if not 0 <= ch < len(engine.channels):
+            return f"ERR,canal fuera de rango: {ch}"
+        if preset not in EFFECT_PRESETS:
+            return f"ERR,efecto desconocido: {preset}"
+        pct = max(0, min(100, pct))
+        engine.push_event("fx_mix", ch, preset, pct)
+        with self._lock:
+            self._sync_model()
+            fx_mix = self._cfg["fx_mix"].setdefault(str(ch), {})
+            if pct < 100:
+                fx_mix[preset] = pct
+            else:
+                fx_mix.pop(preset, None)
+                if not fx_mix:
+                    self._cfg["fx_mix"].pop(str(ch), None)
         return "OK"
 
     def param(self, ch: int, name: str, val127: int) -> str:

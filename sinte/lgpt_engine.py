@@ -1026,7 +1026,7 @@ class Channel:
         "cc_vol", "cc_pan", "cc_pitch", "cc_cutoff",
         "kind", "midi_def", "midi_note", "midi_ticks", "midi_vel",
         "groove", "g_pos", "g_ticks",
-        "fx_amounts", "fx_objs", "fx_gain", "fx_presence",
+        "fx_amounts", "fx_objs", "fx_gain", "fx_presence", "fx_mix",
         "vocoder_out",
     )
 
@@ -1065,6 +1065,9 @@ class Channel:
         self.fx_objs: dict[str, object] = {}
         self.fx_gain = 1.0      # compensación de presencia, ver render()
         self.fx_presence = False   # activa la compensación (config por canción)
+        # Mezcla dry/wet por efecto (config por canción, ver render()):
+        # nombre -> 0-1, ausencia = 1.0 (100% wet, igual que sin esto)
+        self.fx_mix: dict[str, float] = {}
         # Pista de voz -> vocoder (config por canción, ver _trigger_row):
         # además de sonar (o no, si está muteada) emite el acorde por
         # midi_out.chord_on().
@@ -1376,7 +1379,11 @@ class Engine:
                         set_tempo = getattr(fx, "set_tempo", None)
                         if set_tempo is not None:
                             set_tempo(self.tempo)
+                        mix = ch.fx_mix.get(name, 1.0)
+                        pre = block.copy() if mix < 0.999 else None
                         fx.apply(block, amount)
+                        if pre is not None:
+                            block[:] = pre * (1.0 - mix) + block * mix
             if dry_ref is not None:
                 dry_rms = float(np.sqrt((dry_ref ** 2).mean())) + 1e-6
                 wet_rms = float(np.sqrt((block ** 2).mean())) + 1e-6
@@ -1518,6 +1525,8 @@ class Engine:
                 self._apply_cc(ev[1], ev[2], ev[3])
             elif kind == "param":
                 self._apply_param(ev[1], ev[2], ev[3])
+            elif kind == "fx_mix":
+                self._apply_fx_mix(ev[1], ev[2], ev[3])
             elif kind == "netcc":
                 self._apply_netcc(ev[1], ev[2])
             elif kind == "trigger":
@@ -1578,6 +1587,13 @@ class Engine:
             self.set_tempo_scale(1.0 + (val / 127.0) * TEMPO_BOOST_MAX)
         elif name in EFFECT_PRESETS:
             ch.fx_amounts[name] = val / 127.0
+
+    def _apply_fx_mix(self, ci: int, name: str, pct: int):
+        """Mezcla dry/wet de un efecto (0-100), config por canción/mixer:
+        no llega por pot físico, ver MixerBackend.set_fx_mix."""
+        if not 0 <= ci < CHANNEL_COUNT:
+            return
+        self.channels[ci].fx_mix[name] = max(0, min(100, pct)) / 100.0
 
     def _apply_netcc(self, control: int, val: int):
         """Pot de red (`pots_red` en el JSON de la canción): a diferencia de

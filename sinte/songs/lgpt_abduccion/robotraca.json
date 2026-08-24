@@ -1,25 +1,42 @@
 {
+  "fx": {},
+  "fx_mix": {
+    "2": {
+      "valve": 45
+    },
+    "5": {
+      "bode": 47
+    }
+  },
+  "master": 109,
   "mute": [
     3,
     4,
     6,
     7
   ],
-  "presence": [2, 5],
-  "vocoder": [3],
-  "pots": {
-    "pot1": "2:acid",
-    "pot5": "2:valve",
-    "pot2": "5:bode",
-    "pot6": "5:metal",
-    "pot8": "0:tempo"
-  },
-  "pots_red": ["pot3", "pot7"],
   "pad_volume": {
     "1": 27,
     "2": 27,
     "3": 27,
     "4": 27
   },
-  "master": 109
+  "pots": {
+    "pot1": "2:acid",
+    "pot2": "5:bode",
+    "pot5": "2:valve",
+    "pot6": "5:metal",
+    "pot8": "0:tempo"
+  },
+  "pots_red": [
+    "pot3",
+    "pot7"
+  ],
+  "presence": [
+    2,
+    5
+  ],
+  "vocoder": [
+    3
+  ]
 }

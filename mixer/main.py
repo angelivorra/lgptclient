@@ -161,6 +161,7 @@ class KnobWidget(BoxLayout):
     param = StringProperty("off")
     canales = ListProperty([])
     modo = StringProperty("off")
+    mix = NumericProperty(100)      # mezcla dry/wet del efecto (0-100%)
 
 
 class PadAssignWidget(BoxLayout):
@@ -190,6 +191,7 @@ class MixerApp(App):
         self._ultima_cfg: dict = {}
         self._canciones: list = []
         self._song_idx = 0          # última canción viva según state()
+        self._efectos: list = []    # EFFECT_PRESETS, lo rellena _on_arrancado
 
     # -- arranque / parada --------------------------------------------------
 
@@ -447,6 +449,20 @@ class MixerApp(App):
         kw.canales = sorted(canales)
         self._enviar_spec(n, kw)
 
+    def on_knob_mix(self, n, pct):
+        """Mezcla dry/wet (0-100%) del efecto al que apunta este knob: no
+        es un valor en vivo por hardware, se fija aquí y se persiste."""
+        if not self._listo():
+            return
+        kw = self._knob_widget(n)
+        if kw is None or kw.param not in self._efectos:
+            return
+        kw.mix = pct
+        for canal in kw.canales:
+            self._enviar(lambda c=canal: self.backend.set_fx_mix(
+                c, kw.param, pct), lambda r, c=canal:
+                self._check(r, f"MIX{n}:{c}"))
+
     def _enviar_spec(self, n, kw):
         """Compone el target del knob ("off" | "red" | "canales:param") y
         lo manda al backend, que lo aplica en vivo y lo mete al modelo."""
@@ -542,22 +558,29 @@ class MixerApp(App):
             self.root.ids.master.value = master
             pots = cfg.get("pots") or {}
             pots_red = set(cfg.get("pots_red") or [])
+            fx_mix = cfg.get("fx_mix") or {}
             for n in range(1, 9):
                 kw = self._knob_widget(n)
                 if kw is None:
                     continue
                 key = f"pot{n}"
                 if key in pots_red:
-                    kw.param, kw.canales, kw.modo = "red", [], "red"
+                    kw.param, kw.canales, kw.modo, kw.mix = \
+                        "red", [], "red", 100
                     continue
                 target = parse_pot_target(str(pots.get(key, "off")))
                 if target is None:
-                    kw.param, kw.canales, kw.modo = "off", [], "off"
+                    kw.param, kw.canales, kw.modo, kw.mix = \
+                        "off", [], "off", 100
                 else:
                     canales, nombre, _tope = target
                     kw.param = nombre
                     kw.canales = list(canales)
                     kw.modo = "target"
+                    kw.mix = 100
+                    if canales:
+                        kw.mix = fx_mix.get(str(canales[0]), {}) \
+                            .get(nombre, 100)
             vol_pct = cfg.get("pad_volume_pct") or {}
             for n in range(1, 5):
                 pw = self._pad_widget(n)
