@@ -10,7 +10,7 @@
 # knobs también se giran en el controlador; aquí solo se configura a qué
 # canal/efecto apunta cada uno en la canción (persiste en "pots" del
 # robotraca.json), igual que los pads solo configuran aquí QUÉ wav suena
-# en cada uno (banco global wavs/00N.wav, no por canción — ver
+# en cada uno (banco global wavs/pads.json, no por canción — ver
 # MixerBackend.assign_pad). El osciloscopio de mezcla se dibuja en Python
 # (ver main.py), aquí no lleva canvas propio.
 
@@ -191,19 +191,19 @@
         bold: True
         font_size: '12sp'
         color: 0.85, 0.85, 0.85, 1
-    # qué WAV suena en este pad (banco global wavs/00N.wav, ver
-    # MixerBackend.assign_pad); la lista sale de wavs/ recursivo, incluida
-    # wavs/candidatos2 con los sonidos aún sin activar.
-    Spinner:
-        id: wav_spinner
+    # qué WAV suena en este pad (banco global wavs/pads.json, ver
+    # MixerBackend.assign_pad); un solo botón abre un desplegable en árbol
+    # (MixerApp.on_pad_open) donde las subcarpetas como wavs/candidatos2 se
+    # expanden inline en vez de mezclarse en una lista plana.
+    Button:
+        id: wav_button
         text: root.wav
-        values: []
         size_hint_y: None
         height: 26
         font_size: '10sp'
         background_normal: ""
         background_color: 0.2, 0.2, 0.23, 1
-        on_text: app.on_pad_assign(root.pad_n, self.text)
+        on_release: app.on_pad_open(root.pad_n, self)
     # volumen de este pad (0-100%), por canción (robotraca.json
     # "pad_volume"; ver MixerBackend.set_pad_volume)
     BoxLayout:

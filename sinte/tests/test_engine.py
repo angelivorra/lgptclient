@@ -238,14 +238,17 @@ class TestVoices(unittest.TestCase):
         self.assertAlmostEqual(voice.base_speed, base)   # no cambia la base
 
     def test_pad_sample(self, tmp_dir=None):
-        # pad sampler: dispara un WAV del banco (directo, sin delay)
+        # pad sampler: dispara un WAV del banco (directo, sin delay), según
+        # wavs_dir/pads.json ("1" -> pad índice 0)
+        import json
         import tempfile
         with tempfile.TemporaryDirectory() as d:
             sf_write = __import__("soundfile").write
             t = np.arange(22050, dtype=np.float32) / SAMPLE_RATE
             sig = (0.4 * np.sin(2 * np.pi * 220 * t))[:, None]
-            sf_write(str(Path(d) / "001.wav"), sig, SAMPLE_RATE,
+            sf_write(str(Path(d) / "bombo.wav"), sig, SAMPLE_RATE,
                      subtype="PCM_16")
+            (Path(d) / "pads.json").write_text(json.dumps({"1": "bombo.wav"}))
             engine = Engine(make_project(), wavs_dir=d)
             engine.start()
             engine.push_event("trigger", 0)

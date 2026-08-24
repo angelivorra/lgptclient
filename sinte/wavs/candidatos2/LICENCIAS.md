@@ -3,10 +3,10 @@
 Sonidos de [Freesound](https://freesound.org), más agresivos y robóticos que
 la primera tanda (que era de packs de videojuego y quedó descartada).
 
-**Están en esta subcarpeta a propósito**: el engine carga los pads con
-`wavs/*.wav` sin recursión, así que desde aquí no se cargan ni alteran los
-pads 1 y 2 que ya tienes. Para activar uno, cópialo a la raíz con su número
-(`wavs/003.wav`, `wavs/004.wav`…).
+**Están en esta subcarpeta a propósito**: el engine carga cada pad según
+`wavs/pads.json`, así que desde aquí no se cargan ni alteran los pads que ya
+tienes asignados. Para activar uno, asígnalo a un pad desde el desplegable
+del mixer (no hace falta copiarlo ni renombrarlo a mano).
 
 Todos vienen recortados de silencios, limitados a 1 s con fundido de salida y
 normalizados a −1 dB, para que disparen al mismo nivel.

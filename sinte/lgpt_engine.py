@@ -25,6 +25,7 @@ que llama a render(): no hay locks en el camino de audio.
 
 from __future__ import annotations
 
+import json
 import math
 import queue
 import time
@@ -39,6 +40,7 @@ from lgpt_parser import LGPTProject
 
 SAMPLE_RATE = 44100
 CHANNEL_COUNT = 8
+MAX_PADS = 8                # pads de sampler (ver wavs_dir/pads.json)
 NETCC_CHANNEL = 9           # canal virtual para CC de pots_red (ver _apply_netcc)
 TICKS_PER_STEP = 6          # AUDIO_SLICES_PER_STEP del upstream
 KRATE = 100                 # KRATE_SAMPLE_COUNT del upstream
@@ -1182,9 +1184,13 @@ class Engine:
         # mixer vía scope_snapshot() para dibujar el osciloscopio.
         self._scope_ring = np.zeros(SCOPE_LEN, dtype=np.float32)
         self._scope_pos = 0
-        # Banco de WAVs para los pads (001.wav -> pad 0, 002.wav -> pad 1...)
+        # Banco de WAVs para los pads: wavs_dir/pads.json es la única fuente
+        # de verdad ({"1": "ruta/relativa.wav", ...}, la escribe el mixer en
+        # MixerBackend.assign_pad). Cada pad carga el fichero que apunte su
+        # entrada, tal cual, sin copiarlo ni renombrarlo a ningún 00N.wav.
         self.wavs_dir = Path(wavs_dir) if wavs_dir else None
-        self.pad_samples: list[tuple[np.ndarray, int]] = []
+        self.pad_samples: list[tuple[np.ndarray, int] | None] = [None] * MAX_PADS
+        self.pad_names: list[str | None] = [None] * MAX_PADS  # para logs
         self.pad_voice: Optional[Voice] = None
         self.pad_volume_default = 0.6       # volumen por defecto (0-1)
         self.pad_volume_map: dict[int, float] = {}   # por pad (índice)
@@ -1194,17 +1200,31 @@ class Engine:
     def _load_pad_samples(self, wavs_dir: Path):
         if not wavs_dir.is_dir():
             return
-        for wav in sorted(wavs_dir.glob("*.wav")):
+        try:
+            meta = json.loads((wavs_dir / "pads.json").read_text())
+        except (OSError, ValueError):
+            meta = {}
+        for i in range(MAX_PADS):
+            rel = meta.get(str(i + 1))
+            if not rel:
+                continue
+            wav = wavs_dir / rel
+            if not wav.is_file():
+                print(f"[engine] pad{i + 1}: no existe {rel}")
+                continue
             try:
                 data, sr = sf.read(str(wav), dtype="float32", always_2d=True)
-                self.pad_samples.append((np.ascontiguousarray(data), sr))
+                self.pad_samples[i] = (np.ascontiguousarray(data), sr)
+                self.pad_names[i] = rel
+                print(f"[engine] pad{i + 1} <- {rel}")
             except Exception as exc:
-                print(f"[engine] pad {wav.name}: {exc}")
+                print(f"[engine] pad {rel}: {exc}")
 
     def reload_pad_samples(self):
         """Vuelve a leer el banco de pads de `wavs_dir` (p.ej. tras
         reasignar un WAV desde el mixer, ver MixerBackend.assign_pad)."""
-        self.pad_samples.clear()
+        self.pad_samples = [None] * MAX_PADS
+        self.pad_names = [None] * MAX_PADS
         if self.wavs_dir:
             self._load_pad_samples(self.wavs_dir)
 
@@ -1857,8 +1877,14 @@ class Engine:
         """Pad sampler: dispara un WAV del banco de pads (wavs_dir),
         independiente de la canción. Suena directo (sin delay)."""
         if not 0 <= idx < len(self.pad_samples):
+            print(f"[pad] trigger idx={idx} fuera de rango")
             return
-        sample, sr = self.pad_samples[idx]
+        slot = self.pad_samples[idx]
+        if slot is None:
+            print(f"[pad] pad{idx + 1} sin wav asignado")
+            return
+        print(f"[pad] pad{idx + 1} -> {self.pad_names[idx]}")
+        sample, sr = slot
         vol = self.pad_volume_map.get(idx, self.pad_volume_default)
         idef = InstrumentDef(
             index=0, sample_name="", volume=int(255 * vol),

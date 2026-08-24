@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import json
 import queue
-import shutil
 import subprocess
 import sys
 import threading
@@ -312,7 +311,7 @@ class MixerBackend:
                        for ch in engine.channels},
                 "master": round(100 * engine.master / engine.base_master)
                 if engine.base_master else 100,
-                "pads": len(engine.pad_samples),
+                "pads": sum(1 for s in engine.pad_samples if s is not None),
                 "scope": engine.scope_snapshot(),
             })
         return state
@@ -568,9 +567,9 @@ class MixerBackend:
         return sorted(str(p.relative_to(root)) for p in root.rglob("*.wav"))
 
     def pad_assignments(self) -> dict:
-        """Último WAV elegido por pad desde el mixer, solo para mostrarlo
-        en la UI (wavs/pads.json): el engine no lee este fichero, siempre
-        carga wavs/00N.wav tal cual estén en el momento de arrancar."""
+        """WAV asignado a cada pad (wavs/pads.json, {"1": "ruta/rel.wav"}):
+        única fuente de verdad, la lee también el engine directamente en
+        Engine._load_pad_samples (sinte/lgpt_engine.py)."""
         root = self._wavs_root()
         if root is None:
             return {}
@@ -580,24 +579,16 @@ class MixerBackend:
             return {}
 
     def assign_pad(self, pad: int, rel_path: str) -> str:
-        """Copia `rel_path` (relativo a wavs_dir) a wavs_dir/00{pad}.wav
-        -mismo mecanismo manual descrito en wavs/candidatos2/LICENCIAS.md-
-        y recarga el banco de pads del engine en vivo, sin esperar a
-        cambiar de canción."""
+        """Asigna `rel_path` (relativo a wavs_dir) al pad: persiste en
+        wavs/pads.json y recarga el banco de pads del engine en vivo, sin
+        esperar a cambiar de canción."""
         if not 1 <= pad <= 8:
             return f"ERR,pad fuera de rango: {pad}"
         root = self._wavs_root()
         if root is None:
             return "ERR,sin wavs_dir configurado"
-        src = root / rel_path
-        if not src.is_file():
+        if not (root / rel_path).is_file():
             return f"ERR,no existe: {rel_path}"
-        dest = root / f"{pad:03d}.wav"
-        if src.resolve() != dest.resolve():
-            try:
-                shutil.copyfile(src, dest)
-            except OSError as exc:
-                return f"ERR,{exc}"
         meta = self.pad_assignments()
         meta[str(pad)] = rel_path
         try:

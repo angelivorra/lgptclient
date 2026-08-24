@@ -361,7 +361,8 @@ def open_midi_input(port_name: str | None, engine_ref: dict,
         action = match_button(buttons, msg)
         if action is not None:
             if action.startswith("sample"):
-                # pads sampler: disparan WAVs del banco (sample1 -> 001.wav)
+                # pads sampler: disparan WAVs del banco (sample1 -> pad 1,
+                # ver wavs_dir/pads.json)
                 engine = engine_ref.get("engine")
                 if engine is not None:
                     try:

@@ -51,6 +51,8 @@ from kivy.lang import Builder
 from kivy.properties import (BooleanProperty, ListProperty, NumericProperty,
                              StringProperty)
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
+from kivy.uix.dropdown import DropDown
 from kivy.uix.slider import Slider
 from kivy.uix.widget import Widget
 
@@ -63,6 +65,10 @@ KV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 # Parámetros seleccionables en los knobs además de los efectos (que salen
 # vivos de EFFECT_PRESETS): los que entiende Engine._apply_param.
 PARAMS_EXTRA = ["tempo", "volume", "pan", "pitch", "cutoff"]
+
+# Carpeta "virtual" para los wav que cuelgan directo de wavs_dir (sin
+# subcarpeta), en el desplegable de carpeta de cada pad.
+PAD_ROOT_LABEL = "(raíz)"
 
 # Botón físico (acción de Player.ui_queue) -> método de MixerApp. Mismo
 # significado que en el player real (lgpt_player._poll_buttons, contexto
@@ -192,6 +198,7 @@ class MixerApp(App):
         self._canciones: list = []
         self._song_idx = 0          # última canción viva según state()
         self._efectos: list = []    # EFFECT_PRESETS, lo rellena _on_arrancado
+        self._wav_tree: dict = {}   # carpeta -> [nombres .wav], ver _build_wav_tree
 
     # -- arranque / parada --------------------------------------------------
 
@@ -247,10 +254,10 @@ class MixerApp(App):
                 if kw is not None:
                     kw.ids.param_spinner.values = \
                         ["off", "red"] + efectos + PARAMS_EXTRA
+            self._wav_tree = self._build_wav_tree(wavs)
             for n in range(1, 5):
                 pw = self._pad_widget(n)
                 if pw is not None:
-                    pw.ids.wav_spinner.values = wavs
                     pw.wav = asignados.get(str(n), "—")
         finally:
             self._syncing = False
@@ -480,6 +487,67 @@ class MixerApp(App):
     # -- pads: qué WAV suena en cada uno (banco global, no por canción) ------
     # (el disparo en vivo lo hace el pad físico, ver MixerApp._boton_fisico
     # y MixerBackend.drain_buttons/pad).
+
+    def _build_wav_tree(self, wavs):
+        """Agrupa las rutas relativas de wav_candidates() por carpeta, para
+        mostrar cada subcarpeta (candidatos2, Distorted metal...) como su
+        propio desplegable en vez de una lista plana con "carpeta/wav.wav".
+        PAD_ROOT_LABEL agrupa los que cuelgan directo de wavs_dir."""
+        tree: dict = {}
+        for rel in wavs:
+            if "/" in rel:
+                folder, name = rel.rsplit("/", 1)
+            else:
+                folder, name = PAD_ROOT_LABEL, rel
+            tree.setdefault(folder, []).append(name)
+        return tree
+
+    def on_pad_open(self, n, anchor):
+        """Botón único del pad: abre un desplegable en árbol (carpetas
+        expandibles inline, ver _render_pad_dropdown) en vez de un segundo
+        spinner encadenado."""
+        dd = DropDown(auto_width=False, width=240)
+        expandidas = set()
+
+        def render():
+            dd.container.clear_widgets()
+            self._render_pad_dropdown(dd, expandidas, render)
+
+        render()
+        dd.bind(on_select=lambda inst, rel_path: self.on_pad_assign(n, rel_path))
+        dd.open(anchor)
+
+    def _render_pad_dropdown(self, dd, expandidas, render, folder=None, indent=0):
+        """Pinta un nivel del árbol de wavs dentro de `dd`: los ficheros de
+        `folder` (None = raíz) seguidos de las subcarpetas, expandiendo
+        inline (sin cerrar el desplegable) las que estén en `expandidas`."""
+        clave = PAD_ROOT_LABEL if folder is None else folder
+        nombres = sorted(self._wav_tree.get(clave, []))
+        for nombre in nombres:
+            rel_path = nombre if folder is None else f"{folder}/{nombre}"
+            btn = Button(text="  " * indent + nombre, size_hint_y=None,
+                        height=26, halign="left", valign="middle")
+            btn.bind(size=lambda b, s: setattr(b, "text_size", s))
+            btn.bind(on_release=lambda b, r=rel_path: dd.select(r))
+            dd.container.add_widget(btn)
+        if folder is not None:
+            return
+        for sub in sorted(k for k in self._wav_tree if k != PAD_ROOT_LABEL):
+            abierta = sub in expandidas
+            flecha = "v " if abierta else "> "
+            hdr = Button(text=flecha + sub + "/", size_hint_y=None, height=26,
+                        background_color=(0.28, 0.28, 0.32, 1),
+                        halign="left", valign="middle")
+            hdr.bind(size=lambda b, s: setattr(b, "text_size", s))
+
+            def toggle(b, s=sub):
+                expandidas.symmetric_difference_update({s})
+                render()
+            hdr.bind(on_release=toggle)
+            dd.container.add_widget(hdr)
+            if abierta:
+                self._render_pad_dropdown(dd, expandidas, render,
+                                          folder=sub, indent=1)
 
     def on_pad_assign(self, n, rel_path):
         if not self._listo() or rel_path in ("—", ""):
