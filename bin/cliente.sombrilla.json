@@ -15,19 +15,19 @@
     "pines": {
         "23": {
             "nombre": "Bombo",
-            "tiempo": 0.15,            
+            "tiempo": 0.20,            
             "idelay": 0,
             "delay": -50
         },
         "17": {
             "nombre": "Caja1",
-            "tiempo": 0.05,            
+            "tiempo": 0.10,            
             "idelay": 0, 
             "delay": 0
         },
         "27": {
             "nombre": "Caja2",
-            "tiempo": 0.05,
+            "tiempo": 0.10,
             "idelay": 30,
             "delay": 0
         },

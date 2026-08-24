@@ -77,7 +77,7 @@ enabled = true
 port = 8888
 delay = 1000       # ms que el cliente espera antes de ejecutar (su base_delay)
 debug = 0
-ruido = 0
+ruido = 1
 pantalla = 1
 
 [events.clients]

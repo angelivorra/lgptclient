@@ -158,7 +158,15 @@
       "Bash(python3 -m py_compile sinte/lgpt_engine.py mixer/main.py mixer/backend.py)",
       "Bash(chmod +x /home/angel/git/lgptclient/sinte/importa-cancion.sh)",
       "Bash(sinte/.venv/bin/python -c ' *)",
-      "Bash(git -C /home/angel/git/lgptclient status --short sinte/songs/)"
+      "Bash(git -C /home/angel/git/lgptclient status --short sinte/songs/)",
+      "Bash(ping -c2 -W1 192.168.0.2)",
+      "Bash(ping -c2 -W1 192.168.0.3)",
+      "Bash(timeout 5 bash -c 'exec 3<>/dev/tcp/192.168.0.2/8888; cat <&3')",
+      "Bash(echo \"exit=$?\")",
+      "Bash(timeout 15 bash -c 'exec 3<>/dev/tcp/192.168.0.2/8888; cat <&3')",
+      "Bash(:)",
+      "Bash(timeout 3 bash -c 'exec 3<>/dev/tcp/192.168.0.2/8888; head -c 200 <&3')",
+      "Bash(ansible-playbook ansible/actualiza-maletas.yaml -i ansible/inventario)"
     ],
     "additionalDirectories": [
       "/home/angel/LGPT/bin",
