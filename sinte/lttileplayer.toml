@@ -19,11 +19,6 @@ delay = 1.0
 record = ""
 wavs_dir = "wavs"
 pad_volume = 45
-# 0 = apagado. El servidor de streaming escribía en el propio callback de
-# audio (`streamer.write(outdata)`), o sea que su coste entra en el
-# presupuesto del bloque. Era para escuchar la Pi desde el PC mientras se
-# desarrollaba; en directo solo resta margen.
-stream = 0
 
 [midi]
 input = "LPD8"

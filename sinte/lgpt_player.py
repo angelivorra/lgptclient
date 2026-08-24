@@ -161,87 +161,6 @@ def _pick_port(names: list[str], wanted: str | None, what: str) -> str | None:
     return names[0]
 
 
-class TcpStreamer:
-    """Emite la salida de audio por TCP (PCM s16le estéreo) para escuchar
-    la Pi desde otro equipo. Escucha en un puerto; al conectar un cliente
-    empieza a enviar. En el PC: `nc <pi> <puerto> | aplay -f S16_LE -c 2`.
-
-    El callback encola bloques (cola acotada: si la red no da abasto se
-    descartan, no se bloquea el audio).
-    """
-
-    def __init__(self, port: int, samplerate: int, on_event=None):
-        import socket
-        self.samplerate = samplerate
-        self._on_event = on_event            # callback(msg) para la UI
-        self._queue: queue.SimpleQueue = queue.SimpleQueue()
-        self.dropped = 0
-        self._queued = 0
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._sock.bind(("0.0.0.0", port))
-        self._sock.listen(1)
-        self._client = None
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-
-    def _notify(self, msg: str):
-        if self._on_event is not None:
-            self._on_event(msg)
-
-    def _run(self):
-        import socket
-        while True:
-            if self._client is None:
-                try:
-                    self._sock.settimeout(0.5)
-                    self._client, addr = self._sock.accept()
-                    self._notify(f"stream conectado: {addr[0]}")
-                    self._queued = 0
-                except socket.timeout:
-                    continue
-                except OSError:
-                    return
-            try:
-                block = self._queue.get(timeout=0.5)
-            except queue.Empty:
-                continue
-            self._queued = max(0, self._queued - 1)
-            if block is None:
-                return
-            try:
-                self._client.sendall(block)
-            except OSError:
-                self._notify("stream desconectado")
-                self._client = None
-
-    def write(self, block: np.ndarray):
-        if self._client is None:
-            return
-        # cola acotada (~0.37 s): si se llena, descartamos lo MÁS VIEJO
-        # para que el stream se mantenga en directo tras tirones de red
-        while self._queued >= 32:
-            try:
-                self._queue.get_nowait()
-                self.dropped += 1
-                self._queued -= 1
-            except queue.Empty:
-                self._queued = 0
-                break
-        pcm = (np.clip(block, -1.0, 1.0) * 32767).astype(np.int16)
-        self._queue.put(pcm.tobytes())
-        self._queued += 1
-
-    def close(self):
-        self._queue.put(None)
-        try:
-            self._sock.close()
-            if self._client is not None:
-                self._client.close()
-        except OSError:
-            pass
-
-
 class WavRecorder:
     """Graba la salida de audio a un WAV sin bloquear el callback:
     el callback encola bloques y un hilo escritor los vuelca a disco."""
@@ -648,7 +567,6 @@ class Player:
         self.event_out: EventMidiOut | None = None
         self.recorder: WavRecorder | None = None
         self._notice: tuple | None = None   # (mensaje, timestamp) para la UI
-        self.streamer: TcpStreamer | None = None
         self._expected_dac_time: float | None = None  # reloj real esperado
         self.estado_audio = EstadoAudio(
             args.blocksize / float(args.samplerate) * 1000.0)
@@ -702,11 +620,8 @@ class Player:
         recorder = self.recorder
         if recorder is not None:
             recorder.write(outdata)
-        streamer = self.streamer
-        if streamer is not None:
-            streamer.write(outdata)
         # Coste real de este bloque. Se mide al final, con todo hecho
-        # (render + grabación + streaming), porque lo que provoca el corte
+        # (render + grabación), porque lo que provoca el corte
         # es el total, no solo el motor.
         ms = (time.perf_counter() - t_entrada) * 1000.0
         est.ultima_ms = ms
@@ -1453,7 +1368,7 @@ class Player:
             port = int(ev.get("port", 8888))
             try:
                 self.event_server = EventServer(
-                    port=port, config=ev, on_event=self._set_notice)
+                    port=port, config=ev)
             except OSError as exc:
                 # Caso típico en la Pi: el bridge viejo (servidor.service) ya
                 # tiene el 8888. Mejor sonar sin eventos que no sonar.
@@ -1477,10 +1392,6 @@ class Player:
         if self.args.record:
             self.recorder = WavRecorder(self.args.record, self.args.samplerate)
             print(f"[audio] grabando salida en {self.args.record}")
-        if self.args.stream:
-            self.streamer = TcpStreamer(self.args.stream, self.args.samplerate,
-                                        on_event=self._set_notice)
-            self._set_notice(f"stream puerto {self.args.stream}")
         self.stream.start()
         try:
             if sys.stdin.isatty():
@@ -1496,8 +1407,6 @@ class Player:
             self.stream.close()
             if self.recorder is not None:
                 self.recorder.close()
-            if self.streamer is not None:
-                self.streamer.close()
             if self.event_server is not None:
                 self.event_server.close()
             if self.midi_in is not None:
@@ -1533,8 +1442,6 @@ def main():
                         help="retardo de la salida de audio en segundos")
     parser.add_argument("--record", default=None, metavar="WAV",
                         help="graba la salida de audio a un archivo WAV")
-    parser.add_argument("--stream", type=int, default=None, metavar="PUERTO",
-                        help="emite la salida por TCP (PCM s16le)")
     parser.add_argument("--song", default=None,
                         help="subcadena del nombre de la carpeta lgpt_* a "
                              "seleccionar (por defecto, la primera alfabética)")
@@ -1565,10 +1472,6 @@ def main():
     args.delay = args.delay if args.delay is not None else audio_cfg.get(
         "delay", 1.0)
     args.record = args.record or audio_cfg.get("record") or None
-    args.stream = (
-        args.stream if args.stream is not None
-        else audio_cfg.get("stream", 0) or None
-    )
     args.midi = args.midi if args.midi is not None else midi_cfg.get("input", "")
     args.midi_out = (
         args.midi_out if args.midi_out is not None
