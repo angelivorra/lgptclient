@@ -166,7 +166,11 @@
       "Bash(timeout 15 bash -c 'exec 3<>/dev/tcp/192.168.0.2/8888; cat <&3')",
       "Bash(:)",
       "Bash(timeout 3 bash -c 'exec 3<>/dev/tcp/192.168.0.2/8888; head -c 200 <&3')",
-      "Bash(ansible-playbook ansible/actualiza-maletas.yaml -i ansible/inventario)"
+      "Bash(ansible-playbook ansible/actualiza-maletas.yaml -i ansible/inventario)",
+      "Bash(python3 -m py_compile sinte/lgpt_engine.py)",
+      "Bash(rm -f /tmp/claude-1000/-home-angel-git-lgptclient/c573ffe0-763a-4daf-bbcd-108ad5af7c96/scratchpad/mixer.log)",
+      "Bash(nohup ./run.sh)",
+      "Bash(pkill -9 -f \"venv/bin/python3 main.py\")"
     ],
     "additionalDirectories": [
       "/home/angel/LGPT/bin",
