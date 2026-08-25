@@ -1,4 +1,29 @@
 ---
+# Desactivar el ahorro de energía del wifi (brcmfmac). Con power save ON la
+# radio duerme en reposo y descarta el tráfico ENTRANTE no solicitado: desde
+# el PC de desarrollo se pierde SSH/OSC/ping con el vocoder aunque la señal
+# sea excelente (-36 dBm), mientras que la conexión SALIENTE que el propio
+# vocoder abre al sinte (tcp_client) sigue viva porque mantiene la radio
+# despierta. Síntoma: "solo cae el vocoder, no el sinte". El drop-in fija
+# powersave=2 (disable) para toda conexión wifi y sobrevive reprovisionados.
+- name: Desactivar el power save del wifi (drop-in de NetworkManager)
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/NetworkManager/conf.d/wifi-powersave-off.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Gestionado por ansible (rol vocoder-actualiza). Ver tasks/main.yaml.
+      [connection]
+      wifi.powersave = 2
+  register: wifi_powersave
+
+- name: Aplicar el power save del wifi ya mismo (sin esperar a reconectar)
+  become: true
+  ansible.builtin.command: /sbin/iwconfig wlan0 power off
+  changed_when: false
+
 - name: Sincronizar la app flask del vocoder
   ansible.posix.synchronize:
     src: /home/angel/git/lgptclient/vocoder/flask/

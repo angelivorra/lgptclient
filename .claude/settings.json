@@ -175,7 +175,12 @@
       "Bash(ansible-playbook ansible/trae-calibracion.yaml -i ansible/inventario)",
       "Bash(scp -o ConnectTimeout=8 angel@192.168.0.2:/tmp/sinte_timing.jsonl ./sinte.jsonl)",
       "Bash(scp -o ConnectTimeout=8 angel@192.168.0.3:/tmp/cliente_timing.jsonl ./maleta.jsonl)",
-      "Bash(scp -o ConnectTimeout=8 angel@192.168.0.4:/tmp/cliente_timing.jsonl ./sombrilla.jsonl)"
+      "Bash(scp -o ConnectTimeout=8 angel@192.168.0.4:/tmp/cliente_timing.jsonl ./sombrilla.jsonl)",
+      "Bash(ping -c2 -W2 192.168.0.10)",
+      "Bash(timeout 5 bash -c 'echo > /dev/tcp/192.168.0.10/22')",
+      "Bash(timeout 5 bash -c 'echo > /dev/tcp/192.168.0.10/22752')",
+      "Bash(pkill -f \"journalctl --user -u pivocoder\")",
+      "Bash(pkill -f \"timeout 180 ssh\")"
     ],
     "additionalDirectories": [
       "/home/angel/LGPT/bin",
