@@ -47,20 +47,23 @@ DEFAULT_SONGS_DIR = "/home/angel/Documentos/canciones/"
 CONFIG_PATH = Path(__file__).resolve().parent / "lttileplayer.toml"
 
 # -- Calibración de motores por el controlador (Akai LPD8 mk2, notas fijas) --
+# Dentro de la calibración se reutilizan los transportes (anterior/siguiente/
+# play/stop, leídos de la config de botones) y 3 pads sampler + 3 knobs.
 # Pads en canal 9, knobs en canal 0. Ver pantalla _calib_view.
-CALIB_OPEN_SPEC = "note:9:39"    # pad 4: abre la calibración desde la lista
 CALIB_PAD_CHANNEL = 9
-CALIB_PAD_ROBOT = 42             # pad 1: cambiar de robot
-CALIB_PAD_SAVE = 43              # pad 2: aceptar y guardar (CALSAVE)
-CALIB_PAD_MOTOR = 38             # pad 3: cambiar de motor
-CALIB_PAD_PULSE = 39             # pad 4: iniciar/parar el pulso del motor
+CALIB_PAD_MOTOR_PREV = 42        # pad sampler: motor anterior
+CALIB_PAD_MOTOR_NEXT = 38        # pad sampler: motor siguiente
+CALIB_PAD_SAVE = 43              # pad sampler: guardar (CALSAVE)
 CALIB_KNOB_CHANNEL = 0
-CALIB_KNOB_DUR = 70              # knob 1: duración
+CALIB_KNOB_DUR = 70              # knob 1: duración (tiempo de encendido)
 CALIB_KNOB_DELAY = 74           # knob 2: delay
+CALIB_KNOB_TEMPO = 71           # knob 3: tempo del envío de señales
 # Rango que barre cada knob (0..127 -> estos límites, en ms).
 CALIB_DUR_MIN_MS, CALIB_DUR_MAX_MS = 5, 250
 CALIB_DELAY_MIN_MS, CALIB_DELAY_MAX_MS = -250, 250
-CALIB_PULSE_INTERVAL_S = 0.4     # cada cuánto repite el golpe con el pulso ON
+# Tempo del pulso: knob 0 -> lento (1000 ms), 127 -> rápido (100 ms).
+CALIB_TEMPO_MIN_MS, CALIB_TEMPO_MAX_MS = 100, 1000
+CALIB_PULSE_INTERVAL_S = 0.4     # intervalo por defecto hasta tocar el knob
 
 
 class _CalibExit(Exception):
@@ -397,9 +400,13 @@ def open_midi_input(port_name: str | None, engine_ref: dict,
         if action is not None:
             if action.startswith("sample"):
                 # pads sampler: disparan WAVs del banco (sample1 -> pad 1,
-                # ver wavs_dir/pads.json)
+                # ver wavs_dir/pads.json). Pero en la lista (sin canción
+                # cargada) no hay samples, así que cualquiera de esos pads
+                # abre la calibración de motores.
                 engine = engine_ref.get("engine")
-                if engine is not None:
+                if engine is None:
+                    ui_queue.put("calib")
+                else:
                     try:
                         idx = int(action[6:]) - 1
                     except ValueError:
@@ -1223,11 +1230,18 @@ class Player:
         return robots
 
     def _calib_view(self, scr, curses):
-        """Calibración de motores manejada con el controlador (Akai LPD8):
-        pad1 cambia robot, pad3 cambia motor, knob1/knob2 ajustan
-        duración/delay (CALIB en vivo), pad4 arranca/para un pulso repetido
-        del motor para ajustarlo de oído, pad2 guarda (CALSAVE). Sale con el
-        botón STOP o con 'q'."""
+        """Calibración de motores manejada con el controlador (Akai LPD8).
+
+        Reutiliza los transportes (leídos de la config de botones):
+          - anterior / siguiente : cambiar de robota
+          - play                 : play/pausa del envío de señales (pulso)
+          - stop                 : salir
+        y 3 pads sampler + 3 knobs:
+          - pad 42 / 38          : motor anterior / siguiente
+          - pad 43               : guardar (CALSAVE)
+          - knob 70 / 74 / 71    : duración / delay / tempo del envío
+        Teclado (fallback): flechas, espacio (pulso), s (guardar), q (salir).
+        """
         robots = self._load_calib_robots()
         if not robots:
             scr.erase()
@@ -1253,8 +1267,19 @@ class Player:
         ri, mi = 0, 0
         pulse_on = False
         last_pulse = 0.0
+        pulse_interval = CALIB_PULSE_INTERVAL_S
         status = ""
-        stop_spec = self.buttons.get("stop")
+
+        def spec(action):
+            s = self.buttons.get(action)
+            return s if s else (None, None, None)
+        prev_spec = spec("up")      # anterior -> robota anterior
+        next_spec = spec("down")    # siguiente -> robota siguiente
+        play_spec = spec("play")    # play -> play/pausa del pulso
+        stop_spec = spec("stop")    # stop -> salir
+
+        def matches(sp, mtype, ch, num):
+            return sp[0] == mtype and sp[1] == ch and sp[2] == num
 
         # Entramos en modo calibración: el callback MIDI desvía TODO al
         # calib_queue (ver open_midi_input) y no dispara botones/pots/engine.
@@ -1268,16 +1293,17 @@ class Player:
                 robot = robots[ri]
                 motor = robot["motores"][mi]
 
-                # Pulso: repite el golpe del motor seleccionado.
+                # Pulso: repite el golpe (envía la nota) al tempo actual.
                 now = time.time()
-                if pulse_on and now - last_pulse >= CALIB_PULSE_INTERVAL_S:
+                if pulse_on and now - last_pulse >= pulse_interval:
                     self._calib_send(robot, motor)
                     self.event_server.emit("CALTEST",
                                            int(now * 1000),
                                            robot["nombre"], motor["pin"])
                     last_pulse = now
 
-                self._calib_draw(scr, curses, robots, ri, mi, pulse_on, status)
+                self._calib_draw(scr, curses, robots, ri, mi, pulse_on,
+                                 pulse_interval, status)
 
                 # Teclado (fallback en un PC con teclado).
                 kc = scr.getch()
@@ -1292,7 +1318,7 @@ class Player:
                         mi = (mi - 1) % len(robot["motores"]); status = ""
                     elif kc in (curses.KEY_DOWN, ord("j")):
                         mi = (mi + 1) % len(robot["motores"]); status = ""
-                    elif kc in (ord(" "), ord("t")):
+                    elif kc in (ord(" "),):
                         pulse_on = not pulse_on; last_pulse = 0.0
                     elif kc in (ord("s"),):
                         status = self._calib_save(robot, motor)
@@ -1304,19 +1330,23 @@ class Player:
                             mtype, ch, num, val = cq.get_nowait()
                         except queue.Empty:
                             break
-                        if (stop_spec is not None and mtype == stop_spec[0]
-                                and ch == stop_spec[1] and num == stop_spec[2]):
-                            # botón STOP -> salir
+                        press = val > 0    # note_on/cc con valor -> pulsación
+                        if matches(stop_spec, mtype, ch, num) and press:
                             raise _CalibExit
-                        if mtype == "note_on" and val > 0 \
+                        if matches(prev_spec, mtype, ch, num) and press:
+                            ri = (ri - 1) % len(robots); mi = 0; status = ""
+                        elif matches(next_spec, mtype, ch, num) and press:
+                            ri = (ri + 1) % len(robots); mi = 0; status = ""
+                        elif matches(play_spec, mtype, ch, num) and press:
+                            pulse_on = not pulse_on; last_pulse = 0.0
+                        elif mtype == "note_on" and press \
                                 and ch == CALIB_PAD_CHANNEL:
-                            if num == CALIB_PAD_ROBOT:
-                                ri = (ri + 1) % len(robots); mi = 0; status = ""
-                            elif num == CALIB_PAD_MOTOR:
+                            if num == CALIB_PAD_MOTOR_PREV:
+                                mi = (mi - 1) % len(robot["motores"])
+                                status = ""
+                            elif num == CALIB_PAD_MOTOR_NEXT:
                                 mi = (mi + 1) % len(robot["motores"])
                                 status = ""
-                            elif num == CALIB_PAD_PULSE:
-                                pulse_on = not pulse_on; last_pulse = 0.0
                             elif num == CALIB_PAD_SAVE:
                                 status = self._calib_save(robot, motor)
                         elif mtype == "control_change" \
@@ -1329,6 +1359,12 @@ class Player:
                                 motor["delay_ms"] = _calib_scale(
                                     val, CALIB_DELAY_MIN_MS, CALIB_DELAY_MAX_MS)
                                 self._calib_send(robot, motor); status = ""
+                            elif num == CALIB_KNOB_TEMPO:
+                                # knob a la derecha = más rápido (menos ms)
+                                pulse_interval = _calib_scale(
+                                    127 - val, CALIB_TEMPO_MIN_MS,
+                                    CALIB_TEMPO_MAX_MS) / 1000.0
+                                status = ""
         except _CalibExit:
             pass
         finally:
@@ -1359,7 +1395,8 @@ class Player:
                                robot["nombre"], motor["pin"])
         return f"guardado en {robot['nombre']}: {motor['nombre']}"
 
-    def _calib_draw(self, scr, curses, robots, ri, mi, pulse_on, status):
+    def _calib_draw(self, scr, curses, robots, ri, mi, pulse_on,
+                    pulse_interval, status):
         robot = robots[ri]
         motor = robot["motores"][mi]
         scr.erase()
@@ -1375,31 +1412,32 @@ class Player:
                 except curses.error:
                     pass
 
+        bpm = 60.0 / pulse_interval if pulse_interval > 0 else 0
         put(1, 2, "CALIBRACIÓN DE MOTORES", c1 | curses.A_BOLD)
-        put(3, 2, "Robot:", c3)
+        put(3, 2, "Robota:", c3)
         put(3, 12, robot["nombre"], c2)
         put(4, 2, "Motor:", c3)
         put(4, 12, f"{motor['nombre']}  (pin {motor['pin']})", c2)
         put(6, 4, f"Duración   {motor['tiempo_ms']:6.0f} ms   <- knob 1", c1)
         put(7, 4, f"Delay      {motor['delay_ms']:+6.0f} ms   <- knob 2", c1)
-        estado = "PULSANDO )))" if pulse_on else "parado"
-        put(9, 4, f"Pulso: {estado}",
-            (c2 if pulse_on else c3))
+        put(8, 4, f"Tempo      {pulse_interval * 1000:6.0f} ms "
+                  f"({bpm:3.0f}/min)  <- knob 3", c1)
+        estado = "ENVIANDO )))" if pulse_on else "parado"
+        put(10, 4, f"Envío (play): {estado}", (c2 if pulse_on else c3))
 
-        # Ayuda visual: dibujo del mando (Akai LPD8). Los pads en el orden
-        # en que se asignaron; los knobs debajo.
+        # Ayuda visual: mapa de los controles del mando (Akai LPD8).
         help_lines = [
-            "+-----------------------------------------+",
-            "|  MANDO (Akai LPD8)                      |",
-            "|   [PAD1]      [PAD2]                     |",
-            "|   robot       GUARDAR                    |",
-            "|   [PAD3]      [PAD4]                     |",
-            "|   motor       pulso on/off              |",
-            "|   (o1) duracion   (o2) delay            |",
-            "|   STOP / q : salir                      |",
-            "+-----------------------------------------+",
+            "+---------------------------------------------+",
+            "|  MANDO                                      |",
+            "|   anterior / siguiente : cambiar de robota  |",
+            "|   play                 : enviar (play/pausa)|",
+            "|   pad izq / der        : motor ant / sig    |",
+            "|   pad guardar          : guardar en robota  |",
+            "|   knob1 duracion  knob2 delay  knob3 tempo  |",
+            "|   stop / q             : salir              |",
+            "+---------------------------------------------+",
         ]
-        top = 11
+        top = 12
         for i, line in enumerate(help_lines):
             put(top + i, 4, line, c3)
 
@@ -1458,7 +1496,6 @@ class Player:
         self.buttons.update({
             a: parse_button_spec(s)
             for a, s in cfg.get("buttons", {}).items()})
-        self.buttons.setdefault("calib", parse_button_spec(CALIB_OPEN_SPEC))
         self.args.hw_pots = cfg.get("pots", {})
 
     # -- widgets de la pantalla CONFIG ------------------------------------------
@@ -1639,9 +1676,6 @@ class Player:
                       f"{self.event_server.port}")
         self.engine_ref["raw_queue"] = queue.SimpleQueue()
         self.engine_ref["calib_queue"] = queue.SimpleQueue()
-        # Pad fijo que abre la calibración desde la lista (notas fijas, ver
-        # constantes CALIB_*). No pisa un mapeo existente del usuario.
-        self.buttons.setdefault("calib", parse_button_spec(CALIB_OPEN_SPEC))
         self.midi_in = open_midi_input(
             self.args.midi, self.engine_ref, self.ui_queue, self.buttons,
             self.args.pots, self.args.pots_red)
