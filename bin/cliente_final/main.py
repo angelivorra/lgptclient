@@ -73,6 +73,7 @@ from gpio_executor import GPIOExecutor
 from media_manager import MediaManager
 from display_executor import DisplayExecutor
 from event_orchestrator import EventOrchestrator
+import timing_log   # LOG TEMPORAL de timing (quitar tras depurar)
 
 
 class MIDIClient:
@@ -205,6 +206,8 @@ class MIDIClient:
                 velocity = int(parts[4])
                 
                 logger.debug(f"🎵 NOTA {note} (canal {channel}, vel {velocity})")
+                timing_log.log("NOTA_recv", note=note, ch=channel,
+                               server_ts=server_ts_ms)  # LOG TEMPORAL
                 self.orchestrator.handle_nota(server_ts_ms, note, channel, velocity)
                 
             elif msg_type == 'CC' and len(parts) >= 5:
@@ -246,6 +249,8 @@ class MIDIClient:
                 if robot.lower() == self.config.nombre.lower():
                     server_ts_ms = int(parts[1])
                     pin = int(parts[3])
+                    timing_log.log("CALTEST_recv", pin=pin,
+                                   server_ts=server_ts_ms)  # LOG TEMPORAL
                     # Se programa en el scheduler (ts + 1s - pin.delay), igual
                     # que una NOTA real, para que el timing de la calibración
                     # coincida con el de las canciones.

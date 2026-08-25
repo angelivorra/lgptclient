@@ -1355,6 +1355,11 @@ class Player:
                     self.event_server.emit("CALTEST", audible_ms - client_delay_ms,
                                            robot["nombre"], motor["pin"])
                     self._calib_pending.append(audible_ms)   # clic de audio
+                    import timing_log   # LOG TEMPORAL (quitar tras depurar)
+                    timing_log.log("CALTEST_emit", pin=motor["pin"],
+                                   robot=robot["nombre"],
+                                   ts=audible_ms - client_delay_ms,
+                                   audible=audible_ms)
                     last_pulse = now
 
                 self._calib_draw(scr, curses, robots, ri, mi, pulse_on,

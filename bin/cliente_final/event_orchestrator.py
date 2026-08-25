@@ -14,6 +14,8 @@ import threading
 import time
 from typing import Optional
 
+import timing_log   # LOG TEMPORAL de timing (quitar tras depurar)
+
 from config_loader import ConfigLoader
 from scheduler import Scheduler
 from gpio_executor import GPIOExecutor
@@ -233,6 +235,9 @@ class EventOrchestrator:
             f"delay={pin_config.delay}ms → ejecutar en {delta_ms:.1f}ms"
         )
 
+        timing_log.log("sched", pin=pin, note=note, server_ts=server_ts_ms,
+                       exec=execution_time_ms, pin_delay=pin_config.delay,
+                       tiempo=pin_config.tiempo, force=force)  # LOG TEMPORAL
         self.scheduler.schedule_at_walltime(
             wall_time_ms=execution_time_ms,
             callback=self.gpio_executor.activate_pin,

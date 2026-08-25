@@ -225,7 +225,13 @@ class EventMidiOut:
         return audible - self.client_delay_ms
 
     def note_on(self, channel, note, velocity):
-        self.server.emit("NOTA", self._ts(), note, channel, velocity)
+        engine = self._engine_ref.get("engine")
+        audible = engine.event_time_ms() if engine is not None else now_ms()
+        ts = audible - self.client_delay_ms
+        import timing_log   # LOG TEMPORAL (quitar tras depurar)
+        timing_log.log("NOTA_emit", note=note, ch=channel, vel=velocity,
+                       ts=ts, audible=audible)
+        self.server.emit("NOTA", ts, note, channel, velocity)
 
     def note_off(self, channel, note):
         # El protocolo no lleva note off: los clientes disparan solenoides con

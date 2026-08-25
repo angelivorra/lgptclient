@@ -127,6 +127,11 @@ class GPIOExecutor:
                 else:
                     GPIO.output(pin, GPIO.HIGH)
                     logger.info(f"🔌 GPIO {pin_desc}{note_desc}")
+                # LOG TEMPORAL: instante real del HIGH (quitar tras depurar)
+                import timing_log
+                timing_log.log("fire", pin=pin, note=note,
+                               fire=round(start_time * 1000, 1),
+                               dur=round(duration, 3))
                 
                 await asyncio.sleep(duration)
                 
