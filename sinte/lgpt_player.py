@@ -61,7 +61,7 @@ CALIB_KNOB_DELAY = 74           # knob 2: delay
 CALIB_KNOB_TEMPO = 71           # knob 3: tempo del envío de señales
 # Rango que barre cada knob (0..127 -> estos límites, en ms).
 CALIB_DUR_MIN_MS, CALIB_DUR_MAX_MS = 5, 250
-CALIB_DELAY_MIN_MS, CALIB_DELAY_MAX_MS = -250, 250
+CALIB_DELAY_MIN_MS, CALIB_DELAY_MAX_MS = -350, 350
 # Tempo del pulso: knob 0 -> lento (1000 ms), 127 -> rápido (100 ms).
 CALIB_TEMPO_MIN_MS, CALIB_TEMPO_MAX_MS = 100, 1000
 CALIB_PULSE_INTERVAL_S = 1.0     # intervalo por defecto: lento hasta tocar el knob
