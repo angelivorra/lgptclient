@@ -1245,12 +1245,45 @@ class Player:
                     self._capture_view(scr, curses, cfg["pots"], entries,
                                        POT_DEFAULT_TARGETS)
 
+    def _calib_bin_dir(self) -> Path:
+        """Carpeta bin/ del repo con los cliente.*.json (fuente única)."""
+        return Path(__file__).resolve().parent.parent / "bin"
+
+    def _robot_config_path(self, nombre: str) -> Path | None:
+        """Ruta del cliente.*.json cuyo campo 'nombre' coincide (Obdulia...)."""
+        import json
+        for path in sorted(self._calib_bin_dir().glob("cliente.*.json")):
+            try:
+                data = json.loads(path.read_text())
+            except (OSError, ValueError):
+                continue
+            if (data.get("nombre") or data.get("name")) == nombre:
+                return path
+        return None
+
+    def _robot_config_for_ip(self, ip: str) -> str | None:
+        """Callback para EventServer: JSON compacto de la config de la robota
+        con esa IP (según [events.clients]), o None si no hay. Se lee fresco en
+        cada conexión para que un reconecte tras calibrar reciba lo último."""
+        import json
+        nombre = self.args.events.get("clients", {}).get(ip)
+        if not nombre:
+            return None
+        path = self._robot_config_path(nombre)
+        if path is None:
+            return None
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return None
+        return json.dumps(data, separators=(",", ":"))  # compacto, sin \n
+
     def _load_calib_robots(self):
         """Lee bin/cliente.*.json y devuelve la lista de robots con sus
         motores (nombre, tiempo en ms, delay en ms). El sinte recibe todo el
         árbol versionado por rsync, así que estos ficheros están presentes."""
         import json
-        bin_dir = Path(__file__).resolve().parent.parent / "bin"
+        bin_dir = self._calib_bin_dir()
         robots = []
         for path in sorted(bin_dir.glob("cliente.*.json")):
             try:
@@ -1455,11 +1488,35 @@ class Player:
             round(motor["tiempo_ms"]), round(motor["delay_ms"]))
 
     def _calib_save(self, robot: dict, motor: dict) -> str:
-        """CALIB + CALSAVE: persiste el valor en el config.json del robot."""
+        """Aplica en caliente (CALIB) y PERSISTE en el repo del sinte (fuente
+        única): actualiza tiempo/delay del pin en bin/cliente.<robot>.json con
+        escritura atómica (tempfile+rename). La robota recibirá el valor por
+        RCONFIG en el próximo reconecte."""
+        import json
+        import os
+        import tempfile
         self._calib_send(robot, motor)
-        self.event_server.emit("CALSAVE", int(time.time() * 1000),
-                               robot["nombre"], motor["pin"])
-        return f"guardado en {robot['nombre']}: {motor['nombre']}"
+        path = self._robot_config_path(robot["nombre"])
+        if path is None:
+            return f"no encuentro el config de {robot['nombre']}"
+        try:
+            data = json.loads(path.read_text())
+            pin_data = data.setdefault("pines", {}).setdefault(
+                str(motor["pin"]), {})
+            pin_data["nombre"] = motor["nombre"]
+            pin_data["tiempo"] = round(motor["tiempo_ms"] / 1000.0, 4)
+            pin_data["delay"] = int(round(motor["delay_ms"]))
+            fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".json")
+            try:
+                with os.fdopen(fd, "w") as f:
+                    json.dump(data, f, indent=4)
+                os.replace(tmp, path)
+            except Exception:
+                os.remove(tmp)
+                raise
+        except (OSError, ValueError) as e:
+            return f"error guardando: {e}"
+        return f"guardado en repo: {robot['nombre']} {motor['nombre']}"
 
     def _calib_draw(self, scr, curses, robots, ri, mi, pulse_on,
                     pulse_interval, status):
@@ -1728,7 +1785,8 @@ class Player:
             port = int(ev.get("port", 8888))
             try:
                 self.event_server = EventServer(
-                    port=port, config=ev)
+                    port=port, config=ev,
+                    get_config=self._robot_config_for_ip)
             except OSError as exc:
                 # Caso típico en la Pi: el bridge viejo (servidor.service) ya
                 # tiene el 8888. Mejor sonar sin eventos que no sonar.

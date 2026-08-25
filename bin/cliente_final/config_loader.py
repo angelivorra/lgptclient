@@ -8,7 +8,6 @@ La configuración define:
 """
 import json
 import os
-import tempfile
 import logging
 from typing import Dict, List
 from dataclasses import dataclass
@@ -43,68 +42,63 @@ class ConfigLoader:
         self.invertir: bool = False  # Invertir pantalla de estado
         self.instruments: Dict[int, List[int]] = {}
         self.pines: Dict[int, PinConfig] = {}
-        
+
         self._load_config()
-    
+
     def _load_config(self):
-        """Carga y valida el archivo de configuración."""
+        """Carga inicial desde el fichero local, si existe. Es solo un
+        FALLBACK de arranque: la fuente única es el sinte, que manda la config
+        por TCP (RCONFIG) al conectar y sobreescribe esto. Si no hay fichero,
+        la robota arranca sin config y espera al RCONFIG."""
         try:
-            logger.info(f"Cargando configuración desde: {self.config_path}")
-            
             with open(self.config_path, 'r') as f:
                 config_data = json.load(f)
-            
-            self.nombre = config_data.get("nombre", "Cliente")
-            self.invertir = config_data.get("invertir", False)
-            logger.info(f"Nombre del cliente: {self.nombre}")
-            logger.info(f"Invertir pantalla: {self.invertir}")
-            
-            # Procesar instruments (nota → pines)
-            raw_instruments = config_data.get("instruments", {})
-            for note_str, pins in raw_instruments.items():
-                note = int(note_str)
-                
-                if isinstance(pins, int):
-                    pins = [pins]
-                elif not isinstance(pins, list):
-                    logger.warning(f"Formato inválido para nota {note}: {pins}")
-                    continue
-                
-                self.instruments[note] = pins
-                logger.debug(f"Nota {note} → Pines {pins}")
-            
-            logger.info(f"Cargados {len(self.instruments)} mapeos de notas a pines")
-            
-            # Procesar pines
-            raw_pines = config_data.get("pines", {})
-            for pin_str, pin_data in raw_pines.items():
-                pin = int(pin_str)
-                
-                pin_config = PinConfig(
-                    pin=pin,
-                    nombre=pin_data.get("nombre", f"Pin {pin}"),
-                    tiempo=float(pin_data.get("tiempo", 0.05)),
-                    idelay=int(pin_data.get("idelay", 0)),
-                    delay=int(pin_data.get("delay", 0))
-                )
-                
-                self.pines[pin] = pin_config
-                logger.debug(
-                    f"Pin {pin} ({pin_config.nombre}): "
-                    f"tiempo={pin_config.tiempo}s, delay={pin_config.delay}ms"
-                )
-            
-            logger.info(f"Cargados {len(self.pines)} pines GPIO")
-            
         except FileNotFoundError:
-            logger.error(f"❌ Archivo de configuración no encontrado: {self.config_path}")
-            raise
+            logger.warning(
+                f"⚠️  Sin config local ({self.config_path}); "
+                "esperando RCONFIG del sinte")
+            return
         except json.JSONDecodeError as e:
-            logger.error(f"❌ Error parseando JSON: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"❌ Error cargando configuración: {e}")
-            raise
+            logger.error(f"❌ Error parseando JSON local: {e}")
+            return
+        logger.info(f"Cargando config local (fallback): {self.config_path}")
+        self.load_from_dict(config_data)
+
+    def load_from_dict(self, config_data: dict):
+        """(Re)construye la config desde un dict (fichero local o RCONFIG del
+        sinte). Reemplaza instruments/pines por completo."""
+        self.nombre = config_data.get("nombre", "Cliente")
+        self.invertir = config_data.get("invertir", False)
+        logger.info(f"Nombre del cliente: {self.nombre}")
+        logger.info(f"Invertir pantalla: {self.invertir}")
+
+        # Procesar instruments (nota → pines)
+        instruments: Dict[int, List[int]] = {}
+        for note_str, pins in config_data.get("instruments", {}).items():
+            note = int(note_str)
+            if isinstance(pins, int):
+                pins = [pins]
+            elif not isinstance(pins, list):
+                logger.warning(f"Formato inválido para nota {note}: {pins}")
+                continue
+            instruments[note] = pins
+            logger.debug(f"Nota {note} → Pines {pins}")
+        self.instruments = instruments
+        logger.info(f"Cargados {len(self.instruments)} mapeos de notas a pines")
+
+        # Procesar pines
+        pines: Dict[int, PinConfig] = {}
+        for pin_str, pin_data in config_data.get("pines", {}).items():
+            pin = int(pin_str)
+            pines[pin] = PinConfig(
+                pin=pin,
+                nombre=pin_data.get("nombre", f"Pin {pin}"),
+                tiempo=float(pin_data.get("tiempo", 0.05)),
+                idelay=int(pin_data.get("idelay", 0)),
+                delay=int(pin_data.get("delay", 0)),
+            )
+        self.pines = pines
+        logger.info(f"Cargados {len(self.pines)} pines GPIO")
     
     def get_pins_for_note(self, note: int) -> List[int]:
         """Obtiene la lista de pines GPIO asociados a una nota MIDI."""
@@ -130,36 +124,6 @@ class ConfigLoader:
             f"tiempo={tiempo_s}s, delay={delay_ms}ms"
         )
 
-    def save_pin(self, pin: int):
-        """Persiste el tiempo/delay vigente de un pin (ya en memoria) en
-        self.config_path, con escritura atómica (fichero temporal + rename)
-        para no corromper el JSON si el proceso se cae a mitad."""
-        pin_config = self.get_pin_config(pin)
-
-        with open(self.config_path, 'r') as f:
-            config_data = json.load(f)
-
-        pin_data = config_data.setdefault("pines", {}).setdefault(str(pin), {})
-        pin_data["nombre"] = pin_config.nombre
-        pin_data["tiempo"] = pin_config.tiempo
-        pin_data["delay"] = pin_config.delay
-
-        config_dir = os.path.dirname(os.path.abspath(self.config_path)) or "."
-        fd, tmp_path = tempfile.mkstemp(dir=config_dir, suffix=".json")
-        try:
-            with os.fdopen(fd, 'w') as tmp_file:
-                json.dump(config_data, tmp_file, indent=4)
-            os.rename(tmp_path, self.config_path)
-        except Exception:
-            os.remove(tmp_path)
-            raise
-
-        logger.info(
-            f"💾 Calibración guardada en {self.config_path} - "
-            f"Pin {pin} ({pin_config.nombre}): "
-            f"tiempo={pin_config.tiempo}s, delay={pin_config.delay}ms"
-        )
-    
     def calculate_execution_delay(self, pin: int, base_delay_ms: int = 1000) -> int:
         """
         Calcula el delay de ejecución ajustado para un pin.

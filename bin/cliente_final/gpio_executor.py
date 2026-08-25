@@ -71,6 +71,33 @@ class GPIOExecutor:
             logger.error(f"❌ Error inicializando GPIO: {e}")
             raise
     
+    def ensure_pins(self, pins):
+        """Garantiza que estos pines están configurados como salida. Sirve
+        cuando la config llega por red (RCONFIG) tras el arranque: si aún no
+        se ha inicializado, hace el initialize; si ya, añade los pines nuevos
+        sin tocar los existentes (initialize es idempotente y no añadiría los
+        nuevos)."""
+        pins = list(pins)
+        if not self.initialized:
+            self.initialize(pins)
+            return
+        nuevos = [p for p in pins if p not in self.configured_pins]
+        if not nuevos:
+            return
+        if self.simulate:
+            self.configured_pins.update(nuevos)
+            logger.info(f"🔧 [SIM] Pines añadidos: {nuevos}")
+            return
+        try:
+            for pin in nuevos:
+                GPIO.setup(pin, GPIO.OUT)
+                GPIO.output(pin, GPIO.LOW)
+                self.configured_pins.add(pin)
+                self._pin_locks[pin] = asyncio.Lock()
+            logger.info(f"✅ Pines GPIO añadidos: {nuevos}")
+        except Exception as e:
+            logger.error(f"❌ Error añadiendo pines {nuevos}: {e}")
+
     def cleanup(self):
         """Limpia los pines GPIO."""
         if not self.initialized:

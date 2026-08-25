@@ -18,13 +18,15 @@ Protocolo de mensajes (ASCII, terminados en \\n):
   START,<server_ts_ms>
   STOP,<server_ts_ms>    <- Limpia cola de eventos pendientes
   END,<server_ts_ms>
+  RCONFIG,<json>          <- Config íntegra de esta robota (al conectar, antes de NOTA)
   CALIB,<server_ts_ms>,<robot>,<pin>,<tiempo_ms>,<delay_ms>  <- Calibración en vivo
   CALTEST,<server_ts_ms>,<robot>,<pin>            <- Programa el pin (ts+1s-delay)
-  CALSAVE,<server_ts_ms>,<robot>,<pin>                        <- Persiste al JSON local
 
-Los mensajes CALIB/CALTEST/CALSAVE van dirigidos a un robot concreto por su
-nombre (config.nombre, case-insensitive); el cliente los ignora si no
-coincide con el suyo.
+RCONFIG lo manda el sinte (fuente única de la config) sólo a esta robota al
+conectar; sobreescribe la config local de arranque. CALIB/CALTEST van
+dirigidos a un robot por su nombre (config.nombre, case-insensitive); el
+cliente los ignora si no coincide. La calibración se PERSISTE en el sinte,
+no en la robota.
 """
 import asyncio
 import json
@@ -96,9 +98,9 @@ class MIDIClient:
         # Crear ejecutor GPIO
         self.gpio_executor = GPIOExecutor(simulate=SIMULATE_GPIO)
         
-        # Inicializar GPIO con todos los pines configurados
-        all_pins = list(self.config.pines.keys())
-        self.gpio_executor.initialize(all_pins)
+        # Inicializar GPIO con los pines de la config local (fallback). Si no
+        # hay config local, se inicializan al llegar el RCONFIG del sinte.
+        self.gpio_executor.ensure_pins(self.config.pines.keys())
         
         # Crear gestor de medios y ejecutor de display
         logger.info("📺 Inicializando sistema de display...")
@@ -176,11 +178,28 @@ class MIDIClient:
         line = line.strip()
         if not line:
             return
-        
+
+        # RCONFIG lleva un JSON (con comas) tras la primera coma, así que se
+        # trata ANTES del split. El sinte lo manda al conectar, antes que
+        # cualquier NOTA: es la config autoritativa de esta robota.
+        if line.startswith('RCONFIG,'):
+            try:
+                data = json.loads(line[len('RCONFIG,'):])
+                self.config.load_from_dict(data)
+                self.gpio_executor.ensure_pins(self.config.pines.keys())
+                self.orchestrator.config = self.config
+                logger.info(
+                    f"📥 RCONFIG del sinte: {self.config.nombre} — "
+                    f"{len(self.config.instruments)} notas, "
+                    f"{len(self.config.pines)} pines")
+            except (ValueError, KeyError) as e:
+                logger.error(f"❌ RCONFIG inválido: {e}")
+            return
+
         parts = line.split(',')
         if not parts:
             return
-        
+
         msg_type = parts[0]
         
         try:
@@ -255,12 +274,6 @@ class MIDIClient:
                     # que una NOTA real, para que el timing de la calibración
                     # coincida con el de las canciones.
                     self.orchestrator.handle_caltest(server_ts_ms, pin)
-
-            elif msg_type == 'CALSAVE' and len(parts) >= 4:
-                robot = parts[2]
-                if robot.lower() == self.config.nombre.lower():
-                    pin = int(parts[3])
-                    self.config.save_pin(pin)
 
             else:
                 logger.debug(f"Mensaje desconocido o incompleto: {line}")

@@ -1,16 +1,18 @@
 ---
-# La calibración en vivo de motores (ver pantalla "m" del sinte) se guarda
-# en /home/angel/bin/config.json de cada robota, no en el repo. El próximo
-# `actualiza-maletas` sobreescribe ese fichero con la versión versionada
-# (rol cliente-actualiza, tarea "Copy client configuration"), así que hay
-# que traer los valores reales aquí ANTES de volver a desplegar cliente_final
-# y comitearlos a mano tras revisar el diff.
-- name: Traer calibración de motores desde las robotas
-  hosts: robotas
+# El sinte es la fuente única de la config de las robotas: calibrar y guardar
+# (pad GUARDAR) escribe en ~/lgptclient/bin/cliente.*.json DEL SINTE. Este
+# playbook trae esos ficheros al repo de control para revisarlos y comitear.
+# (Ya no se traen de las robotas: ellas reciben su config del sinte al
+# conectar, por RCONFIG.)
+- name: Traer la config calibrada desde el sinte
+  hosts: sinte
   gather_facts: no
   tasks:
-    - name: Traer config.json calibrado de cada robota
+    - name: Traer bin/cliente.*.json del sinte al repo de control
       ansible.builtin.fetch:
-        src: /home/angel/bin/config.json
-        dest: "{{ playbook_dir }}/../bin/cliente.{{ inventory_hostname }}.json"
+        src: "/home/angel/lgptclient/bin/{{ item }}"
+        dest: "{{ playbook_dir }}/../bin/{{ item }}"
         flat: true
+      loop:
+        - cliente.maleta.json
+        - cliente.sombrilla.json

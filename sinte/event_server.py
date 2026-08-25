@@ -12,6 +12,7 @@ desplegados: líneas ASCII terminadas en \\n, puerto 8888, TCP_NODELAY.
 
     CONFIG,<delay_ms>,<debug>,<ruido>,<pantalla>   al conectar
     SYNC,<ts_ms>                                   al conectar + latido
+    RCONFIG,<json>                                 al conectar (config de esa robota)
     NOTA,<ts_ms>,<nota>,<canal>,<velocidad>
     CC,<ts_ms>,<valor>,<canal>,<control>
     START,<ts_ms> / STOP,<ts_ms> / END,<ts_ms>
@@ -54,8 +55,12 @@ class EventServer:
     pueda llamar desde el hilo de audio: solo encola y vuelve."""
 
     def __init__(self, port: int = TCP_PORT, config: dict | None = None,
-                 on_event=None):
+                 on_event=None, get_config=None):
         cfg = config or {}
+        # callback(ip) -> str JSON con la config de esa robota, o None. Se
+        # llama al aceptar cada conexión para mandarle su RCONFIG (el sinte es
+        # la fuente única de la config de las robotas).
+        self._get_config = get_config
         self._config_line = (
             f"CONFIG,{cfg.get('delay', 1000)},{int(bool(cfg.get('debug', 0)))},"
             f"{int(bool(cfg.get('ruido', 1)))},"
@@ -147,6 +152,13 @@ class EventServer:
                 # antes que cualquier evento.
                 client.sendall(self._config_line.encode())
                 client.sendall(f"SYNC,{now_ms()}\n".encode())
+                # Config íntegra de esta robota (si la hay para su IP). Se
+                # manda ANTES de meterla en la lista de broadcast, así llega
+                # seguro antes de cualquier NOTA.
+                if self._get_config is not None:
+                    js = self._get_config(addr[0])
+                    if js:
+                        client.sendall(("RCONFIG," + js + "\n").encode())
             except OSError:
                 try:
                     client.close()
