@@ -1364,29 +1364,47 @@ class Player:
         motor = robot["motores"][mi]
         scr.erase()
         h, w = scr.getmaxyx()
-        scr.addstr(1, 2, "CALIBRACIÓN DE MOTORES",
-                   curses.color_pair(1) | curses.A_BOLD)
-        scr.addstr(3, 2, "Robot:", curses.color_pair(3))
-        scr.addstr(3, 12, robot["nombre"], curses.color_pair(2) | curses.A_BOLD)
-        scr.addstr(4, 2, "Motor:", curses.color_pair(3))
-        scr.addstr(4, 12, f"{motor['nombre']}  (pin {motor['pin']})",
-                   curses.color_pair(2) | curses.A_BOLD)
-        scr.addstr(6, 4, f"Duración   {motor['tiempo_ms']:6.0f} ms",
-                   curses.color_pair(1))
-        scr.addstr(7, 4, f"Delay      {motor['delay_ms']:+6.0f} ms",
-                   curses.color_pair(1))
-        estado = "PULSANDO ●" if pulse_on else "parado"
-        scr.addstr(9, 4, f"Pulso: {estado}",
-                   curses.color_pair(2 if pulse_on else 3)
-                   | (curses.A_BOLD if pulse_on else 0))
-        scr.addstr(h - 4, 2, "pad1: robot   pad3: motor",
-                   curses.color_pair(3))
-        scr.addstr(h - 3, 2, "knob1: duración   knob2: delay",
-                   curses.color_pair(3))
-        scr.addstr(h - 2, 2, "pad4: pulso on/off   pad2: guardar   "
-                             "STOP/q: salir", curses.color_pair(3))
+        c1 = curses.color_pair(1)
+        c2 = curses.color_pair(2) | curses.A_BOLD
+        c3 = curses.color_pair(3)
+
+        def put(y, x, text, attr=0):
+            if 0 <= y < h and 0 <= x < w:
+                try:
+                    scr.addstr(y, x, text[:max(0, w - 1 - x)], attr)
+                except curses.error:
+                    pass
+
+        put(1, 2, "CALIBRACIÓN DE MOTORES", c1 | curses.A_BOLD)
+        put(3, 2, "Robot:", c3)
+        put(3, 12, robot["nombre"], c2)
+        put(4, 2, "Motor:", c3)
+        put(4, 12, f"{motor['nombre']}  (pin {motor['pin']})", c2)
+        put(6, 4, f"Duración   {motor['tiempo_ms']:6.0f} ms   <- knob 1", c1)
+        put(7, 4, f"Delay      {motor['delay_ms']:+6.0f} ms   <- knob 2", c1)
+        estado = "PULSANDO )))" if pulse_on else "parado"
+        put(9, 4, f"Pulso: {estado}",
+            (c2 if pulse_on else c3))
+
+        # Ayuda visual: dibujo del mando (Akai LPD8). Los pads en el orden
+        # en que se asignaron; los knobs debajo.
+        help_lines = [
+            "+-----------------------------------------+",
+            "|  MANDO (Akai LPD8)                      |",
+            "|   [PAD1]      [PAD2]                     |",
+            "|   robot       GUARDAR                    |",
+            "|   [PAD3]      [PAD4]                     |",
+            "|   motor       pulso on/off              |",
+            "|   (o1) duracion   (o2) delay            |",
+            "|   STOP / q : salir                      |",
+            "+-----------------------------------------+",
+        ]
+        top = 11
+        for i, line in enumerate(help_lines):
+            put(top + i, 4, line, c3)
+
         if status:
-            scr.addstr(h - 1, 2, status[:w - 3], curses.color_pair(5))
+            put(h - 1, 2, status, curses.color_pair(5))
         scr.refresh()
 
     def _wait_midi_spec(self, scr, curses) -> str | None:
