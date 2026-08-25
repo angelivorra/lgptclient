@@ -1344,23 +1344,16 @@ class Player:
             return
 
         ri, mi = 0, 0
-        pulse_on = False
-        last_pulse = 0.0
-        pulse_interval = CALIB_PULSE_INTERVAL_S
+        playing = False
         status = ""
-        # Mismos retardos que una canción: el audio (clic) se oye a +audio_delay
-        # y el evento al robot se manda con client_delay de adelanto, así el
-        # golpe cae donde el clic (afinable con delay/tiempo del motor).
-        audio_delay_ms = int(round(self.args.delay * 1000))
-        client_delay_ms = int(self.args.events.get("delay", 1000))
 
         def spec(action):
             s = self.buttons.get(action)
             return s if s else (None, None, None)
         prev_spec = spec("up")      # anterior -> robota anterior
         next_spec = spec("down")    # siguiente -> robota siguiente
-        play_spec = spec("play")    # play -> play/pausa del pulso
-        stop_spec = spec("stop")    # stop -> salir
+        play_spec = spec("play")    # play -> play/stop de la canción de test
+        stop_spec = spec("stop")    # stop -> parar / salir
 
         def matches(sp, mtype, ch, num):
             return sp[0] == mtype and sp[1] == ch and sp[2] == num
@@ -1376,27 +1369,10 @@ class Player:
             while True:
                 robot = robots[ri]
                 motor = robot["motores"][mi]
+                prev_sel = (ri, mi)
+                toggle = False
 
-                # Pulso: al tempo actual, suena el clic (con retardo de audio)
-                # y se programa el golpe del motor por el mismo camino que una
-                # nota de canción, para que coincidan.
-                now = time.time()
-                if pulse_on and now - last_pulse >= pulse_interval:
-                    now_ms = int(now * 1000)
-                    audible_ms = now_ms + audio_delay_ms
-                    self._calib_send(robot, motor)      # CALIB (valores al día)
-                    self.event_server.emit("CALTEST", audible_ms - client_delay_ms,
-                                           robot["nombre"], motor["pin"])
-                    self._calib_pending.append(audible_ms)   # clic de audio
-                    import timing_log   # LOG TEMPORAL (quitar tras depurar)
-                    timing_log.log("CALTEST_emit", pin=motor["pin"],
-                                   robot=robot["nombre"],
-                                   ts=audible_ms - client_delay_ms,
-                                   audible=audible_ms)
-                    last_pulse = now
-
-                self._calib_draw(scr, curses, robots, ri, mi, pulse_on,
-                                 pulse_interval, status)
+                self._calib_draw(scr, curses, robots, ri, mi, playing, status)
 
                 # Teclado (fallback en un PC con teclado).
                 kc = scr.getch()
@@ -1404,15 +1380,15 @@ class Player:
                     if kc in (ord("q"), 27):
                         break
                     if kc in (curses.KEY_LEFT, ord("h")):
-                        ri = (ri - 1) % len(robots); mi = 0; status = ""
+                        ri = (ri - 1) % len(robots); mi = 0
                     elif kc in (curses.KEY_RIGHT, ord("l")):
-                        ri = (ri + 1) % len(robots); mi = 0; status = ""
+                        ri = (ri + 1) % len(robots); mi = 0
                     elif kc in (curses.KEY_UP, ord("k")):
-                        mi = (mi - 1) % len(robot["motores"]); status = ""
+                        mi = (mi - 1) % len(robot["motores"])
                     elif kc in (curses.KEY_DOWN, ord("j")):
-                        mi = (mi + 1) % len(robot["motores"]); status = ""
+                        mi = (mi + 1) % len(robot["motores"])
                     elif kc in (ord(" "),):
-                        pulse_on = not pulse_on; last_pulse = 0.0
+                        toggle = True
                     elif kc in (ord("s"),):
                         status = self._calib_save(robot, motor)
 
@@ -1425,27 +1401,26 @@ class Player:
                             break
                         press = val > 0    # note_on/cc con valor -> pulsación
                         if matches(stop_spec, mtype, ch, num) and press:
-                            # STOP como un transporte: 1º para el envío;
-                            # si ya está parado, sale a la lista.
-                            if pulse_on:
-                                pulse_on = False
+                            # STOP como transporte: 1º para la canción;
+                            # si ya está parada, sale a la lista.
+                            if playing:
+                                self._calib_stop_song()
+                                playing = False
                                 status = "parado — stop otra vez para volver"
                                 continue
                             raise _CalibExit
                         if matches(prev_spec, mtype, ch, num) and press:
-                            ri = (ri - 1) % len(robots); mi = 0; status = ""
+                            ri = (ri - 1) % len(robots); mi = 0
                         elif matches(next_spec, mtype, ch, num) and press:
-                            ri = (ri + 1) % len(robots); mi = 0; status = ""
+                            ri = (ri + 1) % len(robots); mi = 0
                         elif matches(play_spec, mtype, ch, num) and press:
-                            pulse_on = not pulse_on; last_pulse = 0.0
+                            toggle = True
                         elif mtype == "note_on" and press \
                                 and ch == CALIB_PAD_CHANNEL:
                             if num == CALIB_PAD_MOTOR_PREV:
                                 mi = (mi - 1) % len(robot["motores"])
-                                status = ""
                             elif num == CALIB_PAD_MOTOR_NEXT:
                                 mi = (mi + 1) % len(robot["motores"])
-                                status = ""
                             elif num == CALIB_PAD_SAVE:
                                 status = self._calib_save(robot, motor)
                         elif mtype == "control_change" \
@@ -1453,20 +1428,31 @@ class Player:
                             if num == CALIB_KNOB_DUR:
                                 motor["tiempo_ms"] = _calib_scale(
                                     val, CALIB_DUR_MIN_MS, CALIB_DUR_MAX_MS)
-                                self._calib_send(robot, motor); status = ""
+                                self._calib_send(robot, motor)
                             elif num == CALIB_KNOB_DELAY:
                                 motor["delay_ms"] = _calib_scale(
                                     val, CALIB_DELAY_MIN_MS, CALIB_DELAY_MAX_MS)
-                                self._calib_send(robot, motor); status = ""
-                            elif num == CALIB_KNOB_TEMPO:
-                                # knob a la derecha = más rápido (menos ms)
-                                pulse_interval = _calib_scale(
-                                    127 - val, CALIB_TEMPO_MIN_MS,
-                                    CALIB_TEMPO_MAX_MS) / 1000.0
-                                status = ""
+                                self._calib_send(robot, motor)
+
+                # PLAY/STOP de la canción de test.
+                if toggle:
+                    if playing:
+                        self._calib_stop_song(); playing = False
+                        status = "parado"
+                    else:
+                        status = self._calib_play(robots[ri],
+                                                  robots[ri]["motores"][mi])
+                        playing = self.engine_ref.get("engine") is not None
+                # Si cambió la selección mientras suena, reproducir la del nuevo
+                # motor/robota (reajusta también el ruido dirigido).
+                elif playing and (ri, mi) != prev_sel:
+                    status = self._calib_play(robots[ri],
+                                              robots[ri]["motores"][mi])
+                    playing = self.engine_ref.get("engine") is not None
         except _CalibExit:
             pass
         finally:
+            self._calib_stop_song()               # para la canción y restaura ruido
             self.engine_ref["calib_mode"] = False
             self._drain_calib_queue()
             scr.timeout(100)
@@ -1486,6 +1472,73 @@ class Player:
         self.event_server.emit(
             "CALIB", int(time.time() * 1000), robot["nombre"], motor["pin"],
             round(motor["tiempo_ms"]), round(motor["delay_ms"]))
+
+    # -- reproducción de canción de test en la calibración ---------------------
+
+    def _nota_de_pin(self, nombre: str, pin: int):
+        """Nota de golpe (62/63/65) que mapea EXACTAMENTE a ese pin en esa
+        robota, según sus instruments. None si no hay (p.ej. Platillo)."""
+        import json
+        path = self._robot_config_path(nombre)
+        if path is None:
+            return None
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return None
+        for note_str, pins in data.get("instruments", {}).items():
+            pl = pins if isinstance(pins, list) else [pins]
+            if pl == [pin] and int(note_str) in (62, 63, 65):
+                return int(note_str)
+        return None
+
+    def _ip_de_robot(self, nombre: str):
+        for ip, n in self.args.events.get("clients", {}).items():
+            if n == nombre:
+                return ip
+        return None
+
+    def _calib_set_ruido(self, selected_ip):
+        """Manda CONFIG con ruido dirigido: ruido=1 a `selected_ip` (o a todas
+        si es None, para restaurar) y ruido=0 al resto de conectadas."""
+        ev = self.args.events
+        for ip in self.event_server.connected_ips():
+            r = 1 if (selected_ip is None or ip == selected_ip) else 0
+            line = (f"CONFIG,{ev.get('delay', 1000)},"
+                    f"{int(bool(ev.get('debug', 0)))},{r},"
+                    f"{int(bool(ev.get('pantalla', 1)))}\n")
+            self.event_server.send_to(ip, line)
+
+    def _calib_play(self, robot: dict, motor: dict) -> str:
+        """Arranca la canción de test del motor seleccionado y aísla la robota
+        con ruido. Devuelve un status para la UI."""
+        nota = self._nota_de_pin(robot["nombre"], motor["pin"])
+        if nota is None:
+            return f"{motor['nombre']}: sin canción de test (nota no mapeada)"
+        song_dir = Path(__file__).resolve().parent / "songs_calib" / f"nota{nota}"
+        if not (song_dir / "lgptsav.dat").is_file():
+            return f"falta la canción sinte/songs_calib/nota{nota}"
+        self._calib_stop_song()                       # por si había otra
+        self._calib_set_ruido(self._ip_de_robot(robot["nombre"]))
+        self._calib_send(robot, motor)                # valores al día antes de sonar
+        engine = Engine(song_dir, sample_rate=self.args.samplerate,
+                        audio_delay=self.args.delay, wavs_dir=self.args.wavs_dir)
+        engine.midi_out = self.event_out
+        engine.start()
+        self._apply_song_config(song_dir, engine)
+        self.engine_ref["engine"] = engine
+        return f"sonando {robot['nombre']} · {motor['nombre']} (nota {nota})"
+
+    def _calib_stop_song(self):
+        """Para la canción de test (si hay) y restaura ruido a todas."""
+        engine = self.engine_ref.get("engine")
+        if engine is not None:
+            try:
+                engine.panic()
+            except Exception:
+                pass
+        self.engine_ref["engine"] = None
+        self._calib_set_ruido(None)
 
     def _calib_save(self, robot: dict, motor: dict) -> str:
         """Aplica en caliente (CALIB) y PERSISTE en el repo del sinte (fuente
@@ -1518,8 +1571,7 @@ class Player:
             return f"error guardando: {e}"
         return f"guardado en repo: {robot['nombre']} {motor['nombre']}"
 
-    def _calib_draw(self, scr, curses, robots, ri, mi, pulse_on,
-                    pulse_interval, status):
+    def _calib_draw(self, scr, curses, robots, ri, mi, playing, status):
         robot = robots[ri]
         motor = robot["motores"][mi]
         scr.erase()
@@ -1535,33 +1587,32 @@ class Player:
                 except curses.error:
                     pass
 
-        bpm = 60.0 / pulse_interval if pulse_interval > 0 else 0
+        nota = self._nota_de_pin(robot["nombre"], motor["pin"])
         put(1, 2, "CALIBRACIÓN DE MOTORES", c1 | curses.A_BOLD)
         put(3, 2, "Robota:", c3)
         put(3, 12, robot["nombre"], c2)
         put(4, 2, "Motor:", c3)
-        put(4, 12, f"{motor['nombre']}  (pin {motor['pin']})", c2)
+        put(4, 12, f"{motor['nombre']}  (pin {motor['pin']}"
+                   + (f", nota {nota})" if nota else ", sin canción)"), c2)
         put(6, 4, f"Duración   {motor['tiempo_ms']:6.0f} ms   <- knob 1", c1)
         put(7, 4, f"Delay      {motor['delay_ms']:+6.0f} ms   <- knob 2", c1)
-        put(8, 4, f"Tempo      {pulse_interval * 1000:6.0f} ms "
-                  f"({bpm:3.0f}/min)  <- knob 3", c1)
-        estado = "SONANDO )))" if pulse_on else "parado"
-        put(10, 4, f"Envío (play): {estado}   [clic + golpe, retardo 1s]",
-            (c2 if pulse_on else c3))
+        estado = "SONANDO )))" if playing else "parado"
+        put(9, 4, f"Canción de test (play): {estado}",
+            (c2 if playing else c3))
 
         # Ayuda visual: mapa de los controles del mando (Akai LPD8).
         help_lines = [
             "+---------------------------------------------+",
             "|  MANDO                                      |",
             "|   anterior / siguiente : cambiar de robota  |",
-            "|   play                 : enviar (play/pausa)|",
+            "|   play                 : sonar canción test |",
             "|   pad izq / der        : motor ant / sig    |",
             "|   pad guardar          : guardar en robota  |",
-            "|   knob1 duracion  knob2 delay  knob3 tempo  |",
-            "|   stop : parar envio (2x = volver a lista)   |",
+            "|   knob1 duracion   knob2 delay              |",
+            "|   stop : parar (2x = volver a lista)         |",
             "+---------------------------------------------+",
         ]
-        top = 12
+        top = 11
         for i, line in enumerate(help_lines):
             put(top + i, 4, line, c3)
 

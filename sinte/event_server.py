@@ -115,6 +115,25 @@ class EventServer:
         with self._lock:
             return [self._peers[c] for c in self._clients if c in self._peers]
 
+    def send_to(self, ip: str, line: str):
+        """Envía `line` (con su \\n) solo a los sockets de esa IP. Se usa en la
+        calibración para mandar `ruido` dirigido a una robota concreta."""
+        data = line.encode("ascii", "replace")
+        with self._lock:
+            targets = [c for c in self._clients if self._peers.get(c) == ip]
+        dead = []
+        for c in targets:
+            try:
+                c.sendall(data)
+            except OSError:
+                dead.append(c)
+        if dead:
+            with self._lock:
+                for d in dead:
+                    if d in self._clients:
+                        self._clients.remove(d)
+                    self._peers.pop(d, None)
+
     def close(self):
         self._running = False
         self._queue.put(None)
