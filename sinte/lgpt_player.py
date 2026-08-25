@@ -1021,6 +1021,9 @@ class Player:
                     self.projects
                 self.index %= len(self.projects)
                 needs_clear = True
+            elif key == "m":
+                self._calib_view(scr, curses)
+                needs_clear = True
             elif key in ("up", "k"):
                 self.index = (self.index - 1) % len(self.projects)
             elif key in ("down", "j"):
@@ -1152,6 +1155,158 @@ class Player:
                                         target))
                     self._capture_view(scr, curses, cfg["pots"], entries,
                                        POT_DEFAULT_TARGETS)
+
+    def _calib_view(self, scr, curses):
+        """Calibración en vivo de motores: elige robot → motor → ajusta
+        tiempo/delay y manda CALIB/CALTEST/CALSAVE al robot elegido."""
+        import json
+        bin_dir = Path(__file__).resolve().parent.parent / "bin"
+        robots = []
+        for path in sorted(bin_dir.glob("cliente.*.json")):
+            try:
+                data = json.loads(path.read_text())
+            except (OSError, ValueError):
+                continue
+            pines = data.get("pines", {})
+            if not pines:
+                continue
+            robots.append({
+                "nombre": data.get("nombre") or data.get("name") or path.stem,
+                "pines": {
+                    int(pin): {
+                        "nombre": info.get("nombre", f"Pin {pin}"),
+                        "tiempo_ms": float(info.get("tiempo", 0.05)) * 1000.0,
+                        "delay_ms": int(info.get("delay", 0)),
+                    }
+                    for pin, info in pines.items()
+                },
+            })
+        if not robots:
+            scr.erase()
+            scr.addstr(1, 2, "No se encontraron ficheros bin/cliente.*.json",
+                       curses.color_pair(3))
+            scr.addstr(3, 2, "pulsa una tecla para volver")
+            scr.refresh()
+            scr.getch()
+            return
+
+        sel = 0
+        while True:
+            scr.erase()
+            h, w = scr.getmaxyx()
+            scr.addstr(1, 2, "CALIBRACIÓN DE MOTORES",
+                       curses.color_pair(1) | curses.A_BOLD)
+            for i, robot in enumerate(robots):
+                attr = curses.color_pair(4) if i == sel else 0
+                scr.addstr(3 + i, 2, robot["nombre"], attr)
+            scr.addstr(h - 2, 2, "↑↓: robot   enter: motores   q: volver",
+                       curses.color_pair(3))
+            scr.refresh()
+            key = self._read_key(scr, curses, "list")
+            if key is None:
+                continue
+            if key in ("q", "esc"):
+                return
+            if key in ("up", "k"):
+                sel = (sel - 1) % len(robots)
+            elif key in ("down", "j"):
+                sel = (sel + 1) % len(robots)
+            elif key in ("\r", "\n"):
+                self._calib_motor_view(scr, curses, robots[sel])
+
+    def _calib_motor_view(self, scr, curses, robot: dict):
+        pins = sorted(robot["pines"].keys())
+        sel = 0
+        while True:
+            scr.erase()
+            h, w = scr.getmaxyx()
+            scr.addstr(1, 2, f"CALIBRACIÓN — {robot['nombre']}",
+                       curses.color_pair(1) | curses.A_BOLD)
+            for i, pin in enumerate(pins):
+                m = robot["pines"][pin]
+                attr = curses.color_pair(4) if i == sel else 0
+                line = (f"{m['nombre']:<12} pin {pin:<3} "
+                        f"tiempo {m['tiempo_ms']:6.0f}ms  "
+                        f"delay {m['delay_ms']:+6.0f}ms")
+                scr.addstr(3 + i, 2, line[:w - 3], attr)
+            scr.addstr(h - 2, 2, "↑↓: motor   enter: editar   q: volver",
+                       curses.color_pair(3))
+            scr.refresh()
+            key = self._read_key(scr, curses, "list")
+            if key is None:
+                continue
+            if key in ("q", "esc"):
+                return
+            if key in ("up", "k"):
+                sel = (sel - 1) % len(pins)
+            elif key in ("down", "j"):
+                sel = (sel + 1) % len(pins)
+            elif key in ("\r", "\n"):
+                self._calib_edit_view(scr, curses, robot, pins[sel])
+
+    def _calib_edit_view(self, scr, curses, robot: dict, pin: int):
+        motor = robot["pines"][pin]
+        fields = [
+            ("tiempo_ms", "Duración (tiempo)", 5.0, 5.0),   # min, paso
+            ("delay_ms", "Delay", -2000.0, 5.0),
+        ]
+        sel = 0
+        status = ""
+        while True:
+            scr.erase()
+            h, w = scr.getmaxyx()
+            scr.addstr(1, 2, f"{robot['nombre']} — {motor['nombre']} (pin {pin})",
+                       curses.color_pair(1) | curses.A_BOLD)
+            for i, (field, label, minimum, _step) in enumerate(fields):
+                attr = curses.color_pair(4) if i == sel else 0
+                scr.addstr(3 + i, 2, f"{label:<20}"[:20], attr)
+                scr.addstr(3 + i, 23, f"{motor[field]:+.0f} ms", attr)
+            scr.addstr(h - 3, 2, "↑↓: campo   +/-: ajustar (5ms)",
+                       curses.color_pair(3))
+            scr.addstr(h - 2, 2, "t: probar ya   s: guardar en el robot   "
+                                 "q: volver", curses.color_pair(3))
+            if status:
+                scr.addstr(h - 1, 2, status[:w - 3], curses.color_pair(5))
+            scr.refresh()
+            key = self._read_key(scr, curses, "list")
+            if key is None:
+                continue
+            if key in ("q", "esc"):
+                return
+            if key in ("up", "k"):
+                sel = (sel - 1) % len(fields)
+            elif key in ("down", "j"):
+                sel = (sel + 1) % len(fields)
+            elif key == "+":
+                field, _label, minimum, step = fields[sel]
+                motor[field] = max(minimum, motor[field] + step)
+                status = ""
+            elif key == "-":
+                field, _label, minimum, step = fields[sel]
+                motor[field] = max(minimum, motor[field] - step)
+                status = ""
+            elif key == "t":
+                status = self._send_calib(robot, pin, motor, test=True)
+            elif key == "s":
+                status = self._send_calib(robot, pin, motor, save=True)
+
+    def _send_calib(self, robot: dict, pin: int, motor: dict, *,
+                     test: bool = False, save: bool = False) -> str:
+        """Manda CALIB (y CALTEST/CALSAVE) al robot vía EventServer.emit()."""
+        if self.event_server is None:
+            return "sin servidor de eventos: no se puede calibrar"
+        ts = int(time.time() * 1000)
+        self.event_server.emit("CALIB", ts, robot["nombre"], pin,
+                                round(motor["tiempo_ms"]),
+                                round(motor["delay_ms"]))
+        if test:
+            self.event_server.emit("CALTEST", ts, robot["nombre"], pin)
+            return (f"probado: tiempo={motor['tiempo_ms']:.0f}ms "
+                    f"delay={motor['delay_ms']:+.0f}ms")
+        if save:
+            self.event_server.emit("CALSAVE", ts, robot["nombre"], pin)
+            return f"guardado en {robot['nombre']}"
+        return ""
 
     def _wait_midi_spec(self, scr, curses) -> str | None:
         """Espera un note on o CC y devuelve el spec; None si se cancela."""

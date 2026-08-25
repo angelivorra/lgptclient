@@ -8,6 +8,7 @@ La configuración define:
 """
 import json
 import os
+import tempfile
 import logging
 from typing import Dict, List
 from dataclasses import dataclass
@@ -118,6 +119,46 @@ class ConfigLoader:
     def get_all_pins(self) -> List[int]:
         """Retorna lista de todos los pines configurados."""
         return list(self.pines.keys())
+
+    def set_pin_override(self, pin: int, tiempo_s: float, delay_ms: int):
+        """Sobreescribe en memoria tiempo/delay de un pin (calibración en vivo)."""
+        pin_config = self.get_pin_config(pin)
+        pin_config.tiempo = tiempo_s
+        pin_config.delay = delay_ms
+        logger.info(
+            f"🎛️  Calibración en memoria - Pin {pin} ({pin_config.nombre}): "
+            f"tiempo={tiempo_s}s, delay={delay_ms}ms"
+        )
+
+    def save_pin(self, pin: int):
+        """Persiste el tiempo/delay vigente de un pin (ya en memoria) en
+        self.config_path, con escritura atómica (fichero temporal + rename)
+        para no corromper el JSON si el proceso se cae a mitad."""
+        pin_config = self.get_pin_config(pin)
+
+        with open(self.config_path, 'r') as f:
+            config_data = json.load(f)
+
+        pin_data = config_data.setdefault("pines", {}).setdefault(str(pin), {})
+        pin_data["nombre"] = pin_config.nombre
+        pin_data["tiempo"] = pin_config.tiempo
+        pin_data["delay"] = pin_config.delay
+
+        config_dir = os.path.dirname(os.path.abspath(self.config_path)) or "."
+        fd, tmp_path = tempfile.mkstemp(dir=config_dir, suffix=".json")
+        try:
+            with os.fdopen(fd, 'w') as tmp_file:
+                json.dump(config_data, tmp_file, indent=4)
+            os.rename(tmp_path, self.config_path)
+        except Exception:
+            os.remove(tmp_path)
+            raise
+
+        logger.info(
+            f"💾 Calibración guardada en {self.config_path} - "
+            f"Pin {pin} ({pin_config.nombre}): "
+            f"tiempo={pin_config.tiempo}s, delay={pin_config.delay}ms"
+        )
     
     def calculate_execution_delay(self, pin: int, base_delay_ms: int = 1000) -> int:
         """

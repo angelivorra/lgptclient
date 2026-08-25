@@ -1,0 +1,16 @@
+---
+# La calibración en vivo de motores (ver pantalla "m" del sinte) se guarda
+# en /home/angel/bin/config.json de cada robota, no en el repo. El próximo
+# `actualiza-maletas` sobreescribe ese fichero con la versión versionada
+# (rol cliente-actualiza, tarea "Copy client configuration"), así que hay
+# que traer los valores reales aquí ANTES de volver a desplegar cliente_final
+# y comitearlos a mano tras revisar el diff.
+- name: Traer calibración de motores desde las robotas
+  hosts: robotas
+  gather_facts: no
+  tasks:
+    - name: Traer config.json calibrado de cada robota
+      ansible.builtin.fetch:
+        src: /home/angel/bin/config.json
+        dest: "{{ playbook_dir }}/../bin/cliente.{{ inventory_hostname }}.json"
+        flat: true

@@ -18,6 +18,13 @@ Protocolo de mensajes (ASCII, terminados en \\n):
   START,<server_ts_ms>
   STOP,<server_ts_ms>    <- Limpia cola de eventos pendientes
   END,<server_ts_ms>
+  CALIB,<server_ts_ms>,<robot>,<pin>,<tiempo_ms>,<delay_ms>  <- Calibración en vivo
+  CALTEST,<server_ts_ms>,<robot>,<pin>                       <- Dispara el pin ya
+  CALSAVE,<server_ts_ms>,<robot>,<pin>                        <- Persiste al JSON local
+
+Los mensajes CALIB/CALTEST/CALSAVE van dirigidos a un robot concreto por su
+nombre (config.nombre, case-insensitive); el cliente los ignora si no
+coincide con el suyo.
 """
 import asyncio
 import json
@@ -225,6 +232,32 @@ class MIDIClient:
                 server_ts_ms = int(parts[1])
                 bpm = float(parts[2])
                 self.orchestrator.handle_bpm(server_ts_ms, bpm)
+
+            elif msg_type == 'CALIB' and len(parts) >= 6:
+                robot = parts[2]
+                if robot.lower() == self.config.nombre.lower():
+                    pin = int(parts[3])
+                    tiempo_ms = float(parts[4])
+                    delay_ms = int(parts[5])
+                    self.config.set_pin_override(pin, tiempo_ms / 1000.0, delay_ms)
+
+            elif msg_type == 'CALTEST' and len(parts) >= 4:
+                robot = parts[2]
+                if robot.lower() == self.config.nombre.lower():
+                    pin = int(parts[3])
+                    pin_config = self.config.get_pin_config(pin)
+                    # create_task: no bloquear la lectura TCP mientras dura
+                    # la activación (~0.1-0.2s), igual que hace el scheduler
+                    # con las notas reales.
+                    asyncio.create_task(self.gpio_executor.activate_pin(
+                        pin, pin_config.tiempo, pin_config.nombre, None
+                    ))
+
+            elif msg_type == 'CALSAVE' and len(parts) >= 4:
+                robot = parts[2]
+                if robot.lower() == self.config.nombre.lower():
+                    pin = int(parts[3])
+                    self.config.save_pin(pin)
 
             else:
                 logger.debug(f"Mensaje desconocido o incompleto: {line}")

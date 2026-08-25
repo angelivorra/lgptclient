@@ -16,6 +16,13 @@ desplegados: líneas ASCII terminadas en \\n, puerto 8888, TCP_NODELAY.
     CC,<ts_ms>,<valor>,<canal>,<control>
     START,<ts_ms> / STOP,<ts_ms> / END,<ts_ms>
     BPM,<ts_ms>,<bpm>
+    CALIB,<ts_ms>,<robot>,<pin>,<tiempo_ms>,<delay_ms>   calibración en vivo
+    CALTEST,<ts_ms>,<robot>,<pin>                        dispara el pin ya
+    CALSAVE,<ts_ms>,<robot>,<pin>                        persiste al JSON local
+
+CALIB/CALTEST/CALSAVE van dirigidos a un robot por nombre; se emiten igual
+que el resto (broadcast vía `emit`) y cada cliente descarta el mensaje si
+el nombre no es el suyo (ver `bin/cliente_final/main.py`).
 
 Los clientes no ejecutan al recibir: programan la acción en
 `ts + delay_ms` (1 s por defecto), y sincronizan su reloj con los SYNC del
