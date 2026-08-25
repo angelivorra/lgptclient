@@ -2,12 +2,21 @@
     "nombre": "Carmen",
     "invertir": true,
     "instruments": {
-        "62": 23, 
+        "62": 23,
         "63": 27,
         "65": 17,
-        "64": [23, 17],
-        "66": [23, 27],
-        "67": [17, 27],
+        "64": [
+            23,
+            17
+        ],
+        "66": [
+            23,
+            27
+        ],
+        "67": [
+            17,
+            27
+        ],
         "70": 23,
         "71": 17,
         "72": 27
@@ -15,21 +24,21 @@
     "pines": {
         "23": {
             "nombre": "Bombo",
-            "tiempo": 0.20,            
+            "tiempo": 0.063,
             "idelay": 0,
-            "delay": -50
+            "delay": 167
         },
         "17": {
             "nombre": "Caja1",
-            "tiempo": 0.10,            
-            "idelay": 0, 
-            "delay": 0
+            "tiempo": 0.165,
+            "idelay": 0,
+            "delay": 120
         },
         "27": {
             "nombre": "Caja2",
-            "tiempo": 0.10,
+            "tiempo": 0.096,
             "idelay": 30,
-            "delay": 0
+            "delay": 250
         },
         "22": {
             "nombre": "Platillo",
