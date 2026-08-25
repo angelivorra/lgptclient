@@ -113,11 +113,21 @@ class _NetPotSink:
     def apply(self, control: int, value: int) -> None:
         frac = max(0, min(127, value)) / 127.0
         if control == _NETCC_REVERB_DELAY:
-            self._set(_REVERB_PLUGIN_ID, _REVERB_WET_PARAM_IDX, frac * _REVERB_WET_MAX)
-            self._set(_DELAY_PLUGIN_ID, _DELAY_WET_PARAM_IDX, frac * _DELAY_WET_MAX)
+            reverb_wet = frac * _REVERB_WET_MAX
+            delay_wet = frac * _DELAY_WET_MAX
+            # TEMP: traza de net-pot (quitar tras depurar el "delay a 0 sigue
+            # oyéndose"). Muestra el valor que llega y los wet que se mandan.
+            print(f"[netpot] ctrl={control} val={value} frac={frac:.3f} "
+                  f"reverb_wet={reverb_wet:.4f} delay_wet={delay_wet:.4f}",
+                  flush=True)
+            self._set(_REVERB_PLUGIN_ID, _REVERB_WET_PARAM_IDX, reverb_wet)
+            self._set(_DELAY_PLUGIN_ID, _DELAY_WET_PARAM_IDX, delay_wet)
         elif control == _NETCC_DISTORTION:
-            self._set(_TEMPER_PLUGIN_ID, _TEMPER_RESONANCE_PARAM_IDX, frac * _TEMPER_MAX)
-            self._set(_TEMPER_PLUGIN_ID, _TEMPER_SATURATION_PARAM_IDX, frac * _TEMPER_MAX)
+            temper = frac * _TEMPER_MAX
+            print(f"[netpot] ctrl={control} val={value} frac={frac:.3f} "
+                  f"temper_res=temper_sat={temper:.4f}", flush=True)
+            self._set(_TEMPER_PLUGIN_ID, _TEMPER_RESONANCE_PARAM_IDX, temper)
+            self._set(_TEMPER_PLUGIN_ID, _TEMPER_SATURATION_PARAM_IDX, temper)
 
 
 class BpmState:

@@ -42,7 +42,7 @@ import sounddevice as sd
 
 from event_server import EventMidiOut, EventServer
 from lgpt_engine import EFFECT_PRESETS, Engine, MasterChain, MidiOut, \
-    SAMPLE_RATE
+    NETCC_CHANNEL, SAMPLE_RATE
 
 DEFAULT_SONGS_DIR = "/home/angel/Documentos/canciones/"
 CONFIG_PATH = Path(__file__).resolve().parent / "lttileplayer.toml"
@@ -358,7 +358,9 @@ def match_pot_red(pots_red: list, msg) -> int | None:
 
 def open_midi_input(port_name: str | None, engine_ref: dict,
                     ui_queue: queue.SimpleQueue, buttons: dict,
-                    pots: dict, pots_red: list | None = None):
+                    pots: dict, pots_red: list | None = None,
+                    pots_red_global: list | None = None,
+                    event_out=None):
     """Abre el puerto MIDI de entrada: botones a la UI y pots/CC al engine.
 
     engine_ref es un dict mutable con la clave "engine": el callback MIDI
@@ -367,6 +369,11 @@ def open_midi_input(port_name: str | None, engine_ref: dict,
     CC por defecto del engine (1/7/10/20).
     pots_red (opcional): pots que no controlan nada local, solo se reenvían
     por red (ver `pots_red` del JSON de la canción y `match_pot_red`).
+    pots_red_global (opcional): pots de red FIJOS para todas las canciones
+    (`red = true` en `[pots]` del TOML). Se reenvían por `event_out` directo,
+    sin pasar por el engine, así funcionan también en la lista (sin canción)
+    y en cualquier canción sin depender de su JSON. Ver el bloque en
+    `on_message` antes del early-return de engine None.
     """
     if port_name == "off":
         return None
@@ -416,6 +423,16 @@ def open_midi_input(port_name: str | None, engine_ref: dict,
             else:
                 ui_queue.put(action)
             return
+        # Pots de red globales: fijos para todas las canciones y también en la
+        # lista (sin canción cargada). Van ANTES del early-return de engine
+        # None y se reenvían por `event_out` directo (que ya resuelve el
+        # timestamp con o sin engine, ver EventMidiOut._ts): así estos knobs
+        # modulan siempre la voz del vocoder, se esté donde se esté.
+        if pots_red_global and event_out is not None:
+            control = match_pot_red(pots_red_global, msg)
+            if control is not None:
+                event_out.cc(NETCC_CHANNEL, control, msg.value)
+                return
         engine = engine_ref.get("engine")
         if engine is None:
             return
@@ -871,6 +888,26 @@ class Player:
                 continue
             self.args.pots_red.append((spec, control))
 
+    def _build_global_pots_red(self):
+        """Pots de red FIJOS para todas las canciones: los del TOML marcados
+        con `red = true` en `[pots]`. A diferencia de `pots_red` (por canción,
+        en `_apply_song_config`), esta lista no se limpia al cambiar de canción
+        ni depende del JSON: se reenvían siempre por red (control = nº de pot),
+        también en la lista sin canción cargada. Se rellena en sitio para no
+        romper la referencia que captura el callback de `open_midi_input`."""
+        self.args.pots_red_global.clear()
+        for key, entry in self.args.hw_pots.items():
+            if not isinstance(entry, dict) or not entry.get("red"):
+                continue
+            spec = parse_button_spec(entry.get("cc", ""))
+            if spec is None:
+                continue
+            try:
+                control = int(key[3:])     # "pot3" -> control 3
+            except ValueError:
+                continue
+            self.args.pots_red_global.append((spec, control))
+
     # -- UI curses --------------------------------------------------------------
 
     def _poll_buttons(self, context: str) -> str | None:
@@ -925,7 +962,8 @@ class Player:
         elif available:
             new_port = open_midi_input(
                 self.args.midi, self.engine_ref, self.ui_queue, self.buttons,
-                self.args.pots, self.args.pots_red)
+                self.args.pots, self.args.pots_red,
+                self.args.pots_red_global, self.event_out)
             if new_port is not None:
                 self.midi_in = new_port
                 self._set_notice("MIDI reconectado")
@@ -1672,6 +1710,7 @@ class Player:
             a: parse_button_spec(s)
             for a, s in cfg.get("buttons", {}).items()})
         self.args.hw_pots = cfg.get("pots", {})
+        self._build_global_pots_red()   # pots de red fijos (red=true del TOML)
 
     # -- widgets de la pantalla CONFIG ------------------------------------------
 
@@ -1852,9 +1891,11 @@ class Player:
                       f"{self.event_server.port}")
         self.engine_ref["raw_queue"] = queue.SimpleQueue()
         self.engine_ref["calib_queue"] = queue.SimpleQueue()
+        self._build_global_pots_red()
         self.midi_in = open_midi_input(
             self.args.midi, self.engine_ref, self.ui_queue, self.buttons,
-            self.args.pots, self.args.pots_red)
+            self.args.pots, self.args.pots_red,
+            self.args.pots_red_global, self.event_out)
         if getattr(self.args, "song", None) is not None:
             # --song fuerza selección por CLI: no tiene sentido pedirla y
             # quedarse en silencio esperando un botón MIDI o el menú curses.
@@ -1954,6 +1995,7 @@ def main():
     args.hw_pots = cfg.get("pots", {})     # mapeo físico global (CC por knob)
     args.pots = []                          # targets (se arman por canción)
     args.pots_red = []                      # pots reenviados por red (idem)
+    args.pots_red_global = []               # pots de red fijos (red=true, TOML)
     args.mute = cfg.get("channels", {}).get("mute", [])
     wd = audio_cfg.get("wavs_dir") or None
     if wd:                                   # relativo -> junto al programa

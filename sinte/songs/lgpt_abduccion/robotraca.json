@@ -29,10 +29,6 @@
     "pot6": "5:metal",
     "pot8": "0:tempo"
   },
-  "pots_red": [
-    "pot3",
-    "pot7"
-  ],
   "presence": [
     2,
     5
