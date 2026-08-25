@@ -58,7 +58,7 @@ class EventServer:
         cfg = config or {}
         self._config_line = (
             f"CONFIG,{cfg.get('delay', 1000)},{int(bool(cfg.get('debug', 0)))},"
-            f"{int(bool(cfg.get('ruido', 0)))},"
+            f"{int(bool(cfg.get('ruido', 1)))},"
             f"{int(bool(cfg.get('pantalla', 1)))}\n"
         )
         self._on_event = on_event          # callback(msg) para avisos en la UI

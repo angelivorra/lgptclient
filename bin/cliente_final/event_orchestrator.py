@@ -201,9 +201,23 @@ class EventOrchestrator:
             except Exception as e:
                 logger.error(f"❌ Error programando pin {pin}: {e}")
 
-    def _schedule_pin_activation(self, server_ts_ms: int, note: int, pin: int):
+    def handle_caltest(self, server_ts_ms: int, pin: int):
+        """Dispara UN pin como si fuera una nota: lo programa en
+        server_ts + (base_delay - pin.delay), igual que handle_nota, para que
+        la calibración use exactamente el mismo camino temporal que una
+        canción (el sinte manda el ts con 1 s de adelanto). Ignora el flag
+        `ruido`: calibrar implica querer oír/sentir el motor."""
+        try:
+            self._schedule_pin_activation(server_ts_ms, None, pin, force=True)
+        except KeyError as e:
+            logger.error(f"❌ CALTEST: pin {pin} no configurado: {e}")
+        except Exception as e:
+            logger.error(f"❌ CALTEST: error programando pin {pin}: {e}")
+
+    def _schedule_pin_activation(self, server_ts_ms: int, note: int, pin: int,
+                                 force: bool = False):
         """Programa la activación de un pin GPIO en el scheduler."""
-        if not self._ruido:
+        if not self._ruido and not force:
             logger.debug(f"GPIO desactivado (ruido=False) — omitiendo pin {pin}")
             return
 

@@ -25,6 +25,7 @@ Teclas:
 from __future__ import annotations
 
 import argparse
+import collections
 import math
 import os
 import queue
@@ -63,7 +64,7 @@ CALIB_DUR_MIN_MS, CALIB_DUR_MAX_MS = 5, 250
 CALIB_DELAY_MIN_MS, CALIB_DELAY_MAX_MS = -250, 250
 # Tempo del pulso: knob 0 -> lento (1000 ms), 127 -> rápido (100 ms).
 CALIB_TEMPO_MIN_MS, CALIB_TEMPO_MAX_MS = 100, 1000
-CALIB_PULSE_INTERVAL_S = 0.4     # intervalo por defecto hasta tocar el knob
+CALIB_PULSE_INTERVAL_S = 1.0     # intervalo por defecto: lento hasta tocar el knob
 
 
 class _CalibExit(Exception):
@@ -614,6 +615,15 @@ class Player:
         self.estado_audio = EstadoAudio(
             args.blocksize / float(args.samplerate) * 1000.0)
         self._restart = False               # STOP en el menú: relanzar
+        # Clic de calibración (metrónomo): golpe percusivo corto que el
+        # callback de audio mezcla en la salida con el mismo retardo que
+        # una canción, para afinar el motor de oído. Ver _mix_calib_clicks.
+        _t = np.arange(int(args.samplerate * 0.012)) / float(args.samplerate)
+        self._calib_click_wave = (
+            0.6 * np.sin(2 * np.pi * 1200.0 * _t) * np.exp(-_t * 300.0)
+        ).astype(np.float32)
+        self._calib_pending = collections.deque()  # instantes (ms pared) a sonar
+        self._calib_active = []                     # clics sonando [offset, pos]
         self.stream = sd.OutputStream(
             samplerate=args.samplerate,
             channels=2,
@@ -650,16 +660,20 @@ class Player:
                     est.causa = f"salto del reloj del DAC ({drift*1000:.0f}ms)"
                     self._set_notice(f"glitch recuperado ({drift * 1000:.0f}ms)")
         self._expected_dac_time = dac_time + frames / self.args.samplerate
+        # Reloj de pared de la primera muestra del bloque (dac_time va en el
+        # reloj del stream; se pasa a reloj de sistema con la diferencia contra
+        # currentTime). Sirve para sellar eventos del engine y para colocar los
+        # clics de calibración con precisión de muestra.
+        block_wall_ms = (
+            time.time() + (dac_time - time_info.currentTime)) * 1000.0
         if engine is None:
             outdata[:] = 0
         else:
-            # Reloj de pared de la primera muestra del bloque, para que el
-            # engine pueda sellar los eventos con el instante en que sonarán.
-            # dac_time va en el reloj del stream, no en el del sistema: se
-            # pasa a reloj de pared con la diferencia contra currentTime.
-            engine.block_time_ms = (
-                time.time() + (dac_time - time_info.currentTime)) * 1000.0
+            engine.block_time_ms = block_wall_ms
             outdata[:] = engine.render(frames)
+        # Clics de calibración: se mezclan encima (también con engine=None).
+        if self._calib_pending or self._calib_active:
+            self._mix_calib_clicks(outdata, frames, block_wall_ms)
         recorder = self.recorder
         if recorder is not None:
             recorder.write(outdata)
@@ -678,6 +692,38 @@ class Player:
             est.apurados += 1
             if not est.causa:
                 est.causa = f"bloque apurado ({ms:.0f}ms de {est.presupuesto_ms:.0f})"
+
+    def _mix_calib_clicks(self, outdata, frames, block_wall_ms):
+        """Mezcla los clics de calibración pendientes en el bloque de audio,
+        con precisión de muestra. Se llama desde el hilo de audio; produce el
+        `_calib_pending` (deque) el hilo de la UI y lo consume aquí (append/
+        popleft son atómicos en CPython, un solo productor/consumidor)."""
+        sr = self.args.samplerate
+        wave = self._calib_click_wave
+        n = wave.shape[0]
+        block_end_ms = block_wall_ms + frames / sr * 1000.0
+        pend = self._calib_pending
+        # Activar los clics cuyo instante cae dentro (o antes) de este bloque.
+        while pend:
+            t = pend[0]
+            if t >= block_end_ms:
+                break
+            pend.popleft()
+            off = int(round((t - block_wall_ms) / 1000.0 * sr))
+            if off < 0:
+                off = 0                    # llegó tarde: al inicio del bloque
+            self._calib_active.append([off, 0])
+        # Mezclar los clics activos (algunos vienen de bloques anteriores).
+        remaining = []
+        for off, wpos in self._calib_active:
+            m = min(n - wpos, frames - off)
+            if m > 0:
+                seg = wave[wpos:wpos + m]
+                outdata[off:off + m, 0] += seg
+                outdata[off:off + m, 1] += seg
+            if wpos + m < n:
+                remaining.append([0, wpos + m])   # sigue en el próximo bloque
+        self._calib_active = remaining
 
     def _load_song(self, index: int):
         project_dir = self.projects[index]
@@ -1269,6 +1315,11 @@ class Player:
         last_pulse = 0.0
         pulse_interval = CALIB_PULSE_INTERVAL_S
         status = ""
+        # Mismos retardos que una canción: el audio (clic) se oye a +audio_delay
+        # y el evento al robot se manda con client_delay de adelanto, así el
+        # golpe cae donde el clic (afinable con delay/tiempo del motor).
+        audio_delay_ms = int(round(self.args.delay * 1000))
+        client_delay_ms = int(self.args.events.get("delay", 1000))
 
         def spec(action):
             s = self.buttons.get(action)
@@ -1293,13 +1344,17 @@ class Player:
                 robot = robots[ri]
                 motor = robot["motores"][mi]
 
-                # Pulso: repite el golpe (envía la nota) al tempo actual.
+                # Pulso: al tempo actual, suena el clic (con retardo de audio)
+                # y se programa el golpe del motor por el mismo camino que una
+                # nota de canción, para que coincidan.
                 now = time.time()
                 if pulse_on and now - last_pulse >= pulse_interval:
-                    self._calib_send(robot, motor)
-                    self.event_server.emit("CALTEST",
-                                           int(now * 1000),
+                    now_ms = int(now * 1000)
+                    audible_ms = now_ms + audio_delay_ms
+                    self._calib_send(robot, motor)      # CALIB (valores al día)
+                    self.event_server.emit("CALTEST", audible_ms - client_delay_ms,
                                            robot["nombre"], motor["pin"])
+                    self._calib_pending.append(audible_ms)   # clic de audio
                     last_pulse = now
 
                 self._calib_draw(scr, curses, robots, ri, mi, pulse_on,
@@ -1422,8 +1477,9 @@ class Player:
         put(7, 4, f"Delay      {motor['delay_ms']:+6.0f} ms   <- knob 2", c1)
         put(8, 4, f"Tempo      {pulse_interval * 1000:6.0f} ms "
                   f"({bpm:3.0f}/min)  <- knob 3", c1)
-        estado = "ENVIANDO )))" if pulse_on else "parado"
-        put(10, 4, f"Envío (play): {estado}", (c2 if pulse_on else c3))
+        estado = "SONANDO )))" if pulse_on else "parado"
+        put(10, 4, f"Envío (play): {estado}   [clic + golpe, retardo 1s]",
+            (c2 if pulse_on else c3))
 
         # Ayuda visual: mapa de los controles del mando (Akai LPD8).
         help_lines = [

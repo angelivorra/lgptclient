@@ -19,7 +19,7 @@ Protocolo de mensajes (ASCII, terminados en \\n):
   STOP,<server_ts_ms>    <- Limpia cola de eventos pendientes
   END,<server_ts_ms>
   CALIB,<server_ts_ms>,<robot>,<pin>,<tiempo_ms>,<delay_ms>  <- Calibración en vivo
-  CALTEST,<server_ts_ms>,<robot>,<pin>                       <- Dispara el pin ya
+  CALTEST,<server_ts_ms>,<robot>,<pin>            <- Programa el pin (ts+1s-delay)
   CALSAVE,<server_ts_ms>,<robot>,<pin>                        <- Persiste al JSON local
 
 Los mensajes CALIB/CALTEST/CALSAVE van dirigidos a un robot concreto por su
@@ -244,14 +244,12 @@ class MIDIClient:
             elif msg_type == 'CALTEST' and len(parts) >= 4:
                 robot = parts[2]
                 if robot.lower() == self.config.nombre.lower():
+                    server_ts_ms = int(parts[1])
                     pin = int(parts[3])
-                    pin_config = self.config.get_pin_config(pin)
-                    # create_task: no bloquear la lectura TCP mientras dura
-                    # la activación (~0.1-0.2s), igual que hace el scheduler
-                    # con las notas reales.
-                    asyncio.create_task(self.gpio_executor.activate_pin(
-                        pin, pin_config.tiempo, pin_config.nombre, None
-                    ))
+                    # Se programa en el scheduler (ts + 1s - pin.delay), igual
+                    # que una NOTA real, para que el timing de la calibración
+                    # coincida con el de las canciones.
+                    self.orchestrator.handle_caltest(server_ts_ms, pin)
 
             elif msg_type == 'CALSAVE' and len(parts) >= 4:
                 robot = parts[2]
