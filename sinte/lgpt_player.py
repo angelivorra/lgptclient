@@ -1387,6 +1387,12 @@ class Player:
                             break
                         press = val > 0    # note_on/cc con valor -> pulsación
                         if matches(stop_spec, mtype, ch, num) and press:
+                            # STOP como un transporte: 1º para el envío;
+                            # si ya está parado, sale a la lista.
+                            if pulse_on:
+                                pulse_on = False
+                                status = "parado — stop otra vez para volver"
+                                continue
                             raise _CalibExit
                         if matches(prev_spec, mtype, ch, num) and press:
                             ri = (ri - 1) % len(robots); mi = 0; status = ""
@@ -1490,7 +1496,7 @@ class Player:
             "|   pad izq / der        : motor ant / sig    |",
             "|   pad guardar          : guardar en robota  |",
             "|   knob1 duracion  knob2 delay  knob3 tempo  |",
-            "|   stop / q             : salir              |",
+            "|   stop : parar envio (2x = volver a lista)   |",
             "+---------------------------------------------+",
         ]
         top = 12
