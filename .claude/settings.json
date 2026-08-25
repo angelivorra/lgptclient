@@ -170,7 +170,12 @@
       "Bash(python3 -m py_compile sinte/lgpt_engine.py)",
       "Bash(rm -f /tmp/claude-1000/-home-angel-git-lgptclient/c573ffe0-763a-4daf-bbcd-108ad5af7c96/scratchpad/mixer.log)",
       "Bash(nohup ./run.sh)",
-      "Bash(pkill -9 -f \"venv/bin/python3 main.py\")"
+      "Bash(pkill -9 -f \"venv/bin/python3 main.py\")",
+      "Bash(python3 -m py_compile bin/cliente_final/event_orchestrator.py bin/cliente_final/main.py)",
+      "Bash(ansible-playbook ansible/trae-calibracion.yaml -i ansible/inventario)",
+      "Bash(scp -o ConnectTimeout=8 angel@192.168.0.2:/tmp/sinte_timing.jsonl ./sinte.jsonl)",
+      "Bash(scp -o ConnectTimeout=8 angel@192.168.0.3:/tmp/cliente_timing.jsonl ./maleta.jsonl)",
+      "Bash(scp -o ConnectTimeout=8 angel@192.168.0.4:/tmp/cliente_timing.jsonl ./sombrilla.jsonl)"
     ],
     "additionalDirectories": [
       "/home/angel/LGPT/bin",
