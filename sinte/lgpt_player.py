@@ -46,6 +46,32 @@ from lgpt_engine import EFFECT_PRESETS, Engine, MasterChain, MidiOut, \
 DEFAULT_SONGS_DIR = "/home/angel/Documentos/canciones/"
 CONFIG_PATH = Path(__file__).resolve().parent / "lttileplayer.toml"
 
+# -- Calibración de motores por el controlador (Akai LPD8 mk2, notas fijas) --
+# Pads en canal 9, knobs en canal 0. Ver pantalla _calib_view.
+CALIB_OPEN_SPEC = "note:9:39"    # pad 4: abre la calibración desde la lista
+CALIB_PAD_CHANNEL = 9
+CALIB_PAD_ROBOT = 42             # pad 1: cambiar de robot
+CALIB_PAD_SAVE = 43              # pad 2: aceptar y guardar (CALSAVE)
+CALIB_PAD_MOTOR = 38             # pad 3: cambiar de motor
+CALIB_PAD_PULSE = 39             # pad 4: iniciar/parar el pulso del motor
+CALIB_KNOB_CHANNEL = 0
+CALIB_KNOB_DUR = 70              # knob 1: duración
+CALIB_KNOB_DELAY = 74           # knob 2: delay
+# Rango que barre cada knob (0..127 -> estos límites, en ms).
+CALIB_DUR_MIN_MS, CALIB_DUR_MAX_MS = 5, 250
+CALIB_DELAY_MIN_MS, CALIB_DELAY_MAX_MS = -250, 250
+CALIB_PULSE_INTERVAL_S = 0.4     # cada cuánto repite el golpe con el pulso ON
+
+
+class _CalibExit(Exception):
+    """Señal interna para salir del bucle de calibración (botón STOP)."""
+
+
+def _calib_scale(value: int, lo: float, hi: float) -> float:
+    """Mapea un knob 0..127 al rango [lo, hi] en ms."""
+    value = max(0, min(127, value))
+    return lo + (hi - lo) * value / 127.0
+
 # Un bloque que consuma más de esta fracción de su presupuesto se apunta como
 # "apurado": todavía no corta, pero es el aviso de que falta margen.
 CARGA_AVISO = 0.75
@@ -351,6 +377,15 @@ def open_midi_input(port_name: str | None, engine_ref: dict,
         return None
 
     def on_message(msg):
+        # En modo calibración, TODO el MIDI se desvía a calib_queue (con
+        # valor/velocidad) y no dispara botones/pots/engine. Ver _calib_view.
+        if engine_ref.get("calib_mode"):
+            cq = engine_ref.get("calib_queue")
+            if cq is not None:
+                num = getattr(msg, "note", getattr(msg, "control", 0))
+                val = getattr(msg, "value", getattr(msg, "velocity", 0))
+                cq.put((msg.type, getattr(msg, "channel", 0), num, val))
+            return
         rq = engine_ref.get("raw_queue")
         if rq is not None:
             num = getattr(msg, "note", getattr(msg, "control", 0))
@@ -793,7 +828,7 @@ class Player:
             return None
         if context == "list":
             return {"up": "up", "down": "down",
-                    "play": "\n", "stop": "restart"}.get(action)
+                    "play": "\n", "stop": "restart", "calib": "calib"}.get(action)
         return {"up": "p", "down": "n",
                 "play": " ", "stop": "q"}.get(action)
 
@@ -1021,8 +1056,9 @@ class Player:
                     self.projects
                 self.index %= len(self.projects)
                 needs_clear = True
-            elif key == "m":
+            elif key in ("m", "calib"):
                 self._calib_view(scr, curses)
+                self._drain_buttons()
                 needs_clear = True
             elif key in ("up", "k"):
                 self.index = (self.index - 1) % len(self.projects)
@@ -1156,9 +1192,10 @@ class Player:
                     self._capture_view(scr, curses, cfg["pots"], entries,
                                        POT_DEFAULT_TARGETS)
 
-    def _calib_view(self, scr, curses):
-        """Calibración en vivo de motores: elige robot → motor → ajusta
-        tiempo/delay y manda CALIB/CALTEST/CALSAVE al robot elegido."""
+    def _load_calib_robots(self):
+        """Lee bin/cliente.*.json y devuelve la lista de robots con sus
+        motores (nombre, tiempo en ms, delay en ms). El sinte recibe todo el
+        árbol versionado por rsync, así que estos ficheros están presentes."""
         import json
         bin_dir = Path(__file__).resolve().parent.parent / "bin"
         robots = []
@@ -1170,143 +1207,187 @@ class Player:
             pines = data.get("pines", {})
             if not pines:
                 continue
+            motores = [
+                {
+                    "pin": int(pin),
+                    "nombre": info.get("nombre", f"Pin {pin}"),
+                    "tiempo_ms": float(info.get("tiempo", 0.05)) * 1000.0,
+                    "delay_ms": float(info.get("delay", 0)),
+                }
+                for pin, info in sorted(pines.items(), key=lambda kv: int(kv[0]))
+            ]
             robots.append({
                 "nombre": data.get("nombre") or data.get("name") or path.stem,
-                "pines": {
-                    int(pin): {
-                        "nombre": info.get("nombre", f"Pin {pin}"),
-                        "tiempo_ms": float(info.get("tiempo", 0.05)) * 1000.0,
-                        "delay_ms": int(info.get("delay", 0)),
-                    }
-                    for pin, info in pines.items()
-                },
+                "motores": motores,
             })
+        return robots
+
+    def _calib_view(self, scr, curses):
+        """Calibración de motores manejada con el controlador (Akai LPD8):
+        pad1 cambia robot, pad3 cambia motor, knob1/knob2 ajustan
+        duración/delay (CALIB en vivo), pad4 arranca/para un pulso repetido
+        del motor para ajustarlo de oído, pad2 guarda (CALSAVE). Sale con el
+        botón STOP o con 'q'."""
+        robots = self._load_calib_robots()
         if not robots:
             scr.erase()
             scr.addstr(1, 2, "No se encontraron ficheros bin/cliente.*.json",
                        curses.color_pair(3))
             scr.addstr(3, 2, "pulsa una tecla para volver")
             scr.refresh()
+            scr.timeout(-1)
             scr.getch()
+            scr.timeout(100)
+            return
+        if self.event_server is None:
+            scr.erase()
+            scr.addstr(1, 2, "Sin servidor de eventos: no se puede calibrar",
+                       curses.color_pair(3))
+            scr.addstr(3, 2, "pulsa una tecla para volver")
+            scr.refresh()
+            scr.timeout(-1)
+            scr.getch()
+            scr.timeout(100)
             return
 
-        sel = 0
-        while True:
-            scr.erase()
-            h, w = scr.getmaxyx()
-            scr.addstr(1, 2, "CALIBRACIÓN DE MOTORES",
-                       curses.color_pair(1) | curses.A_BOLD)
-            for i, robot in enumerate(robots):
-                attr = curses.color_pair(4) if i == sel else 0
-                scr.addstr(3 + i, 2, robot["nombre"], attr)
-            scr.addstr(h - 2, 2, "↑↓: robot   enter: motores   q: volver",
-                       curses.color_pair(3))
-            scr.refresh()
-            key = self._read_key(scr, curses, "list")
-            if key is None:
-                continue
-            if key in ("q", "esc"):
-                return
-            if key in ("up", "k"):
-                sel = (sel - 1) % len(robots)
-            elif key in ("down", "j"):
-                sel = (sel + 1) % len(robots)
-            elif key in ("\r", "\n"):
-                self._calib_motor_view(scr, curses, robots[sel])
-
-    def _calib_motor_view(self, scr, curses, robot: dict):
-        pins = sorted(robot["pines"].keys())
-        sel = 0
-        while True:
-            scr.erase()
-            h, w = scr.getmaxyx()
-            scr.addstr(1, 2, f"CALIBRACIÓN — {robot['nombre']}",
-                       curses.color_pair(1) | curses.A_BOLD)
-            for i, pin in enumerate(pins):
-                m = robot["pines"][pin]
-                attr = curses.color_pair(4) if i == sel else 0
-                line = (f"{m['nombre']:<12} pin {pin:<3} "
-                        f"tiempo {m['tiempo_ms']:6.0f}ms  "
-                        f"delay {m['delay_ms']:+6.0f}ms")
-                scr.addstr(3 + i, 2, line[:w - 3], attr)
-            scr.addstr(h - 2, 2, "↑↓: motor   enter: editar   q: volver",
-                       curses.color_pair(3))
-            scr.refresh()
-            key = self._read_key(scr, curses, "list")
-            if key is None:
-                continue
-            if key in ("q", "esc"):
-                return
-            if key in ("up", "k"):
-                sel = (sel - 1) % len(pins)
-            elif key in ("down", "j"):
-                sel = (sel + 1) % len(pins)
-            elif key in ("\r", "\n"):
-                self._calib_edit_view(scr, curses, robot, pins[sel])
-
-    def _calib_edit_view(self, scr, curses, robot: dict, pin: int):
-        motor = robot["pines"][pin]
-        fields = [
-            ("tiempo_ms", "Duración (tiempo)", 5.0, 5.0),   # min, paso
-            ("delay_ms", "Delay", -2000.0, 5.0),
-        ]
-        sel = 0
+        ri, mi = 0, 0
+        pulse_on = False
+        last_pulse = 0.0
         status = ""
-        while True:
-            scr.erase()
-            h, w = scr.getmaxyx()
-            scr.addstr(1, 2, f"{robot['nombre']} — {motor['nombre']} (pin {pin})",
-                       curses.color_pair(1) | curses.A_BOLD)
-            for i, (field, label, minimum, _step) in enumerate(fields):
-                attr = curses.color_pair(4) if i == sel else 0
-                scr.addstr(3 + i, 2, f"{label:<20}"[:20], attr)
-                scr.addstr(3 + i, 23, f"{motor[field]:+.0f} ms", attr)
-            scr.addstr(h - 3, 2, "↑↓: campo   +/-: ajustar (5ms)",
-                       curses.color_pair(3))
-            scr.addstr(h - 2, 2, "t: probar ya   s: guardar en el robot   "
-                                 "q: volver", curses.color_pair(3))
-            if status:
-                scr.addstr(h - 1, 2, status[:w - 3], curses.color_pair(5))
-            scr.refresh()
-            key = self._read_key(scr, curses, "list")
-            if key is None:
-                continue
-            if key in ("q", "esc"):
-                return
-            if key in ("up", "k"):
-                sel = (sel - 1) % len(fields)
-            elif key in ("down", "j"):
-                sel = (sel + 1) % len(fields)
-            elif key == "+":
-                field, _label, minimum, step = fields[sel]
-                motor[field] = max(minimum, motor[field] + step)
-                status = ""
-            elif key == "-":
-                field, _label, minimum, step = fields[sel]
-                motor[field] = max(minimum, motor[field] - step)
-                status = ""
-            elif key == "t":
-                status = self._send_calib(robot, pin, motor, test=True)
-            elif key == "s":
-                status = self._send_calib(robot, pin, motor, save=True)
+        stop_spec = self.buttons.get("stop")
 
-    def _send_calib(self, robot: dict, pin: int, motor: dict, *,
-                     test: bool = False, save: bool = False) -> str:
-        """Manda CALIB (y CALTEST/CALSAVE) al robot vía EventServer.emit()."""
-        if self.event_server is None:
-            return "sin servidor de eventos: no se puede calibrar"
-        ts = int(time.time() * 1000)
-        self.event_server.emit("CALIB", ts, robot["nombre"], pin,
-                                round(motor["tiempo_ms"]),
-                                round(motor["delay_ms"]))
-        if test:
-            self.event_server.emit("CALTEST", ts, robot["nombre"], pin)
-            return (f"probado: tiempo={motor['tiempo_ms']:.0f}ms "
-                    f"delay={motor['delay_ms']:+.0f}ms")
-        if save:
-            self.event_server.emit("CALSAVE", ts, robot["nombre"], pin)
-            return f"guardado en {robot['nombre']}"
-        return ""
+        # Entramos en modo calibración: el callback MIDI desvía TODO al
+        # calib_queue (ver open_midi_input) y no dispara botones/pots/engine.
+        cq = self.engine_ref.get("calib_queue")
+        self._drain_calib_queue()
+        self.engine_ref["calib_mode"] = True
+        scr.nodelay(True)
+        scr.timeout(80)
+        try:
+            while True:
+                robot = robots[ri]
+                motor = robot["motores"][mi]
+
+                # Pulso: repite el golpe del motor seleccionado.
+                now = time.time()
+                if pulse_on and now - last_pulse >= CALIB_PULSE_INTERVAL_S:
+                    self._calib_send(robot, motor)
+                    self.event_server.emit("CALTEST",
+                                           int(now * 1000),
+                                           robot["nombre"], motor["pin"])
+                    last_pulse = now
+
+                self._calib_draw(scr, curses, robots, ri, mi, pulse_on, status)
+
+                # Teclado (fallback en un PC con teclado).
+                kc = scr.getch()
+                if kc != -1:
+                    if kc in (ord("q"), 27):
+                        break
+                    if kc in (curses.KEY_LEFT, ord("h")):
+                        ri = (ri - 1) % len(robots); mi = 0; status = ""
+                    elif kc in (curses.KEY_RIGHT, ord("l")):
+                        ri = (ri + 1) % len(robots); mi = 0; status = ""
+                    elif kc in (curses.KEY_UP, ord("k")):
+                        mi = (mi - 1) % len(robot["motores"]); status = ""
+                    elif kc in (curses.KEY_DOWN, ord("j")):
+                        mi = (mi + 1) % len(robot["motores"]); status = ""
+                    elif kc in (ord(" "), ord("t")):
+                        pulse_on = not pulse_on; last_pulse = 0.0
+                    elif kc in (ord("s"),):
+                        status = self._calib_save(robot, motor)
+
+                # Controlador MIDI (vía calib_queue).
+                if cq is not None:
+                    while True:
+                        try:
+                            mtype, ch, num, val = cq.get_nowait()
+                        except queue.Empty:
+                            break
+                        if (stop_spec is not None and mtype == stop_spec[0]
+                                and ch == stop_spec[1] and num == stop_spec[2]):
+                            # botón STOP -> salir
+                            raise _CalibExit
+                        if mtype == "note_on" and val > 0 \
+                                and ch == CALIB_PAD_CHANNEL:
+                            if num == CALIB_PAD_ROBOT:
+                                ri = (ri + 1) % len(robots); mi = 0; status = ""
+                            elif num == CALIB_PAD_MOTOR:
+                                mi = (mi + 1) % len(robot["motores"])
+                                status = ""
+                            elif num == CALIB_PAD_PULSE:
+                                pulse_on = not pulse_on; last_pulse = 0.0
+                            elif num == CALIB_PAD_SAVE:
+                                status = self._calib_save(robot, motor)
+                        elif mtype == "control_change" \
+                                and ch == CALIB_KNOB_CHANNEL:
+                            if num == CALIB_KNOB_DUR:
+                                motor["tiempo_ms"] = _calib_scale(
+                                    val, CALIB_DUR_MIN_MS, CALIB_DUR_MAX_MS)
+                                self._calib_send(robot, motor); status = ""
+                            elif num == CALIB_KNOB_DELAY:
+                                motor["delay_ms"] = _calib_scale(
+                                    val, CALIB_DELAY_MIN_MS, CALIB_DELAY_MAX_MS)
+                                self._calib_send(robot, motor); status = ""
+        except _CalibExit:
+            pass
+        finally:
+            self.engine_ref["calib_mode"] = False
+            self._drain_calib_queue()
+            scr.timeout(100)
+
+    def _drain_calib_queue(self):
+        cq = self.engine_ref.get("calib_queue")
+        if cq is None:
+            return
+        while True:
+            try:
+                cq.get_nowait()
+            except queue.Empty:
+                return
+
+    def _calib_send(self, robot: dict, motor: dict):
+        """Aplica en caliente (CALIB) el tiempo/delay actuales del motor."""
+        self.event_server.emit(
+            "CALIB", int(time.time() * 1000), robot["nombre"], motor["pin"],
+            round(motor["tiempo_ms"]), round(motor["delay_ms"]))
+
+    def _calib_save(self, robot: dict, motor: dict) -> str:
+        """CALIB + CALSAVE: persiste el valor en el config.json del robot."""
+        self._calib_send(robot, motor)
+        self.event_server.emit("CALSAVE", int(time.time() * 1000),
+                               robot["nombre"], motor["pin"])
+        return f"guardado en {robot['nombre']}: {motor['nombre']}"
+
+    def _calib_draw(self, scr, curses, robots, ri, mi, pulse_on, status):
+        robot = robots[ri]
+        motor = robot["motores"][mi]
+        scr.erase()
+        h, w = scr.getmaxyx()
+        scr.addstr(1, 2, "CALIBRACIÓN DE MOTORES",
+                   curses.color_pair(1) | curses.A_BOLD)
+        scr.addstr(3, 2, "Robot:", curses.color_pair(3))
+        scr.addstr(3, 12, robot["nombre"], curses.color_pair(2) | curses.A_BOLD)
+        scr.addstr(4, 2, "Motor:", curses.color_pair(3))
+        scr.addstr(4, 12, f"{motor['nombre']}  (pin {motor['pin']})",
+                   curses.color_pair(2) | curses.A_BOLD)
+        scr.addstr(6, 4, f"Duración   {motor['tiempo_ms']:6.0f} ms",
+                   curses.color_pair(1))
+        scr.addstr(7, 4, f"Delay      {motor['delay_ms']:+6.0f} ms",
+                   curses.color_pair(1))
+        estado = "PULSANDO ●" if pulse_on else "parado"
+        scr.addstr(9, 4, f"Pulso: {estado}",
+                   curses.color_pair(2 if pulse_on else 3)
+                   | (curses.A_BOLD if pulse_on else 0))
+        scr.addstr(h - 4, 2, "pad1: robot   pad3: motor",
+                   curses.color_pair(3))
+        scr.addstr(h - 3, 2, "knob1: duración   knob2: delay",
+                   curses.color_pair(3))
+        scr.addstr(h - 2, 2, "pad4: pulso on/off   pad2: guardar   "
+                             "STOP/q: salir", curses.color_pair(3))
+        if status:
+            scr.addstr(h - 1, 2, status[:w - 3], curses.color_pair(5))
+        scr.refresh()
 
     def _wait_midi_spec(self, scr, curses) -> str | None:
         """Espera un note on o CC y devuelve el spec; None si se cancela."""
@@ -1359,6 +1440,7 @@ class Player:
         self.buttons.update({
             a: parse_button_spec(s)
             for a, s in cfg.get("buttons", {}).items()})
+        self.buttons.setdefault("calib", parse_button_spec(CALIB_OPEN_SPEC))
         self.args.hw_pots = cfg.get("pots", {})
 
     # -- widgets de la pantalla CONFIG ------------------------------------------
@@ -1538,6 +1620,10 @@ class Player:
                 print(f"[eventos] servidor TCP en el puerto "
                       f"{self.event_server.port}")
         self.engine_ref["raw_queue"] = queue.SimpleQueue()
+        self.engine_ref["calib_queue"] = queue.SimpleQueue()
+        # Pad fijo que abre la calibración desde la lista (notas fijas, ver
+        # constantes CALIB_*). No pisa un mapeo existente del usuario.
+        self.buttons.setdefault("calib", parse_button_spec(CALIB_OPEN_SPEC))
         self.midi_in = open_midi_input(
             self.args.midi, self.engine_ref, self.ui_queue, self.buttons,
             self.args.pots, self.args.pots_red)
