@@ -51,7 +51,7 @@ _DELAY_BPM_MAX = 300.0
 # algo que deba cuadrar con el ritmo de la canción.
 _NETCC_CHANNEL = 9
 _NETCC_REVERB_DELAY = 3   # knob 3: reverb + delay a la vez
-_NETCC_DISTORTION = 7     # knob 7: distorsión (Temper)
+_NETCC_DISTORTION = 7     # knob 7: distorsión (Calf Saturator, antes Temper)
 
 _REVERB_PLUGIN_ID = 4
 _REVERB_WET_PARAM_IDX = 7
@@ -63,10 +63,13 @@ _REVERB_WET_MAX = 0.244094491004944
 _DELAY_WET_PARAM_IDX = 15
 _DELAY_WET_MAX = 0.25   # Calf Vintage Delay, Wet — mismo criterio
 
-_TEMPER_PLUGIN_ID = 3
-_TEMPER_RESONANCE_PARAM_IDX = 6
-_TEMPER_SATURATION_PARAM_IDX = 7
-_TEMPER_MAX = 0.4251968562603   # Resonance y Saturation comparten tope
+# Distorsión: Calf Saturator (id 3 del rack, sustituye a Temper). El knob 7
+# controla el "amount" = parámetro "Saturation" (symbol drive), idx 12 de Carla,
+# rango del puerto 0.1 (limpio) .. 10 (fuerte). Mix queda fijo a 1 en el preset.
+_DIST_PLUGIN_ID = 3
+_SAT_DRIVE_PARAM_IDX = 12
+_SAT_DRIVE_MIN = 0.1
+_SAT_DRIVE_MAX = 10.0
 
 
 class _CarlaBpmSink:
@@ -123,11 +126,10 @@ class _NetPotSink:
             self._set(_REVERB_PLUGIN_ID, _REVERB_WET_PARAM_IDX, reverb_wet)
             self._set(_DELAY_PLUGIN_ID, _DELAY_WET_PARAM_IDX, delay_wet)
         elif control == _NETCC_DISTORTION:
-            temper = frac * _TEMPER_MAX
+            drive = _SAT_DRIVE_MIN + frac * (_SAT_DRIVE_MAX - _SAT_DRIVE_MIN)
             print(f"[netpot] ctrl={control} val={value} frac={frac:.3f} "
-                  f"temper_res=temper_sat={temper:.4f}", flush=True)
-            self._set(_TEMPER_PLUGIN_ID, _TEMPER_RESONANCE_PARAM_IDX, temper)
-            self._set(_TEMPER_PLUGIN_ID, _TEMPER_SATURATION_PARAM_IDX, temper)
+                  f"sat_drive={drive:.3f}", flush=True)
+            self._set(_DIST_PLUGIN_ID, _SAT_DRIVE_PARAM_IDX, drive)
 
 
 class BpmState:
