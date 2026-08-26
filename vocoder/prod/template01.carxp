@@ -515,7 +515,7 @@
     <Index>2</Index>
     <Name>Output Gain</Name>
     <Symbol>output_gain</Symbol>
-    <Value>16</Value>
+    <Value>20</Value>
    </Parameter>
 
    <Parameter>
