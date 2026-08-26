@@ -127,12 +127,13 @@ class _NetPotSink:
             self._set(_REVERB_PLUGIN_ID, _REVERB_WET_PARAM_IDX, reverb_wet)
             self._set(_DELAY_PLUGIN_ID, _DELAY_WET_PARAM_IDX, delay_wet)
         elif control == _NETCC_DISTORTION:
-            sat = frac * _TEMPER_SATURATION_MAX
-            res = frac * _TEMPER_RESONANCE_MAX
-            print(f"[netpot] ctrl={control} val={value} frac={frac:.3f} "
-                  f"temper_sat={sat:.4f} temper_res={res:.4f}", flush=True)
-            self._set(_TEMPER_PLUGIN_ID, _TEMPER_SATURATION_PARAM_IDX, sat)
-            self._set(_TEMPER_PLUGIN_ID, _TEMPER_RESONANCE_PARAM_IDX, res)
+            # Knob 7 DESACTIVADO temporalmente: Temper no distorsionaba de forma
+            # audible (solo cambiaba el nivel), así que el patchbay lo salta
+            # (Vocoder -> EQ10Q directo) y este knob no hace nada. Para probar
+            # otro efecto de distorsión, reconectar el plugin en el preset y
+            # volver a mapear aquí su parámetro de "amount".
+            print(f"[netpot] ctrl={control} val={value} (distorsión desactivada)",
+                  flush=True)
 
 
 class BpmState:

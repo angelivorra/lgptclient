@@ -1767,10 +1767,6 @@
    <Target>Vocoder:Formant audio input</Target>
   </Connection>
   <Connection>
-   <Source>Temper:Audio Output 1</Source>
-   <Target>EQ10Q Mono:Input</Target>
-  </Connection>
-  <Connection>
    <Source>EQ10Q Mono:Output</Source>
    <Target>Calf Vintage Delay:In L</Target>
   </Connection>
@@ -1792,7 +1788,7 @@
   </Connection>
   <Connection>
    <Source>Vocoder:Vocoder audio output</Source>
-   <Target>Temper:Audio Input 1</Target>
+   <Target>EQ10Q Mono:Input</Target>
   </Connection>
   <Positions>
    <Position x1="944" y1="1325" pluginId="7">
