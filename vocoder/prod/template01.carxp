@@ -73,7 +73,7 @@
     <Index>6</Index>
     <Name>Output Gain</Name>
     <Symbol>level_out</Symbol>
-    <Value>1</Value>
+    <Value>0</Value>
    </Parameter>
   </Data>
  </Plugin>
@@ -116,7 +116,7 @@
     <Index>7</Index>
     <Name>Threshold</Name>
     <Symbol>threshold</Symbol>
-    <Value>0.125</Value>
+    <Value>0</Value>
    </Parameter>
 
    <Parameter>
@@ -293,7 +293,7 @@
     <Index>15</Index>
     <Name>Level of band 4.7 KHz</Name>
     <Symbol>level_4k7</Symbol>
-    <Value>0.930000007152557</Value>
+    <Value>0</Value>
    </Parameter>
 
    <Parameter>

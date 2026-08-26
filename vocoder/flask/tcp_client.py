@@ -66,7 +66,11 @@ _DELAY_WET_MAX = 0.25   # Calf Vintage Delay, Wet — mismo criterio
 _TEMPER_PLUGIN_ID = 3
 _TEMPER_RESONANCE_PARAM_IDX = 6
 _TEMPER_SATURATION_PARAM_IDX = 7
-_TEMPER_MAX = 0.4251968562603   # Resonance y Saturation comparten tope
+# Antes ambos topaban en 0.42 y la distorsión casi no se notaba. Ahora el knob
+# barre Saturation a rango completo (0..1) y Resonance hasta 0.7 (por encima se
+# vuelve muy resonante). Drive queda fijo a 1 en el preset. Ambos a 0 = limpio.
+_TEMPER_SATURATION_MAX = 1.0
+_TEMPER_RESONANCE_MAX = 0.7
 
 
 class _CarlaBpmSink:
@@ -123,11 +127,12 @@ class _NetPotSink:
             self._set(_REVERB_PLUGIN_ID, _REVERB_WET_PARAM_IDX, reverb_wet)
             self._set(_DELAY_PLUGIN_ID, _DELAY_WET_PARAM_IDX, delay_wet)
         elif control == _NETCC_DISTORTION:
-            temper = frac * _TEMPER_MAX
+            sat = frac * _TEMPER_SATURATION_MAX
+            res = frac * _TEMPER_RESONANCE_MAX
             print(f"[netpot] ctrl={control} val={value} frac={frac:.3f} "
-                  f"temper_res=temper_sat={temper:.4f}", flush=True)
-            self._set(_TEMPER_PLUGIN_ID, _TEMPER_RESONANCE_PARAM_IDX, temper)
-            self._set(_TEMPER_PLUGIN_ID, _TEMPER_SATURATION_PARAM_IDX, temper)
+                  f"temper_sat={sat:.4f} temper_res={res:.4f}", flush=True)
+            self._set(_TEMPER_PLUGIN_ID, _TEMPER_SATURATION_PARAM_IDX, sat)
+            self._set(_TEMPER_PLUGIN_ID, _TEMPER_RESONANCE_PARAM_IDX, res)
 
 
 class BpmState:
