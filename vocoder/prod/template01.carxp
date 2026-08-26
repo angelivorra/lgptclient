@@ -472,7 +472,7 @@
     <Index>13</Index>
     <Name>Input Gain</Name>
     <Symbol>level_in</Symbol>
-    <Value>0.846745252609253</Value>
+    <Value>2.0</Value>
    </Parameter>
 
    <Parameter>
