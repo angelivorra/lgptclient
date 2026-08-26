@@ -508,14 +508,14 @@
     <Index>1</Index>
     <Name>Input Gain</Name>
     <Symbol>input_gain</Symbol>
-    <Value>0</Value>
+    <Value>20</Value>
    </Parameter>
 
    <Parameter>
     <Index>2</Index>
     <Name>Output Gain</Name>
     <Symbol>output_gain</Symbol>
-    <Value>0</Value>
+    <Value>16</Value>
    </Parameter>
 
    <Parameter>
