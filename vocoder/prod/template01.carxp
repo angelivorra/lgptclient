@@ -305,31 +305,77 @@
   </Data>
  </Plugin>
 
- <!-- Calf Saturator (sustituye a Temper, misma posición id=3) -->
+ <!-- Temper -->
  <Plugin>
   <Info>
    <Type>LV2</Type>
-   <Name>Calf Saturator</Name>
-   <URI>http://calf.sourceforge.net/plugins/Saturator</URI>
+   <Name>Temper</Name>
+   <URI>https://github.com/creativeintent/temper</URI>
   </Info>
 
   <Data>
    <Active>Yes</Active>
+   <Volume>1.27</Volume>
    <ControlChannel>1</ControlChannel>
-   <Options>0x1</Options>
+   <Options>0x4</Options>
 
    <Parameter>
-    <Index>11</Index>
-    <Name>Mix</Name>
-    <Symbol>mix</Symbol>
+    <Index>1</Index>
+    <Name>Curve</Name>
+    <Symbol>curve</Symbol>
     <Value>1</Value>
    </Parameter>
 
    <Parameter>
-    <Index>12</Index>
-    <Name>Saturation</Name>
+    <Index>2</Index>
+    <Name>Cutoff</Name>
+    <Symbol>cutoff</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>3</Index>
+    <Name>Drive</Name>
     <Symbol>drive</Symbol>
-    <Value>0.100000001490116</Value>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>4</Index>
+    <Name>Feedback</Name>
+    <Symbol>feedback</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>5</Index>
+    <Name>Level</Name>
+    <Symbol>level</Symbol>
+    <Value>0.879999995231628</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>6</Index>
+    <Name>Resonance</Name>
+    <Symbol>resonance</Symbol>
+    <MidiChannel>1</MidiChannel>
+    <MappedControlIndex>15</MappedControlIndex>
+    <MappedMinimum>0</MappedMinimum>
+    <MappedMaximum>1</MappedMaximum>
+    <MidiCC>15</MidiCC>
+    <Value>0.4251968562603</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>7</Index>
+    <Name>Saturation</Name>
+    <Symbol>saturation</Symbol>
+    <MidiChannel>1</MidiChannel>
+    <MappedControlIndex>15</MappedControlIndex>
+    <MappedMinimum>0</MappedMinimum>
+    <MappedMaximum>1</MappedMaximum>
+    <MidiCC>15</MidiCC>
+    <Value>0.4251968562603</Value>
    </Parameter>
   </Data>
  </Plugin>
@@ -1702,6 +1748,10 @@
   </Connection>
   <Connection>
    <Source>Midi Input:Capture 1</Source>
+   <Target>Temper:events-in</Target>
+  </Connection>
+  <Connection>
+   <Source>Midi Input:Capture 1</Source>
    <Target>Calf Reverb:events-in</Target>
   </Connection>
   <Connection>
@@ -1717,7 +1767,7 @@
    <Target>Vocoder:Formant audio input</Target>
   </Connection>
   <Connection>
-   <Source>Calf Saturator:Out L</Source>
+   <Source>Temper:Audio Output 1</Source>
    <Target>EQ10Q Mono:Input</Target>
   </Connection>
   <Connection>
@@ -1742,7 +1792,7 @@
   </Connection>
   <Connection>
    <Source>Vocoder:Vocoder audio output</Source>
-   <Target>Calf Saturator:In L</Target>
+   <Target>Temper:Audio Input 1</Target>
   </Connection>
   <Positions>
    <Position x1="944" y1="1325" pluginId="7">
@@ -1758,7 +1808,7 @@
     <Name>Calf Reverb</Name>
    </Position>
    <Position x1="1608" y1="1155" pluginId="3">
-    <Name>Calf Saturator</Name>
+    <Name>Temper</Name>
    </Position>
    <Position x1="1221" y1="1110" pluginId="2">
     <Name>Vocoder</Name>
