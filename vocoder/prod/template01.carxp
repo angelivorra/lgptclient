@@ -305,78 +305,29 @@
   </Data>
  </Plugin>
 
- <!-- Temper -->
+ <!-- Calf Crusher (bitcrush robótico, knob 7; sustituye a Temper, id 3) -->
  <Plugin>
   <Info>
    <Type>LV2</Type>
-   <Name>Temper</Name>
-   <URI>https://github.com/creativeintent/temper</URI>
+   <Name>Calf Crusher</Name>
+   <URI>http://calf.sourceforge.net/plugins/Crusher</URI>
   </Info>
 
   <Data>
    <Active>Yes</Active>
-   <Volume>1.27</Volume>
    <ControlChannel>1</ControlChannel>
-   <Options>0x4</Options>
+   <Options>0x1</Options>
 
-   <Parameter>
-    <Index>1</Index>
-    <Name>Curve</Name>
-    <Symbol>curve</Symbol>
-    <Value>1</Value>
-   </Parameter>
-
-   <Parameter>
-    <Index>2</Index>
-    <Name>Cutoff</Name>
-    <Symbol>cutoff</Symbol>
-    <Value>1</Value>
-   </Parameter>
-
-   <Parameter>
-    <Index>3</Index>
-    <Name>Drive</Name>
-    <Symbol>drive</Symbol>
-    <Value>1</Value>
-   </Parameter>
-
-   <Parameter>
-    <Index>4</Index>
-    <Name>Feedback</Name>
-    <Symbol>feedback</Symbol>
-    <Value>1</Value>
-   </Parameter>
-
-   <Parameter>
-    <Index>5</Index>
-    <Name>Level</Name>
-    <Symbol>level</Symbol>
-    <Value>0.879999995231628</Value>
-   </Parameter>
-
-   <Parameter>
-    <Index>6</Index>
-    <Name>Resonance</Name>
-    <Symbol>resonance</Symbol>
-    <MidiChannel>1</MidiChannel>
-    <MappedControlIndex>15</MappedControlIndex>
-    <MappedMinimum>0</MappedMinimum>
-    <MappedMaximum>1</MappedMaximum>
-    <MidiCC>15</MidiCC>
-    <Value>0.4251968562603</Value>
-   </Parameter>
-
-   <Parameter>
-    <Index>7</Index>
-    <Name>Saturation</Name>
-    <Symbol>saturation</Symbol>
-    <MidiChannel>1</MidiChannel>
-    <MappedControlIndex>15</MappedControlIndex>
-    <MappedMinimum>0</MappedMinimum>
-    <MappedMaximum>1</MappedMaximum>
-    <MidiCC>15</MidiCC>
-    <Value>0.4251968562603</Value>
-   </Parameter>
+   <Parameter><Index>0</Index><Name>Bypass</Name><Symbol>bypass</Symbol><Value>0</Value></Parameter>
+   <Parameter><Index>1</Index><Name>Input Gain</Name><Symbol>level_in</Symbol><Value>1</Value></Parameter>
+   <Parameter><Index>2</Index><Name>Output Gain</Name><Symbol>level_out</Symbol><Value>1</Value></Parameter>
+   <Parameter><Index>11</Index><Name>Bit Reduction</Name><Symbol>bits</Symbol><Value>16</Value></Parameter>
+   <Parameter><Index>12</Index><Name>Morph</Name><Symbol>morph</Symbol><Value>0.5</Value></Parameter>
+   <Parameter><Index>13</Index><Name>Mode</Name><Symbol>mode</Symbol><Value>0</Value></Parameter>
+   <Parameter><Index>14</Index><Name>DC</Name><Symbol>dc</Symbol><Value>1</Value></Parameter>
+   <Parameter><Index>15</Index><Name>Anti-Aliasing</Name><Symbol>anti_aliasing</Symbol><Value>0.5</Value></Parameter>
+   <Parameter><Index>16</Index><Name>Sample Reduction</Name><Symbol>samples</Symbol><Value>1</Value></Parameter>
+   <Parameter><Index>17</Index><Name>LFO Active</Name><Symbol>lfo</Symbol><Value>0</Value></Parameter>
   </Data>
  </Plugin>
 
@@ -1748,10 +1699,6 @@
   </Connection>
   <Connection>
    <Source>Midi Input:Capture 1</Source>
-   <Target>Temper:events-in</Target>
-  </Connection>
-  <Connection>
-   <Source>Midi Input:Capture 1</Source>
    <Target>Calf Reverb:events-in</Target>
   </Connection>
   <Connection>
@@ -1788,6 +1735,10 @@
   </Connection>
   <Connection>
    <Source>Vocoder:Vocoder audio output</Source>
+   <Target>Calf Crusher:In L</Target>
+  </Connection>
+  <Connection>
+   <Source>Calf Crusher:Out L</Source>
    <Target>EQ10Q Mono:Input</Target>
   </Connection>
   <Positions>
@@ -1804,7 +1755,7 @@
     <Name>Calf Reverb</Name>
    </Position>
    <Position x1="1608" y1="1155" pluginId="3">
-    <Name>Temper</Name>
+    <Name>Calf Crusher</Name>
    </Position>
    <Position x1="1221" y1="1110" pluginId="2">
     <Name>Vocoder</Name>

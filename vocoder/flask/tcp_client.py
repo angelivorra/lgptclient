@@ -51,7 +51,7 @@ _DELAY_BPM_MAX = 300.0
 # algo que deba cuadrar con el ritmo de la canción.
 _NETCC_CHANNEL = 9
 _NETCC_REVERB_DELAY = 3   # knob 3: reverb + delay a la vez
-_NETCC_DISTORTION = 7     # knob 7: distorsión (Temper)
+_NETCC_DISTORTION = 7     # knob 7: bitcrush robótico (Calf Crusher)
 
 _REVERB_PLUGIN_ID = 4
 _REVERB_WET_PARAM_IDX = 7
@@ -63,14 +63,18 @@ _REVERB_WET_MAX = 0.244094491004944
 _DELAY_WET_PARAM_IDX = 15
 _DELAY_WET_MAX = 0.25   # Calf Vintage Delay, Wet — mismo criterio
 
-_TEMPER_PLUGIN_ID = 3
-_TEMPER_RESONANCE_PARAM_IDX = 6
-_TEMPER_SATURATION_PARAM_IDX = 7
-# Antes ambos topaban en 0.42 y la distorsión casi no se notaba. Ahora el knob
-# barre Saturation a rango completo (0..1) y Resonance hasta 0.7 (por encima se
-# vuelve muy resonante). Drive queda fijo a 1 en el preset. Ambos a 0 = limpio.
-_TEMPER_SATURATION_MAX = 1.0
-_TEMPER_RESONANCE_MAX = 0.7
+# Distorsión = Calf Crusher (bitcrush robótico), id 3 del rack, en el camino
+# de la voz (Vocoder -> Crusher -> EQ10Q). El knob 7 mueve DOS parámetros a la
+# vez, de "limpio" (knob 0) a "muy robótico" (tope), sin cambiar apenas el
+# nivel: Bit Reduction 16->4 (cuantización de bits) y Sample Reduction 1->30
+# (decimación/aliasing). A 0 = 16 bits + sin decimación = transparente.
+_CRUSH_PLUGIN_ID = 3
+_CRUSH_BITS_PARAM_IDX = 11       # Bit Reduction: 16 (limpio) .. 4 (crushed)
+_CRUSH_BITS_CLEAN = 16.0
+_CRUSH_BITS_MAX = 4.0
+_CRUSH_SAMPLES_PARAM_IDX = 16    # Sample Reduction: 1 (limpio) .. 30 (robótico)
+_CRUSH_SAMPLES_CLEAN = 1.0
+_CRUSH_SAMPLES_MAX = 30.0
 
 
 class _CarlaBpmSink:
@@ -127,13 +131,12 @@ class _NetPotSink:
             self._set(_REVERB_PLUGIN_ID, _REVERB_WET_PARAM_IDX, reverb_wet)
             self._set(_DELAY_PLUGIN_ID, _DELAY_WET_PARAM_IDX, delay_wet)
         elif control == _NETCC_DISTORTION:
-            # Knob 7 DESACTIVADO temporalmente: Temper no distorsionaba de forma
-            # audible (solo cambiaba el nivel), así que el patchbay lo salta
-            # (Vocoder -> EQ10Q directo) y este knob no hace nada. Para probar
-            # otro efecto de distorsión, reconectar el plugin en el preset y
-            # volver a mapear aquí su parámetro de "amount".
-            print(f"[netpot] ctrl={control} val={value} (distorsión desactivada)",
-                  flush=True)
+            bits = _CRUSH_BITS_CLEAN + frac * (_CRUSH_BITS_MAX - _CRUSH_BITS_CLEAN)
+            samples = _CRUSH_SAMPLES_CLEAN + frac * (_CRUSH_SAMPLES_MAX - _CRUSH_SAMPLES_CLEAN)
+            print(f"[netpot] ctrl={control} val={value} frac={frac:.3f} "
+                  f"crush_bits={bits:.2f} crush_samples={samples:.2f}", flush=True)
+            self._set(_CRUSH_PLUGIN_ID, _CRUSH_BITS_PARAM_IDX, bits)
+            self._set(_CRUSH_PLUGIN_ID, _CRUSH_SAMPLES_PARAM_IDX, samples)
 
 
 class BpmState:
