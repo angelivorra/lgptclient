@@ -45,6 +45,43 @@
     group: patch
   register: carxp_copy
 
+# Plugin LADSPA propio (gate rítmico, ver vocoder/gater/). La Pi no tiene
+# internet ni la misma arquitectura que este PC (es ARM), así que se compila EN
+# la Pi: el fuente C no tiene más dependencias que libc/libm y `ladspa.h`, que
+# va vendorado en el propio directorio. Se instala en /usr/lib/ladspa, la ruta
+# absoluta del <Binary> del carxp, que Carla carga tal cual.
+- name: Sincronizar el fuente del plugin LADSPA (gater)
+  ansible.posix.synchronize:
+    src: /home/angel/git/lgptclient/vocoder/gater/
+    dest: "{{ vocoder_dest }}/gater/"
+    delete: yes
+    checksum: true
+    times: false
+    perms: false
+    rsync_opts:
+      # NO llevar el .so compilado en este PC (x86): la Pi es ARM y compila el
+      # suyo. Excluirlo también lo protege del --delete, así el binario que la
+      # Pi construye no se borra en cada sync.
+      - "--exclude=lgpt_gater.so"
+      - "--chown=patch:patch"
+  register: gater_sync
+
+- name: Compilar el plugin LADSPA (make en la Pi)
+  ansible.builtin.command:
+    cmd: make
+    chdir: "{{ vocoder_dest }}/gater"
+  register: gater_build
+  changed_when: "'up to date' not in gater_build.stdout"
+
+- name: Instalar el plugin LADSPA en /usr/lib/ladspa
+  become: true
+  ansible.builtin.command:
+    cmd: make install
+    chdir: "{{ vocoder_dest }}/gater"
+  register: gater_install
+  changed_when: true
+  when: gater_sync.changed or gater_build.changed
+
 # Servicio de usuario: se reinicia como el propio usuario patch (sin become),
 # fijando XDG_RUNTIME_DIR para alcanzar el systemd --user. Reinicia Carla con
 # el patch nuevo. Solo si algo cambió.
@@ -56,3 +93,4 @@
   environment:
     XDG_RUNTIME_DIR: "/run/user/{{ vocoder_uid }}"
   when: flask_sync.changed or carxp_copy.changed
+        or gater_build.changed or gater_install.changed

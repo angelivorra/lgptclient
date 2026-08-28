@@ -1692,6 +1692,27 @@
   </Data>
  </Plugin>
 
+ <!-- LGPT Gater (gate rítmico sincronizado a BPM, knob 4; LADSPA propio, id 8;
+      ver vocoder/gater/). BPM = parámetro 0, Pattern = parámetro 1. -->
+ <Plugin>
+  <Info>
+   <Type>LADSPA</Type>
+   <Name>LGPT Gater</Name>
+   <Label>lgpt_gater</Label>
+   <Binary>/usr/lib/ladspa/lgpt_gater.so</Binary>
+   <UniqueID>1279874631</UniqueID>
+  </Info>
+
+  <Data>
+   <Active>Yes</Active>
+   <ControlChannel>1</ControlChannel>
+   <Options>0x0</Options>
+
+   <Parameter><Index>0</Index><Name>BPM</Name><Symbol>bpm</Symbol><Value>120</Value></Parameter>
+   <Parameter><Index>1</Index><Name>Pattern</Name><Symbol>pattern</Symbol><Value>0</Value></Parameter>
+  </Data>
+ </Plugin>
+
  <Patchbay>
   <Connection>
    <Source>Audio Input:Left</Source>
@@ -1715,6 +1736,10 @@
   </Connection>
   <Connection>
    <Source>EQ10Q Mono:Output</Source>
+   <Target>LGPT Gater:Input</Target>
+  </Connection>
+  <Connection>
+   <Source>LGPT Gater:Output</Source>
    <Target>Calf Vintage Delay:In L</Target>
   </Connection>
   <Connection>

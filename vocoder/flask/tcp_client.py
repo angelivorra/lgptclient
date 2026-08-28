@@ -6,6 +6,8 @@ Protocolo: líneas de texto UTF-8 terminadas en \\n, campos separados por coma.
   BPM,<ts_ms>,<bpm>                   → tempo actual (entero, solo llega cuando cambia)
   SYNC,<ts_ms>                        → heartbeat, también sincroniza el reloj (ver abajo)
   CC,<ts_ms>,<valor>,<canal>,<control> → pots de red (canal 9, ver _NETCC_CHANNEL)
+                                         knob 3 = reverb+delay, knob 4 = gate
+                                         rítmico (lgpt_gater), knob 7 = bitcrush
 """
 
 from __future__ import annotations
@@ -44,6 +46,15 @@ _DELAY_BPM_PARAM_IDX = 24
 _DELAY_BPM_MIN = 30.0  # límites del puerto LV2 'bpm' del Calf Vintage Delay
 _DELAY_BPM_MAX = 300.0
 
+# Gate rítmico propio (LADSPA lgpt_gater, ver vocoder/gater/), id 8 del rack,
+# en el camino de voz antes del delay/reverb. Recibe el mismo BPM que el delay
+# (parámetro 0) y el knob 4 en su parámetro 1 (Pattern, 0..1). Los índices de
+# parámetro salen del orden de puertos del plugin: BPM=0, Pattern=1 (mismos
+# límites 30..300 que el delay, así que reutilizamos el clamp del BPM).
+_GATE_PLUGIN_ID = 8
+_GATE_BPM_PARAM_IDX = 0
+_GATE_PATTERN_PARAM_IDX = 1
+
 # Pots de red (`pots_red` en el JSON de la canción, ver NETCC_CHANNEL en
 # sinte/lgpt_engine.py): llegan como CC,<ts>,<valor>,<canal=9>,<control>, y a
 # diferencia de NOTA/ACRD se aplican EN CUANTO llegan, sin la programación
@@ -51,6 +62,7 @@ _DELAY_BPM_MAX = 300.0
 # algo que deba cuadrar con el ritmo de la canción.
 _NETCC_CHANNEL = 9
 _NETCC_REVERB_DELAY = 3   # knob 3: reverb + delay a la vez
+_NETCC_GATE = 4           # knob 4: gate rítmico sincronizado a BPM (lgpt_gater)
 _NETCC_DISTORTION = 7     # knob 7: bitcrush robótico (Calf Crusher)
 
 _REVERB_PLUGIN_ID = 4
@@ -95,6 +107,14 @@ class _CarlaBpmSink:
                 _DELAY_BPM_PARAM_IDX,
                 clamped,
             )
+            # Mismo BPM al gate rítmico (lgpt_gater): sincroniza el patrón al
+            # tempo de la canción, igual que el delay.
+            liblo.send(
+                self._addr,
+                f"/Carla/{_GATE_PLUGIN_ID}/set_parameter_value",
+                _GATE_BPM_PARAM_IDX,
+                clamped,
+            )
             self._last_sent = clamped
         except (OSError, IOError) as exc:
             # Carla puede estar reiniciándose por el supervisor; no abortar.
@@ -130,6 +150,10 @@ class _NetPotSink:
                   flush=True)
             self._set(_REVERB_PLUGIN_ID, _REVERB_WET_PARAM_IDX, reverb_wet)
             self._set(_DELAY_PLUGIN_ID, _DELAY_WET_PARAM_IDX, delay_wet)
+        elif control == _NETCC_GATE:
+            # Knob 4: posición cruda (0..1) al parámetro Pattern del gater.
+            # El propio plugin la divide en 4 pasos (passthrough/SM/SMSM/SMSMSM).
+            self._set(_GATE_PLUGIN_ID, _GATE_PATTERN_PARAM_IDX, frac)
         elif control == _NETCC_DISTORTION:
             bits = _CRUSH_BITS_CLEAN + frac * (_CRUSH_BITS_MAX - _CRUSH_BITS_CLEAN)
             samples = _CRUSH_SAMPLES_CLEAN + frac * (_CRUSH_SAMPLES_MAX - _CRUSH_SAMPLES_CLEAN)
