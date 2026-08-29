@@ -183,3 +183,5 @@ sinte/LittleGPTracker/
 # sinte/: bounces de canción entera sueltos en la raíz de cada canción (pesados,
 # el player no los reproduce); sí se versionan los samples de samples/ y wavs/
 sinte/songs/*/*.wav
+# backups de save_project (LGPT)
+*.dat.bak

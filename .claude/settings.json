@@ -182,7 +182,20 @@
       "Bash(pkill -f \"journalctl --user -u pivocoder\")",
       "Bash(pkill -f \"timeout 180 ssh\")",
       "Bash(timeout 60 scp -o StrictHostKeyChecking=no -o ConnectTimeout=8 /tmp/gen_sat_block.py patch@192.168.0.10:/tmp/gen_sat_block.py)",
-      "Bash(python3 -)"
+      "Bash(python3 -)",
+      "Bash(timeout 20 robotracker/.venv/bin/python /tmp/claude-1000/-home-angel-git-lgptclient/bac56303-0ce2-4992-9787-3af9facb2ae9/scratchpad/rt2_nav.py)",
+      "Bash(robotracker/.venv/bin/python -c \"from kivy.core.window import Keyboard; print\\('lctrl',Keyboard.keycodes.get\\('lctrl'\\),'rctrl',Keyboard.keycodes.get\\('rctrl'\\)\\)\")",
+      "Bash(robotracker/.venv/bin/python -c \"import ast,glob; [ast.parse\\(open\\(f\\).read\\(\\),f\\) for f in glob.glob\\('robotracker2/**/*.py',recursive=True\\)]; print\\('syntax OK'\\)\")",
+      "Bash(timeout 30 robotracker/.venv/bin/python /tmp/claude-1000/-home-angel-git-lgptclient/bac56303-0ce2-4992-9787-3af9facb2ae9/scratchpad/rt2_mute.py)",
+      "Bash(timeout 15 robotracker/.venv/bin/python /tmp/claude-1000/-home-angel-git-lgptclient/bac56303-0ce2-4992-9787-3af9facb2ae9/scratchpad/rt2_muteshot.py)",
+      "Bash(timeout 25 robotracker/.venv/bin/python /tmp/claude-1000/-home-angel-git-lgptclient/bac56303-0ce2-4992-9787-3af9facb2ae9/scratchpad/rt2_clip2.py)",
+      "Bash(timeout 25 robotracker/.venv/bin/python /tmp/claude-1000/-home-angel-git-lgptclient/bac56303-0ce2-4992-9787-3af9facb2ae9/scratchpad/rt2_chainsel.py)",
+      "Bash(./robotracker2/odin/install.sh root@192.168.0.101)",
+      "Bash(timeout 15 robotracker/.venv/bin/python /tmp/claude-1000/-home-angel-git-lgptclient/bac56303-0ce2-4992-9787-3af9facb2ae9/scratchpad/rt2_phraseshot.py)",
+      "Bash(timeout 20 robotracker/.venv/bin/python /tmp/claude-1000/-home-angel-git-lgptclient/bac56303-0ce2-4992-9787-3af9facb2ae9/scratchpad/rt2_center.py)",
+      "Bash(sed -i \"s@    txt=m._value_text\\(rt2.__dict__ and __import__\\('screens.instrument_view',fromlist=\\\\['FIELDS'\\\\]\\).FIELDS\\\\[5\\\\]\\)@    from screens.instrument_view import FIELDS\\\\n    txt=m._value_text\\(FIELDS[5]\\)@\" /tmp/claude-1000/-home-angel-git-lgptclient/bac56303-0ce2-4992-9787-3af9facb2ae9/scratchpad/rt2_instr.py)",
+      "Bash(timeout 25 robotracker/.venv/bin/python /tmp/claude-1000/-home-angel-git-lgptclient/bac56303-0ce2-4992-9787-3af9facb2ae9/scratchpad/rt2_instr.py)",
+      "Bash(robotracker2/.venv/bin/python -c \"import kivy, numpy, sounddevice, soundfile; print\\('venv OK - kivy', kivy.__version__\\)\")"
     ],
     "additionalDirectories": [
       "/home/angel/LGPT/bin",

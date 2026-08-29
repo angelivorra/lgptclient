@@ -1,0 +1,16 @@
+# ROBOTRACKER2 — mapeo gamepad → teclado (gptokeyb) para la Odin 2.
+# dpad = cursor / navegación, X = A (copiar/pegar/editar/activar),
+# B = B (borrar / copiar selección),
+# R2 = Ctrl derecho (SELECCIÓN: con X = cortar/pegar, con B = selección),
+# L2 = Ctrl izquierdo (NAVEGAR pantallas con dpad; con B = mute mientras suena),
+# Start = play/stop, Back = volver (Esc).
+up = up
+down = down
+left = left
+right = right
+x = a
+b = s
+r2 = rightctrl
+l2 = leftctrl
+start = space
+back = esc

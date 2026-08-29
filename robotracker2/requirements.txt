@@ -1,0 +1,6 @@
+# robotracker2 — UI Kivy sobre el motor de ../sinte.
+# (Kivy compila desde fuente en el primer install, ~5 min.)
+kivy
+numpy
+sounddevice
+soundfile

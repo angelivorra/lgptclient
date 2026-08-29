@@ -80,6 +80,16 @@
       }
     },
     {
+      "label": "Robotracker2",
+      "type": "shell",
+      "command": "${workspaceFolder}/robotracker2/.venv/bin/python ${workspaceFolder}/robotracker2/robotracker2.py",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
       "label": "Genera Imágenes",
       "type": "shell",
       "command": "${workspaceFolder}/venv/bin/python ${workspaceFolder}/bin/genera.py ${input:terminal}",

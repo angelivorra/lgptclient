@@ -69,6 +69,47 @@ def project_to_xml(project: LGPTProject) -> str:
             node = ET.SubElement(child, "DATA")
             node.text = data.hex().upper()
 
+    # GROOVES (nodo top-level): reencodifica desde project.grooves si hay datos
+    # en memoria. Sin ediciones, el hex resultante es idéntico al original.
+    groove_node = root.find("GROOVES")
+    if groove_node is not None and project.grooves:
+        del groove_node[:]
+        node = ET.SubElement(groove_node, "DATA")
+        node.text = bytes(project.grooves).hex().upper()
+
+    # TABLES (nodo top-level): reencodifica cada TABLE desde project.tables.
+    tables_node = root.find("TABLES")
+    if tables_node is not None and project.tables:
+        del tables_node[:]
+        for tid in sorted(project.tables):
+            t = project.tables[tid]
+            te = ET.SubElement(tables_node, "TABLE", {"ID": f"{tid:02X}"})
+            for ck, pk in (("cmd1", "param1"), ("cmd2", "param2"),
+                           ("cmd3", "param3")):
+                cn = ET.SubElement(te, ck.upper())
+                ET.SubElement(cn, "DATA").text = b"".join(
+                    c.encode("ascii") for c in t[ck]).hex().upper()
+                pn = ET.SubElement(te, pk.upper())
+                ET.SubElement(pn, "DATA").text = b"".join(
+                    struct.pack("<H", p) for p in t[pk]).hex().upper()
+
+    # INSTRUMENTBANK: actualiza el VALUE de cada PARAM en sitio desde
+    # project.instrument_bank (preserva estructura y params no editados).
+    bank_node = root.find("INSTRUMENTBANK")
+    if bank_node is not None:
+        for instr in bank_node.findall("INSTRUMENT"):
+            try:
+                iid = int(instr.get("ID"), 16)
+            except (TypeError, ValueError):
+                continue
+            data = project.instrument_bank.get(iid)
+            if not data:
+                continue
+            for param in instr.findall("PARAM"):
+                name = param.get("NAME")
+                if name in data["params"]:
+                    param.set("VALUE", str(data["params"][name]))
+
     ET.indent(root, space="    ")
     return ET.tostring(root, encoding="unicode")
 
