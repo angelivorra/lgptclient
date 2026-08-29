@@ -43,7 +43,6 @@ ROW_H = dp(30)
 TOP_PAD = dp(20)
 LM = dp(36)
 STEP_W = dp(52)
-PREVIEW_W = dp(140)            # panel de miniatura (canal de robotas)
 FONT = dp(17)
 MAX_NOTE = 131                     # (9+2)*12 - 1
 
@@ -416,10 +415,13 @@ class PhraseGrid(Widget):
             return
         cols = self._cols()
         is_robot = self.track == ROBOT_TRACK
-        reserve = (PREVIEW_W + dp(48)) if is_robot else 0   # hueco para miniatura
-        avail_w = self.width - reserve
-        block_w = STEP_W + dp(8) + sum(w for _k, w in cols)   # centrar bloque
-        x_step = self.x + max(dp(8), (avail_w - block_w) / 2)
+        if is_robot:
+            # Pegado a la izquierda (no centrado): deja el resto de la
+            # pantalla, mucho más ancho, para la miniatura.
+            x_step = self.x + dp(24)
+        else:
+            block_w = STEP_W + dp(8) + sum(w for _k, w in cols)   # centrar bloque
+            x_step = self.x + max(dp(8), (self.width - block_w) / 2)
         xs = []
         x = x_step + STEP_W + dp(8)
         for _kind, w in cols:
@@ -455,11 +457,14 @@ class PhraseGrid(Widget):
                         color = COLOR_BG
                     self._text(cx, y, w, text, color)
             if is_robot:
-                self._draw_preview(self.x + avail_w + dp(24))
+                preview_x = x + dp(32)
+                avail_w = self.width - (preview_x - self.x) - dp(24)
+                avail_h = self.height - TOP_PAD - dp(24)
+                size = max(dp(1), min(avail_w, avail_h))   # cuadrada, lo más grande posible
+                self._draw_preview(preview_x, size)
 
-    def _draw_preview(self, px):
-        pw = PREVIEW_W
-        ph = PREVIEW_W
+    def _draw_preview(self, px, size):
+        pw = ph = size
         py = self.y + self.height - TOP_PAD - ph
         Color(0.09, 0.10, 0.13, 1)
         Rectangle(pos=(px, py), size=(pw, ph))
