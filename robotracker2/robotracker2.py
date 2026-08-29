@@ -188,6 +188,12 @@ class Robotracker2App(App):
     # Semántica (sobre botones lógicos)
     # ------------------------------------------------------------------
     def _dispatch(self, button, active):
+        # Cualquier otro botón pulsado mientras A está mantenido consume el
+        # tap de A: si no, al soltar A luego se resuelve como "tap" (copiar/
+        # pegar/valor por defecto) sobre lo que haya quedado tras el combo
+        # (p.ej. A+S borra y, sin esto, el tap de A repone un valor encima).
+        if A in active and button != A:
+            self._a_consumed = True
         if self.browser is not None:
             return self._dispatch_browser(button)
         if self.dialog is not None:
