@@ -11,18 +11,30 @@ codifica dos cosas distintas en la misma phrase:
   robotas: se ignora, HIT_NOTES es la fuente de verdad.
 
 - **Evento de pantalla**: el comando FX1 (nunca FX2 en las canciones reales)
-  cuando es "MDCC ccvv": control = (param>>8)&0x7F, value = param&0x7F. El
-  cliente de la robota busca `images/{control:03d}/{value:03d}` (ver
-  ansible/roles/cliente-actualiza, que despliega el `images/` del repo tal
-  cual a /home/angel/images en las robotas). El "instrumento 80/81 por nota"
-  de NOTAS.md es un mecanismo antiguo que el cliente actual ya no usa (solo
-  lee MIDI CC, no nota, para imágenes): no se reutiliza aquí.
+  cuando es "MDCC ccvv": control = (param>>8)&0x7F, value = param&0x7F.
 
-Carpetas de `images/` (una por "control" MDCC), según su contenido
-(bin/genera.py clasifica igual): con fondo.png+textos = letra sincronizada
-(no es un pick manual, la dispara el motor solo); con fondo.png+png/ =
-imágenes estáticas (values = ficheros de png/); si no, subcarpetas numeradas
-= animaciones (values = esas subcarpetas, cada una una secuencia de frames).
+El dispositivo NUNCA recibe `images/` en crudo: `ansible/roles/cliente-
+actualiza` primero ejecuta `bin/genera.py <terminal>` en este PC (que LEE
+`images/` y ESCRIBE los `.bin` ya renderizados en `img_output/<terminal>/`) y
+luego sincroniza *eso* a `/home/angel/images` en la robota. Por carpeta
+"control" (según cómo la clasifica bin/genera.py):
+
+- **fondo.png + png/** → imágenes estáticas: cada `png/{value:03d}.png` es un
+  icono pequeño que se compone CENTRADO sobre `fondo.png`.
+- **fondo.png + fuente.ttf + textos** → letra sincronizada (control=2): cada
+  LÍNEA de `images/002/textos` (compartido, no por canción — el `textos` de
+  cada canción en `sinte/songs/*/textos` es un archivo aparte que solo usa el
+  motor internamente) se renderiza como una palabra grande con efecto
+  glow/glitch sobre `fondo.png`; `value` = índice de línea (0-based).
+- si no, subcarpetas numeradas → animaciones: cada `{value:03d}/` es una
+  secuencia de frames.
+
+`bin/genera.py --markdown` (o con `markdown` en su config) además guarda una
+miniatura YA renderizada de cada resultado en `ayuda_imagenes/{cc:03d}/...`
+(mismo fondo+icono/glow/frame que ve el dispositivo real) — es exactamente lo
+que queremos para previsualizar en el editor, así que `ayuda_preview_path` la
+usa directamente en vez de recomponer nada a mano. Si no existe (no se ha
+regenerado tras añadir algo nuevo), la previsualización queda vacía sin más.
 """
 
 from pathlib import Path
@@ -43,7 +55,7 @@ HIT_BY_NOTE = {note: label for label, note in HIT_NOTES}
 
 # Categoría de cada carpeta "control" de images/ (para etiquetar el SCREEN).
 CC_LABELS = {1: "IMG", 2: "TXT", 3: "ANI"}
-CC_LYRIC = 2                # control especial: letra sincronizada (no picker)
+CC_LYRIC = 2                # control especial: letra sincronizada
 
 
 def hit_label(note):
@@ -76,27 +88,35 @@ def classify_folder(path):
     return None
 
 
-def screen_image_path(images_dir, cc, value):
-    """(fondo, primer_plano) para previsualizar (cc, value), o (None, None).
-
-    Imágenes estáticas: el propio icono de png/{value:03d}.png es un recorte
-    pequeño (p.ej. 100×100) pensado para componerse CENTRADO sobre fondo.png
-    (igual que hace bin/genera.py al generar los .bin reales) — por eso se
-    devuelven ambos. Animación: el primer frame de la carpeta numerada
-    {value:03d}/ ya es una imagen completa por sí sola, sin fondo. Usado por
-    `ImageBrowser` y por la vista previa en línea de PHRASE."""
+def lyric_lines(images_dir):
+    """Líneas de `images/002/textos` (compartido, igual criterio que
+    bin/genera.py: recorta y descarta vacías). Cada índice es el `value` de
+    un MDCC "TXT"."""
     if images_dir is None:
-        return None, None
-    base = Path(images_dir) / f"{cc:03d}"
-    kind = classify_folder(base)
-    if kind == "images":
-        fg = base / "png" / f"{value:03d}.png"
-        if not fg.exists():
-            return None, None
-        bg = base / "fondo.png"
-        return (bg if bg.exists() else None), fg
-    if kind == "anim":
-        folder = base / f"{value:03d}"
-        frames = sorted(folder.glob("*.png")) if folder.is_dir() else []
-        return None, (frames[0] if frames else None)
-    return None, None
+        return []
+    path = Path(images_dir) / f"{CC_LYRIC:03d}" / "textos"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def ayuda_preview_path(ayuda_dir, cc, value):
+    """Miniatura YA renderizada de (cc, value) (con el efecto/composición
+    real), o None si no existe (falta generar `ayuda_imagenes/` con
+    `bin/genera.py --markdown`, o (cc,value) no existe). Ficheros planos
+    ({value:03d}.png) para imágenes/texto; carpeta de frames ({value:03d}/)
+    para animaciones — se usa el primero."""
+    if ayuda_dir is None:
+        return None
+    base = Path(ayuda_dir) / f"{cc:03d}"
+    flat = base / f"{value:03d}.png"
+    if flat.exists():
+        return flat
+    folder = base / f"{value:03d}"
+    if folder.is_dir():
+        frames = sorted(folder.glob("*.png"))
+        if frames:
+            return frames[0]
+    return None

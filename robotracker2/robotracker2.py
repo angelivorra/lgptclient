@@ -46,6 +46,9 @@ from theme import setup_window
 DEFAULT_SAMPLES = DEFAULT_SONGS.parent.parent / "samples"
 # images/ del repo: eventos de pantalla (MDCC) del canal de robotas.
 DEFAULT_IMAGES = DEFAULT_SONGS.parent.parent / "images"
+# ayuda_imagenes/ del repo: miniaturas YA renderizadas (bin/genera.py
+# --markdown) para previsualizar sin recomponer nada a mano.
+DEFAULT_AYUDA = DEFAULT_SONGS.parent.parent / "ayuda_imagenes"
 
 # Opciones del diálogo de cambios sin guardar.
 _CONFIRM_OPTS = [("save", "Guardar"), ("discard", "Descartar"),
@@ -60,11 +63,12 @@ class Robotracker2App(App):
 
     def __init__(self, songs_dir=DEFAULT_SONGS, fullscreen=False,
                  samples_dir=DEFAULT_SAMPLES, images_dir=DEFAULT_IMAGES,
-                 **kwargs):
+                 ayuda_dir=DEFAULT_AYUDA, **kwargs):
         super().__init__(**kwargs)
         self.songs_dir = songs_dir
         self.samples_dir = Path(samples_dir)
         self.images_dir = Path(images_dir)
+        self.ayuda_dir = Path(ayuda_dir)
         self.browser = None        # SampleBrowser/ImageBrowser activo (o None)
         self._screen_step = None   # step de PHRASE que se está editando
         self.fullscreen = fullscreen
@@ -86,7 +90,7 @@ class Robotracker2App(App):
         self.editor_screen = EditorScreen(on_change=self._mark_dirty,
                                           on_action=self._project_action,
                                           on_pick_screen=self._open_screen_browser,
-                                          images_dir=self.images_dir,
+                                          ayuda_dir=self.ayuda_dir,
                                           name="editor")
         self.sm.add_widget(self.load_screen)
         self.sm.add_widget(self.editor_screen)
@@ -458,7 +462,8 @@ class Robotracker2App(App):
 
     def _open_screen_browser(self, step):
         self._screen_step = step
-        self._open_browser(ImageBrowser(self.images_dir, on_load=self._load_screen,
+        self._open_browser(ImageBrowser(self.images_dir, ayuda_dir=self.ayuda_dir,
+                                        on_load=self._load_screen,
                                         on_close=self._close_browser))
 
     def _load_screen(self, cc, value):
@@ -659,9 +664,12 @@ def main():
                         help="biblioteca de samples para el navegador")
     parser.add_argument("--images", default=str(DEFAULT_IMAGES),
                         help="carpeta images/ para el navegador de pantalla")
+    parser.add_argument("--ayuda", default=str(DEFAULT_AYUDA),
+                        help="carpeta ayuda_imagenes/ (miniaturas ya renderizadas)")
     args = parser.parse_args()
     Robotracker2App(songs_dir=args.songs, fullscreen=args.fullscreen,
-                    samples_dir=args.samples, images_dir=args.images).run()
+                    samples_dir=args.samples, images_dir=args.images,
+                    ayuda_dir=args.ayuda).run()
 
 
 if __name__ == "__main__":

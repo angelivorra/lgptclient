@@ -20,12 +20,11 @@ igual con la nota vacía (verificado contra el motor de sinte), así que HIT y
 SCREEN son independientes — no hace falta ningún "golpe vacío" inventado.
 
 Con el cursor en cualquier columna de una fila del canal de robotas se
-muestra a la derecha una **miniatura** de la imagen/frame de esa fila (si su
-SCREEN resuelve a un fichero real de `images/`), para ver de un vistazo qué
-se envía sin tener que abrir el navegador.
+muestra a la derecha una **miniatura** de esa fila: la que ya deja generada
+`bin/genera.py --markdown` en `ayuda_imagenes/` (mismo fondo+icono/glow/frame
+que ve el dispositivo real), para ver de un vistazo qué se envía sin tener
+que abrir el navegador.
 """
-
-from pathlib import Path
 
 from kivy.core.image import Image as CoreImage
 from kivy.core.text import Label as CoreLabel
@@ -35,8 +34,8 @@ from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
 from lgpt_model import EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView, note_name_to_byte
-from robots import (HIT_NOTES, ROBOT_INSTR, ROBOT_TRACK, hit_label, mdcc_unpack,
-                    screen_image_path, screen_label)
+from robots import (HIT_NOTES, ROBOT_INSTR, ROBOT_TRACK, ayuda_preview_path,
+                    hit_label, mdcc_unpack, screen_label)
 from sinte_bridge import note_byte_to_name
 from theme import COLOR_ACCENT, COLOR_BG, COLOR_BORDER
 
@@ -85,13 +84,13 @@ _WHICH = {"fx1cmd": 1, "fx1prm": 1, "fx2cmd": 2, "fx2prm": 2}
 
 class PhraseGrid(Widget):
     def __init__(self, on_change=None, fx_commands=None, on_nav=None,
-                 on_pick_screen=None, images_dir=None, **kw):
+                 on_pick_screen=None, ayuda_dir=None, **kw):
         super().__init__(**kw)
         # comandos FX que se pueden ciclar (solo los usados en las canciones)
         self.fx_commands = list(fx_commands) if fx_commands else list(FX_USED)
         self.on_nav = on_nav           # refresca la cabecera al mover el cursor
         self.on_pick_screen = on_pick_screen   # abre el navegador de images/
-        self.images_dir = Path(images_dir) if images_dir else None
+        self.ayuda_dir = ayuda_dir     # miniaturas ya renderizadas (robots.ayuda_preview_path)
         self.project = None
         self.pv = None
         self.track = 0
@@ -102,9 +101,8 @@ class PhraseGrid(Widget):
         self.play_step = None
         self.on_change = on_change
         self._tex = {}
-        self._preview_paths = (None, None)
-        self._preview_bg_tex = None
-        self._preview_fg_tex = None
+        self._preview_path = None
+        self._preview_tex = None
         self.bind(pos=self._redraw, size=self._redraw)
 
     def _cols(self):
@@ -123,27 +121,21 @@ class PhraseGrid(Widget):
 
     # -- miniatura de pantalla (canal de robotas) -----------------------
     def _update_preview(self):
-        paths = (None, None)
+        path = None
         if self.track == ROBOT_TRACK:
             raw = self._get_raw(self.cursor_step, 1)      # 1 = columna SCREEN
             if isinstance(raw, int):
                 cc, value = mdcc_unpack(raw)
-                paths = screen_image_path(self.images_dir, cc, value)
-        if paths == self._preview_paths:
+                path = ayuda_preview_path(self.ayuda_dir, cc, value)
+        if path == self._preview_path:
             return
-        self._preview_paths = paths
-        bg, fg = paths
-        self._preview_bg_tex = self._load_tex(bg)
-        self._preview_fg_tex = self._load_tex(fg)
-
-    @staticmethod
-    def _load_tex(path):
-        if path is None or not path.exists():
-            return None
-        try:
-            return CoreImage(str(path)).texture
-        except Exception:                            # noqa: BLE001
-            return None
+        self._preview_path = path
+        self._preview_tex = None
+        if path is not None and path.exists():
+            try:
+                self._preview_tex = CoreImage(str(path)).texture
+            except Exception:                       # noqa: BLE001
+                self._preview_tex = None
 
     def phrase_label(self):
         p = self.pv.phrase_of(self.track) if self.pv else None
@@ -471,19 +463,12 @@ class PhraseGrid(Widget):
         py = self.y + self.height - TOP_PAD - ph
         Color(0.09, 0.10, 0.13, 1)
         Rectangle(pos=(px, py), size=(pw, ph))
-        if self._preview_bg_tex is not None:
-            # fondo.png: rellena el panel entero (el icono va compuesto encima,
-            # igual que hace bin/genera.py al generar las imágenes reales).
-            Color(1, 1, 1, 1)
-            Rectangle(texture=self._preview_bg_tex, size=(pw, ph), pos=(px, py))
-        if self._preview_fg_tex is not None:
-            tw, th = self._preview_fg_tex.size
-            # margen del 10% por lado, como genera.py (margin_ratio=0.10)
-            max_w, max_h = pw * 0.8, ph * 0.8
-            scale = min(max_w / tw, max_h / th)
+        if self._preview_tex is not None:
+            tw, th = self._preview_tex.size
+            scale = min(pw / tw, ph / th)
             dw, dh = tw * scale, th * scale
             Color(1, 1, 1, 1)
-            Rectangle(texture=self._preview_fg_tex, size=(dw, dh),
+            Rectangle(texture=self._preview_tex, size=(dw, dh),
                       pos=(px + (pw - dw) / 2, py + (ph - dh) / 2))
         Color(*COLOR_BORDER)
         Line(rectangle=(px, py, pw, ph), width=1.2)

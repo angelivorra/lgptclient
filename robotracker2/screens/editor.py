@@ -71,7 +71,7 @@ class _NavCell(Label):
 
 class EditorScreen(Screen):
     def __init__(self, on_change=None, on_action=None, on_pick_screen=None,
-                 images_dir=None, **kw):
+                 ayuda_dir=None, **kw):
         super().__init__(**kw)
         self.current = "song"
         self.song_name = ""
@@ -119,7 +119,7 @@ class EditorScreen(Screen):
         self.phrase_grid = PhraseGrid(on_change=self._grid_changed,
                                       on_nav=self.refresh_header,
                                       on_pick_screen=on_pick_screen,
-                                      images_dir=images_dir,
+                                      ayuda_dir=ayuda_dir,
                                       size_hint=(1, 1),
                                       pos_hint={"x": 0, "y": 0})
         self.groove_grid = GrooveGrid(on_change=self._grid_changed,

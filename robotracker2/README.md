@@ -60,9 +60,11 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
      nota LGPT críptica. A+dir cicla los 6 golpes; fija el instrumento a
      `ROBOT_INSTR` (0x80) sola.
    - **SCREEN** — el evento de pantalla (FX1 "MDCC ccvv", decodificado a
-     "IMG 007" / "ANI 003"). **A** siempre abre el **navegador visual de
-     `images/`** (`screens/image_browser.py`): elige la carpeta (imágenes
-     estáticas o animación), ve la miniatura real de cada entrada al pasar
+     "IMG 007" / "ANI 003" / "TXT 000"). **A** siempre abre el **navegador
+     visual de `images/`** (`screens/image_browser.py`): elige la categoría
+     — **imágenes estáticas**, **animación** o **texto sincronizado**
+     (líneas de `images/002/textos`, compartido y no por canción: cada
+     línea es un `value`) —, ve la miniatura real de cada entrada al pasar
      por ella, **A** entra/elige (inmediato, sin doble-tap — la vista previa
      ya es gratis al moverse), **B** vuelve/cancela. Al elegir, escribe el
      MDCC correspondiente. FX2 no se usa para esto en las canciones reales y
@@ -73,11 +75,16 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
      `set_fx_param` crean la phrase por sí solos) — así que un step puede
      llevar solo SCREEN sin HIT, sin necesidad de ningún "golpe vacío"
      inventado para mantener una nota activa.
-   - Con el cursor en una fila del canal de robotas se ve a la derecha una
-     **miniatura** de esa fila: si es una imagen estática, compone el icono
-     de `png/{value}.png` centrado sobre `fondo.png` (igual que hace
-     `bin/genera.py` al generar las imágenes reales para el dispositivo); si
-     es una animación, el primer frame. Se actualiza sola al mover el cursor.
+   - **Las miniaturas son las ya renderizadas** por `bin/genera.py
+     --markdown` en `ayuda_imagenes/` — el mismo fondo+icono compuesto /
+     glow de texto / frame que verá el dispositivo real (el propio
+     dispositivo nunca recibe `images/` crudo: Ansible ejecuta `genera.py`
+     en este PC y solo sincroniza los `.bin` resultantes a
+     `/home/angel/images`). Si falta la miniatura de algo nuevo, hay que
+     regenerar `ayuda_imagenes/` con `bin/genera.py --markdown` — sin ella
+     la entrada se sigue listando y se puede elegir, solo sin vista previa.
+     Con el cursor en una fila del canal de robotas se ve la misma
+     miniatura a la derecha, sola, sin abrir el navegador.
 6. **GROOVE** (`screens/groove_view.py`): el groove seleccionado (nº en la
    cabecera), 16 steps de duración en **ticks** (0xFF = `--`). Dpad: arr/abj
    step, **izq/dcha cambia de groove** (00–1F); **A+dir** edita ticks, **A**

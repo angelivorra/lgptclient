@@ -1,13 +1,13 @@
 """Navegador visual de `images/` para elegir el evento de pantalla (MDCC).
 
-Dos niveles: elegir la carpeta "control" (imágenes estáticas o animación) y
-luego el valor dentro de ella. Con vista previa automática (la imagen, o el
-primer frame de la animación) al pasar por cada entrada — a diferencia del
-navegador de samples, aquí no hace falta un gesto para "escuchar": **A**
-entra en la carpeta o **elige** el valor resaltado (inmediato, sin doble-tap:
-ver la vista previa ya es gratis al moverse); **B/Cancelar** vuelve atrás o
-cierra. Misma interfaz que `SampleBrowser` (move/activate/back/cleanup) para
-que la app los trate igual.
+Dos niveles: elegir la carpeta "control" (imágenes estáticas, animación o
+texto sincronizado) y luego el valor dentro de ella. La vista previa usa la
+miniatura YA renderizada en `ayuda_imagenes/` (mismo fondo+icono/glow/frame
+que ve el dispositivo real; ver `robots.ayuda_preview_path`) y se actualiza
+sola al moverse — a diferencia del navegador de samples, aquí no hace falta
+un gesto para "escuchar": **A** entra en la carpeta o **elige** el valor
+resaltado (inmediato, sin doble-tap), **B/Cancelar** vuelve atrás o cierra.
+Misma interfaz que `SampleBrowser` (move/activate/back/cleanup).
 """
 
 from pathlib import Path
@@ -19,7 +19,7 @@ from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, UP
-from robots import CC_LABELS, classify_folder
+from robots import CC_LABELS, ayuda_preview_path, classify_folder, lyric_lines
 from theme import COLOR_ACCENT, COLOR_BG, COLOR_BTN
 
 ROW_H = dp(30)
@@ -35,13 +35,16 @@ COLOR_ACTION = (0.75, 0.77, 0.82, 1)
 COLOR_PREVIEW_BG = (0.10, 0.10, 0.13, 1)
 COLOR_PREVIEW_BORDER = (0.36, 0.38, 0.46, 1)
 
+_KIND_TXT = {"images": "Imágenes", "anim": "Animaciones", "lyric": "Texto"}
+
 ACTIONS = [("A", "Elegir"), ("B", "Cancelar")]
 
 
 class ImageBrowser(Widget):
-    def __init__(self, root, on_load=None, on_close=None, **kw):
+    def __init__(self, root, ayuda_dir=None, on_load=None, on_close=None, **kw):
         super().__init__(**kw)
         self.root = Path(root)
+        self.ayuda_dir = Path(ayuda_dir) if ayuda_dir else None
         self.on_load = on_load
         self.on_close = on_close
         self.level = 0                  # 0 = carpeta control, 1 = valor
@@ -50,9 +53,8 @@ class ImageBrowser(Widget):
         self.index = 0
         self.top_idx = 0
         self._tex = {}
-        self._preview_paths = (None, None)
-        self._preview_bg_tex = None
-        self._preview_fg_tex = None
+        self._preview_path = None
+        self._preview_tex = None
         self.bind(pos=self._redraw, size=self._redraw)
         self._scan_root()
 
@@ -66,43 +68,39 @@ class ImageBrowser(Widget):
                 if not (p.is_dir() and p.name.isdigit()):
                     continue
                 kind = classify_folder(p)
-                if kind not in ("images", "anim"):
-                    continue                       # "lyric" u otras: fuera de alcance
+                if kind not in ("images", "anim", "lyric"):
+                    continue
                 cc = int(p.name)
                 tag = CC_LABELS.get(cc, kind.upper())
-                kind_txt = "Imágenes" if kind == "images" else "Animaciones"
-                entries.append({"label": f"{p.name}  {tag} ({kind_txt})",
-                                "path": None, "cc": cc, "kind": kind, "leaf": False})
+                entries.append({"label": f"{p.name}  {tag} ({_KIND_TXT[kind]})",
+                                "cc": cc, "kind": kind, "leaf": False})
         self._set_entries(entries)
 
     def _scan_value(self, cc_entry):
         self.level = 1
         self.cc = cc_entry["cc"]
+        kind = cc_entry["kind"]
         base = self.root / f"{self.cc:03d}"
         entries = []
-        if cc_entry["kind"] == "images":
-            bg = base / "fondo.png"
-            bg = bg if bg.exists() else None
+        if kind == "images":
             for p in sorted((base / "png").glob("*.png"), key=lambda p: p.name):
                 try:
                     value = int(p.stem)
                 except ValueError:
                     continue
-                entries.append({"label": p.stem, "bg": bg, "fg": p, "cc": self.cc,
+                entries.append({"label": p.stem, "cc": self.cc,
                                 "value": value, "leaf": True})
-        else:                                       # animación
+        elif kind == "anim":
             for p in sorted(base.iterdir(), key=lambda p: p.name):
                 if not (p.is_dir() and p.name.isdigit()):
                     continue
-                entries.append({"label": p.name, "bg": None,
-                                "fg": self._first_frame(p),
-                                "cc": self.cc, "value": int(p.name), "leaf": True})
+                entries.append({"label": p.name, "cc": self.cc,
+                                "value": int(p.name), "leaf": True})
+        else:                                       # lyric: líneas de textos
+            for value, line in enumerate(lyric_lines(self.root)):
+                entries.append({"label": f"{value:03d}  {line}", "cc": self.cc,
+                                "value": value, "leaf": True})
         self._set_entries(entries)
-
-    @staticmethod
-    def _first_frame(folder):
-        frames = sorted(folder.glob("*.png"))
-        return frames[0] if frames else None
 
     def _set_entries(self, entries):
         self.entries = entries
@@ -148,22 +146,17 @@ class ImageBrowser(Widget):
     # -- vista previa ---------------------------------------------------
     def _update_preview(self):
         sel = self.selected()
-        paths = (sel.get("bg"), sel.get("fg")) if sel else (None, None)
-        if paths == self._preview_paths:
+        path = ayuda_preview_path(self.ayuda_dir, sel["cc"], sel["value"]) \
+            if sel and sel["leaf"] else None
+        if path == self._preview_path:
             return
-        self._preview_paths = paths
-        bg, fg = paths
-        self._preview_bg_tex = self._load_tex(bg)
-        self._preview_fg_tex = self._load_tex(fg)
-
-    @staticmethod
-    def _load_tex(path):
-        if path is None or not path.exists():
-            return None
-        try:
-            return CoreImage(str(path)).texture
-        except Exception:                            # noqa: BLE001
-            return None
+        self._preview_path = path
+        self._preview_tex = None
+        if path is not None and path.exists():
+            try:
+                self._preview_tex = CoreImage(str(path)).texture
+            except Exception:                       # noqa: BLE001
+                self._preview_tex = None
 
     # -- scroll / dibujo -----------------------------------------------
     def _visible(self):
@@ -230,18 +223,12 @@ class ImageBrowser(Widget):
         py = self.y + self.height - TOP_PAD - ph
         Color(*COLOR_PREVIEW_BG)
         Rectangle(pos=(px, py), size=(pw, ph))
-        if self._preview_bg_tex is not None:
-            # fondo.png: rellena el panel (el icono se compone encima, igual
-            # que bin/genera.py al generar las imágenes reales).
-            Color(1, 1, 1, 1)
-            Rectangle(texture=self._preview_bg_tex, size=(pw, ph), pos=(px, py))
-        if self._preview_fg_tex is not None:
-            tw, th = self._preview_fg_tex.size
-            max_w, max_h = pw * 0.8, ph * 0.8   # margen 10% por lado (genera.py)
-            scale = min(max_w / tw, max_h / th)
+        if self._preview_tex is not None:
+            tw, th = self._preview_tex.size
+            scale = min(pw / tw, ph / th)
             dw, dh = tw * scale, th * scale
             Color(1, 1, 1, 1)
-            Rectangle(texture=self._preview_fg_tex, size=(dw, dh),
+            Rectangle(texture=self._preview_tex, size=(dw, dh),
                       pos=(px + (pw - dw) / 2, py + (ph - dh) / 2))
         Color(*COLOR_PREVIEW_BORDER)
         Line(rectangle=(px, py, pw, ph), width=1.2)

@@ -9,7 +9,8 @@
 # /storage/roms/ports/. Reutiliza el venv de robotracker (/storage/robotracker-
 # venv) y su sinte (/storage/sinte), que ya deben estar en el dispositivo.
 # También siembra /storage/samples (samples de las canciones) y sincroniza
-# /storage/images entero (eventos de pantalla del canal de robotas, ~25 MB).
+# /storage/images y /storage/ayuda_imagenes enteros (eventos de pantalla del
+# canal de robotas + sus miniaturas ya renderizadas, ~35 MB en total).
 set -euo pipefail
 
 HOST="${1:?uso: install.sh [usuario@]host}"
@@ -22,7 +23,8 @@ ssh "$HOST" '
     echo "FALTA /storage/robotracker-venv (instala robotracker primero)"; exit 1; }
   test -d /storage/sinte || {
     echo "FALTA /storage/sinte (lo usa robotracker)"; exit 1; }
-  mkdir -p /storage/robotracker2 /storage/roms/ports /storage/samples /storage/images
+  mkdir -p /storage/robotracker2 /storage/roms/ports /storage/samples \
+           /storage/images /storage/ayuda_imagenes
 '
 
 # Siembra /storage/samples con los samples de las canciones ya presentes
@@ -36,11 +38,16 @@ ssh "$HOST" '
   echo "   /storage/samples: $(ls /storage/samples | wc -l) wav"
 '
 
-# images/ (eventos de pantalla del canal de robotas): pequeña (~25 MB), se
-# sincroniza entera siempre, sin flag.
+# images/ (eventos de pantalla del canal de robotas) y ayuda_imagenes/ (sus
+# miniaturas ya renderizadas, para la vista previa del editor): pequeñas,
+# se sincronizan enteras siempre, sin flag.
 if [ -d "$REPO/images" ]; then
     echo ">> Sincronizando images/ (eventos de pantalla)..."
     rsync -a --delete "$REPO/images/" "$HOST:/storage/images/"
+fi
+if [ -d "$REPO/ayuda_imagenes" ]; then
+    echo ">> Sincronizando ayuda_imagenes/ (miniaturas de vista previa)..."
+    rsync -a --delete "$REPO/ayuda_imagenes/" "$HOST:/storage/ayuda_imagenes/"
 fi
 
 echo ">> Sincronizando código a /storage/robotracker2 ..."
