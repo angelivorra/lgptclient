@@ -15,24 +15,36 @@ evento de pantalla, decodificado del FX1 "MDCC ccvv" a algo legible como
 "IMG 007"; **A** abre siempre el navegador visual de `images/` en vez de
 copiar/pegar). FX2 no se usa en las canciones reales para esto y queda fuera
 de esta vista especial (se conserva en los datos, simplemente no es editable
-aquí).
+aquí). Un evento de pantalla no necesita golpe: MDCC se ejecuta cada tick
+igual con la nota vacía (verificado contra el motor de sinte), así que HIT y
+SCREEN son independientes — no hace falta ningún "golpe vacío" inventado.
+
+Con el cursor en cualquier columna de una fila del canal de robotas se
+muestra a la derecha una **miniatura** de la imagen/frame de esa fila (si su
+SCREEN resuelve a un fichero real de `images/`), para ver de un vistazo qué
+se envía sin tener que abrir el navegador.
 """
 
+from pathlib import Path
+
+from kivy.core.image import Image as CoreImage
 from kivy.core.text import Label as CoreLabel
-from kivy.graphics import Color, Rectangle, RoundedRectangle
+from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
 from lgpt_model import EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView, note_name_to_byte
-from robots import HIT_NOTES, ROBOT_INSTR, ROBOT_TRACK, hit_label, mdcc_unpack, screen_label
+from robots import (HIT_NOTES, ROBOT_INSTR, ROBOT_TRACK, hit_label, mdcc_unpack,
+                    screen_image_path, screen_label)
 from sinte_bridge import note_byte_to_name
-from theme import COLOR_ACCENT, COLOR_BG
+from theme import COLOR_ACCENT, COLOR_BG, COLOR_BORDER
 
 ROW_H = dp(30)
 TOP_PAD = dp(20)
 LM = dp(36)
 STEP_W = dp(52)
+PREVIEW_W = dp(140)            # panel de miniatura (canal de robotas)
 FONT = dp(17)
 MAX_NOTE = 131                     # (9+2)*12 - 1
 
@@ -73,12 +85,13 @@ _WHICH = {"fx1cmd": 1, "fx1prm": 1, "fx2cmd": 2, "fx2prm": 2}
 
 class PhraseGrid(Widget):
     def __init__(self, on_change=None, fx_commands=None, on_nav=None,
-                 on_pick_screen=None, **kw):
+                 on_pick_screen=None, images_dir=None, **kw):
         super().__init__(**kw)
         # comandos FX que se pueden ciclar (solo los usados en las canciones)
         self.fx_commands = list(fx_commands) if fx_commands else list(FX_USED)
         self.on_nav = on_nav           # refresca la cabecera al mover el cursor
         self.on_pick_screen = on_pick_screen   # abre el navegador de images/
+        self.images_dir = Path(images_dir) if images_dir else None
         self.project = None
         self.pv = None
         self.track = 0
@@ -89,6 +102,9 @@ class PhraseGrid(Widget):
         self.play_step = None
         self.on_change = on_change
         self._tex = {}
+        self._preview_paths = (None, None)
+        self._preview_bg_tex = None
+        self._preview_fg_tex = None
         self.bind(pos=self._redraw, size=self._redraw)
 
     def _cols(self):
@@ -102,7 +118,32 @@ class PhraseGrid(Widget):
         self.cursor_step = 0
         self.cursor_col = 0
         self.clipboard = None
+        self._update_preview()
         self._redraw()
+
+    # -- miniatura de pantalla (canal de robotas) -----------------------
+    def _update_preview(self):
+        paths = (None, None)
+        if self.track == ROBOT_TRACK:
+            raw = self._get_raw(self.cursor_step, 1)      # 1 = columna SCREEN
+            if isinstance(raw, int):
+                cc, value = mdcc_unpack(raw)
+                paths = screen_image_path(self.images_dir, cc, value)
+        if paths == self._preview_paths:
+            return
+        self._preview_paths = paths
+        bg, fg = paths
+        self._preview_bg_tex = self._load_tex(bg)
+        self._preview_fg_tex = self._load_tex(fg)
+
+    @staticmethod
+    def _load_tex(path):
+        if path is None or not path.exists():
+            return None
+        try:
+            return CoreImage(str(path)).texture
+        except Exception:                            # noqa: BLE001
+            return None
 
     def phrase_label(self):
         p = self.pv.phrase_of(self.track) if self.pv else None
@@ -199,6 +240,7 @@ class PhraseGrid(Widget):
             self.cursor_col = min(len(self._cols()) - 1, self.cursor_col + 1)
         if self.on_nav:
             self.on_nav()              # actualiza cabecera (nombre del sample)
+        self._update_preview()
         self._redraw()
 
     def current_sample_name(self):
@@ -335,6 +377,7 @@ class PhraseGrid(Widget):
     def _changed(self):
         if self.on_change:
             self.on_change()
+        self._update_preview()
         self._redraw()
 
     # -- dibujo ---------------------------------------------------------
@@ -380,8 +423,11 @@ class PhraseGrid(Widget):
         if self.pv is None:
             return
         cols = self._cols()
+        is_robot = self.track == ROBOT_TRACK
+        reserve = (PREVIEW_W + dp(48)) if is_robot else 0   # hueco para miniatura
+        avail_w = self.width - reserve
         block_w = STEP_W + dp(8) + sum(w for _k, w in cols)   # centrar bloque
-        x_step = self.x + max(dp(8), (self.width - block_w) / 2)
+        x_step = self.x + max(dp(8), (avail_w - block_w) / 2)
         xs = []
         x = x_step + STEP_W + dp(8)
         for _kind, w in cols:
@@ -416,3 +462,28 @@ class PhraseGrid(Widget):
                                          radius=[dp(6)])
                         color = COLOR_BG
                     self._text(cx, y, w, text, color)
+            if is_robot:
+                self._draw_preview(self.x + avail_w + dp(24))
+
+    def _draw_preview(self, px):
+        pw = PREVIEW_W
+        ph = PREVIEW_W
+        py = self.y + self.height - TOP_PAD - ph
+        Color(0.09, 0.10, 0.13, 1)
+        Rectangle(pos=(px, py), size=(pw, ph))
+        if self._preview_bg_tex is not None:
+            # fondo.png: rellena el panel entero (el icono va compuesto encima,
+            # igual que hace bin/genera.py al generar las imágenes reales).
+            Color(1, 1, 1, 1)
+            Rectangle(texture=self._preview_bg_tex, size=(pw, ph), pos=(px, py))
+        if self._preview_fg_tex is not None:
+            tw, th = self._preview_fg_tex.size
+            # margen del 10% por lado, como genera.py (margin_ratio=0.10)
+            max_w, max_h = pw * 0.8, ph * 0.8
+            scale = min(max_w / tw, max_h / th)
+            dw, dh = tw * scale, th * scale
+            Color(1, 1, 1, 1)
+            Rectangle(texture=self._preview_fg_tex, size=(dw, dh),
+                      pos=(px + (pw - dw) / 2, py + (ph - dh) / 2))
+        Color(*COLOR_BORDER)
+        Line(rectangle=(px, py, pw, ph), width=1.2)

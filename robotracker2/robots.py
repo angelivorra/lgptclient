@@ -74,3 +74,29 @@ def classify_folder(path):
     if any(p.is_dir() for p in path.iterdir()) if path.is_dir() else False:
         return "anim"
     return None
+
+
+def screen_image_path(images_dir, cc, value):
+    """(fondo, primer_plano) para previsualizar (cc, value), o (None, None).
+
+    Imágenes estáticas: el propio icono de png/{value:03d}.png es un recorte
+    pequeño (p.ej. 100×100) pensado para componerse CENTRADO sobre fondo.png
+    (igual que hace bin/genera.py al generar los .bin reales) — por eso se
+    devuelven ambos. Animación: el primer frame de la carpeta numerada
+    {value:03d}/ ya es una imagen completa por sí sola, sin fondo. Usado por
+    `ImageBrowser` y por la vista previa en línea de PHRASE."""
+    if images_dir is None:
+        return None, None
+    base = Path(images_dir) / f"{cc:03d}"
+    kind = classify_folder(base)
+    if kind == "images":
+        fg = base / "png" / f"{value:03d}.png"
+        if not fg.exists():
+            return None, None
+        bg = base / "fondo.png"
+        return (bg if bg.exists() else None), fg
+    if kind == "anim":
+        folder = base / f"{value:03d}"
+        frames = sorted(folder.glob("*.png")) if folder.is_dir() else []
+        return None, (frames[0] if frames else None)
+    return None, None

@@ -50,8 +50,9 @@ class ImageBrowser(Widget):
         self.index = 0
         self.top_idx = 0
         self._tex = {}
-        self._preview_path = None
-        self._preview_tex = None
+        self._preview_paths = (None, None)
+        self._preview_bg_tex = None
+        self._preview_fg_tex = None
         self.bind(pos=self._redraw, size=self._redraw)
         self._scan_root()
 
@@ -80,18 +81,21 @@ class ImageBrowser(Widget):
         base = self.root / f"{self.cc:03d}"
         entries = []
         if cc_entry["kind"] == "images":
+            bg = base / "fondo.png"
+            bg = bg if bg.exists() else None
             for p in sorted((base / "png").glob("*.png"), key=lambda p: p.name):
                 try:
                     value = int(p.stem)
                 except ValueError:
                     continue
-                entries.append({"label": p.stem, "path": p, "cc": self.cc,
+                entries.append({"label": p.stem, "bg": bg, "fg": p, "cc": self.cc,
                                 "value": value, "leaf": True})
         else:                                       # animación
             for p in sorted(base.iterdir(), key=lambda p: p.name):
                 if not (p.is_dir() and p.name.isdigit()):
                     continue
-                entries.append({"label": p.name, "path": self._first_frame(p),
+                entries.append({"label": p.name, "bg": None,
+                                "fg": self._first_frame(p),
                                 "cc": self.cc, "value": int(p.name), "leaf": True})
         self._set_entries(entries)
 
@@ -144,16 +148,22 @@ class ImageBrowser(Widget):
     # -- vista previa ---------------------------------------------------
     def _update_preview(self):
         sel = self.selected()
-        path = sel["path"] if sel else None
-        if path == self._preview_path:
+        paths = (sel.get("bg"), sel.get("fg")) if sel else (None, None)
+        if paths == self._preview_paths:
             return
-        self._preview_path = path
-        self._preview_tex = None
-        if path is not None and path.exists():
-            try:
-                self._preview_tex = CoreImage(str(path)).texture
-            except Exception:                       # noqa: BLE001
-                self._preview_tex = None
+        self._preview_paths = paths
+        bg, fg = paths
+        self._preview_bg_tex = self._load_tex(bg)
+        self._preview_fg_tex = self._load_tex(fg)
+
+    @staticmethod
+    def _load_tex(path):
+        if path is None or not path.exists():
+            return None
+        try:
+            return CoreImage(str(path)).texture
+        except Exception:                            # noqa: BLE001
+            return None
 
     # -- scroll / dibujo -----------------------------------------------
     def _visible(self):
@@ -220,15 +230,21 @@ class ImageBrowser(Widget):
         py = self.y + self.height - TOP_PAD - ph
         Color(*COLOR_PREVIEW_BG)
         Rectangle(pos=(px, py), size=(pw, ph))
-        Color(*COLOR_PREVIEW_BORDER)
-        Line(rectangle=(px, py, pw, ph), width=1.2)
-        if self._preview_tex is not None:
-            tw, th = self._preview_tex.size
-            scale = min(pw / tw, ph / th)
+        if self._preview_bg_tex is not None:
+            # fondo.png: rellena el panel (el icono se compone encima, igual
+            # que bin/genera.py al generar las imágenes reales).
+            Color(1, 1, 1, 1)
+            Rectangle(texture=self._preview_bg_tex, size=(pw, ph), pos=(px, py))
+        if self._preview_fg_tex is not None:
+            tw, th = self._preview_fg_tex.size
+            max_w, max_h = pw * 0.8, ph * 0.8   # margen 10% por lado (genera.py)
+            scale = min(max_w / tw, max_h / th)
             dw, dh = tw * scale, th * scale
             Color(1, 1, 1, 1)
-            Rectangle(texture=self._preview_tex, size=(dw, dh),
+            Rectangle(texture=self._preview_fg_tex, size=(dw, dh),
                       pos=(px + (pw - dw) / 2, py + (ph - dh) / 2))
+        Color(*COLOR_PREVIEW_BORDER)
+        Line(rectangle=(px, py, pw, ph), width=1.2)
 
     def _draw_actions(self, cx):
         bw, bh, gap = dp(180), dp(48), dp(16)

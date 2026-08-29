@@ -67,6 +67,17 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
      ya es gratis al moverse), **B** vuelve/cancela. Al elegir, escribe el
      MDCC correspondiente. FX2 no se usa para esto en las canciones reales y
      queda fuera de esta vista especial (se conserva, no es editable aquí).
+   - **HIT y SCREEN son independientes**: un MDCC se ejecuta cada tick
+     igual con la nota vacía (verificado contra el motor de sinte:
+     `_process_row_commands` no comprueba `notes[row]`, y `set_fx_cmd`/
+     `set_fx_param` crean la phrase por sí solos) — así que un step puede
+     llevar solo SCREEN sin HIT, sin necesidad de ningún "golpe vacío"
+     inventado para mantener una nota activa.
+   - Con el cursor en una fila del canal de robotas se ve a la derecha una
+     **miniatura** de esa fila: si es una imagen estática, compone el icono
+     de `png/{value}.png` centrado sobre `fondo.png` (igual que hace
+     `bin/genera.py` al generar las imágenes reales para el dispositivo); si
+     es una animación, el primer frame. Se actualiza sola al mover el cursor.
 6. **GROOVE** (`screens/groove_view.py`): el groove seleccionado (nº en la
    cabecera), 16 steps de duración en **ticks** (0xFF = `--`). Dpad: arr/abj
    step, **izq/dcha cambia de groove** (00–1F); **A+dir** edita ticks, **A**
