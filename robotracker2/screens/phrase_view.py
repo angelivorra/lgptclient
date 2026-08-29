@@ -434,7 +434,11 @@ class PhraseGrid(Widget):
                 y = self.y + self.height - TOP_PAD - (step + 1) * ROW_H
                 if step == self.cursor_step:
                     Color(*COLOR_ROW_CURSOR)
-                    Rectangle(pos=(self.x, y), size=(self.width, ROW_H))
+                    # En el canal de robotas, solo el ancho del bloque HIT/
+                    # SCREEN (no toda la fila: el resto es la miniatura).
+                    row_x, row_w = (x_step, x - x_step) if is_robot \
+                        else (self.x, self.width)
+                    Rectangle(pos=(row_x, y), size=(row_w, ROW_H))
                 elif step == self.play_step:
                     Color(*COLOR_PLAY)
                     Rectangle(pos=(x_step, y), size=(x - x_step, ROW_H))
@@ -457,10 +461,11 @@ class PhraseGrid(Widget):
                         color = COLOR_BG
                     self._text(cx, y, w, text, color)
             if is_robot:
-                preview_x = x + dp(32)
-                avail_w = self.width - (preview_x - self.x) - dp(24)
+                free_x = x + dp(32)
+                avail_w = self.width - (free_x - self.x) - dp(24)
                 avail_h = self.height - TOP_PAD - dp(24)
                 size = max(dp(1), min(avail_w, avail_h))   # cuadrada, lo más grande posible
+                preview_x = free_x + (avail_w - size) / 2  # centrada en el hueco libre
                 self._draw_preview(preview_x, size)
 
     def _draw_preview(self, px, size):
