@@ -21,6 +21,7 @@ from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 
 from navmap import SCREENS, neighbor
+from robots import ROBOT_TRACK
 from screens.chain_view import ChainGrid
 from screens.groove_view import GrooveGrid
 from screens.instrument_view import InstrumentMenu
@@ -69,7 +70,7 @@ class _NavCell(Label):
 
 
 class EditorScreen(Screen):
-    def __init__(self, on_change=None, on_action=None, **kw):
+    def __init__(self, on_change=None, on_action=None, on_pick_screen=None, **kw):
         super().__init__(**kw)
         self.current = "song"
         self.song_name = ""
@@ -116,6 +117,7 @@ class EditorScreen(Screen):
                                     pos_hint={"x": 0, "y": 0})
         self.phrase_grid = PhraseGrid(on_change=self._grid_changed,
                                       on_nav=self.refresh_header,
+                                      on_pick_screen=on_pick_screen,
                                       size_hint=(1, 1),
                                       pos_hint={"x": 0, "y": 0})
         self.groove_grid = GrooveGrid(on_change=self._grid_changed,
@@ -229,8 +231,9 @@ class EditorScreen(Screen):
         if self.current == "chain":
             return f"CHAIN {self.chain_grid.chain_label()}    {self.song_name}"
         if self.current == "phrase":
-            base = (f"PHRASE {self.phrase_grid.phrase_label()}"
-                    f"    {self.song_name}")
+            tag = "PHRASE (ROBOT)" if self.phrase_grid.track == ROBOT_TRACK \
+                else "PHRASE"
+            base = f"{tag} {self.phrase_grid.phrase_label()}    {self.song_name}"
             sample = self.phrase_grid.current_sample_name()
             return f"{base}    {sample}" if sample else base
         if self.current == "groove":

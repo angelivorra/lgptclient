@@ -21,6 +21,6 @@ export KIVY_METRICS_DENSITY=2
 sway_fullscreen "ROBOTRACKER2" title &
 
 cd "$GAMEDIR"
-# Biblioteca de samples de la Odin (el navegador arranca aquí).
+# Biblioteca de samples e images/ (eventos de pantalla) de la Odin.
 "$VENV/bin/python3" "$GAMEDIR/robotracker2.py" --fullscreen \
-    --samples /storage/samples
+    --samples /storage/samples --images /storage/images

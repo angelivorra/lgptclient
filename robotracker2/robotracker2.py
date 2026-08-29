@@ -34,14 +34,18 @@ from controls import (A, B, BACK, DOWN, DPAD, L2, LEFT, R2, RIGHT, START, UP,
 from sinte_bridge import save_project
 from songs import DEFAULT_SONGS, display_name, find_songs, load_project
 from player import Player
+from robots import screen_label
 from screens.confirm import ConfirmDialog
 from screens.load_song import LoadSongScreen
 from screens.editor import EditorScreen
+from screens.image_browser import ImageBrowser
 from screens.sample_browser import SampleBrowser
 from theme import setup_window
 
 # Biblioteca de samples para el navegador (repo: lgptclient/samples).
 DEFAULT_SAMPLES = DEFAULT_SONGS.parent.parent / "samples"
+# images/ del repo: eventos de pantalla (MDCC) del canal de robotas.
+DEFAULT_IMAGES = DEFAULT_SONGS.parent.parent / "images"
 
 # Opciones del diálogo de cambios sin guardar.
 _CONFIRM_OPTS = [("save", "Guardar"), ("discard", "Descartar"),
@@ -55,12 +59,14 @@ class Robotracker2App(App):
     title = "ROBOTRACKER2"
 
     def __init__(self, songs_dir=DEFAULT_SONGS, fullscreen=False,
-                 samples_dir=DEFAULT_SAMPLES, **kwargs):
+                 samples_dir=DEFAULT_SAMPLES, images_dir=DEFAULT_IMAGES,
+                 **kwargs):
         super().__init__(**kwargs)
         self.songs_dir = songs_dir
         self.samples_dir = Path(samples_dir)
-        self.browser = None        # SampleBrowser activo (o None)
-        self._browser_a_pending = False   # para detectar doble A (import)
+        self.images_dir = Path(images_dir)
+        self.browser = None        # SampleBrowser/ImageBrowser activo (o None)
+        self._screen_step = None   # step de PHRASE que se está editando
         self.fullscreen = fullscreen
         self.held = set()          # botones lógicos pulsados ahora
         self.dirty = False
@@ -79,6 +85,7 @@ class Robotracker2App(App):
         self.load_screen = LoadSongScreen(self.songs, name="load")
         self.editor_screen = EditorScreen(on_change=self._mark_dirty,
                                           on_action=self._project_action,
+                                          on_pick_screen=self._open_screen_browser,
                                           name="editor")
         self.sm.add_widget(self.load_screen)
         self.sm.add_widget(self.editor_screen)
@@ -389,53 +396,43 @@ class Robotracker2App(App):
             return True
         return False
 
-    # -- navegador de samples ------------------------------------------
+    # -- navegadores (samples / imágenes de pantalla) -------------------
+    # Ambos (SampleBrowser, ImageBrowser) comparten la misma interfaz:
+    # move(button), activate(), back(), cleanup(). La app no necesita saber
+    # cuál de los dos está abierto.
+    def _open_browser(self, browser):
+        self.browser = browser
+        self.browser.size_hint = (1, 1)
+        self.browser.pos = self.root_layout.pos
+        self.browser.size = self.root_layout.size
+        self.root_layout.bind(size=lambda w, *_: setattr(self.browser, "size",
+                                                          w.size))
+        self.root_layout.add_widget(self.browser)
+
     def _open_sample_browser(self):
         # biblioteca si existe; si no, los samples de la propia canción
         root = self.samples_dir if self.samples_dir.is_dir() \
             else self.editor_screen.project.dir / "samples"
-        self.browser = SampleBrowser(root,
-                                     on_load=self._load_sample,
-                                     on_close=self._close_browser,
-                                     size_hint=(1, 1), pos=self.root_layout.pos,
-                                     size=self.root_layout.size)
-        self.root_layout.bind(size=lambda w, *_: setattr(self.browser, "size",
-                                                         w.size))
-        self.root_layout.add_widget(self.browser)
+        self._open_browser(SampleBrowser(root, on_load=self._load_sample,
+                                         on_close=self._close_browser))
 
     def _dispatch_browser(self, button):
         b = self.browser
         if button in (UP, DOWN):
             b.move(button)
         elif button == A:
-            sel = b.selected()
-            if sel is not None and sel.is_dir():
-                b.enter()                        # A en carpeta: entrar
-            elif self._browser_a_pending:
-                self._browser_a_pending = False
-                Clock.unschedule(self._clear_browser_a)
-                b.import_current()               # doble A: importar
-            else:
-                b.preview_current()              # A: escuchar
-                self._browser_a_pending = True
-                Clock.schedule_once(self._clear_browser_a, 0.5)
+            b.activate()
         elif button in (B, BACK):
             b.back()
         return True
 
-    def _clear_browser_a(self, *_):
-        self._browser_a_pending = False
-
     def _close_browser(self):
         if self.browser is not None:
-            SampleBrowser.stop_preview()
-            Clock.unschedule(self._clear_browser_a)
-            self._browser_a_pending = False
+            self.browser.cleanup()
             self.root_layout.remove_widget(self.browser)
             self.browser = None
 
     def _load_sample(self, path):
-        SampleBrowser.stop_preview()
         project = self.editor_screen.project
         name = path.name
         dest = project.dir / "samples" / name
@@ -450,6 +447,17 @@ class Robotracker2App(App):
         self.editor_screen.instrument_menu.set_sample(name)
         self.dirty = True
         self.editor_screen.toast_msg(f"Sample: {name}")
+        self._close_browser()
+
+    def _open_screen_browser(self, step):
+        self._screen_step = step
+        self._open_browser(ImageBrowser(self.images_dir, on_load=self._load_screen,
+                                        on_close=self._close_browser))
+
+    def _load_screen(self, cc, value):
+        self.editor_screen.phrase_grid.set_screen(self._screen_step, cc, value)
+        self.dirty = True
+        self.editor_screen.toast_msg(f"Screen: {screen_label(cc, value)}")
         self._close_browser()
 
     def _dispatch_project(self, button, active):
@@ -642,9 +650,11 @@ def main():
                         help="pantalla completa (Odin); en PC va en ventana")
     parser.add_argument("--samples", default=str(DEFAULT_SAMPLES),
                         help="biblioteca de samples para el navegador")
+    parser.add_argument("--images", default=str(DEFAULT_IMAGES),
+                        help="carpeta images/ para el navegador de pantalla")
     args = parser.parse_args()
     Robotracker2App(songs_dir=args.songs, fullscreen=args.fullscreen,
-                    samples_dir=args.samples).run()
+                    samples_dir=args.samples, images_dir=args.images).run()
 
 
 if __name__ == "__main__":

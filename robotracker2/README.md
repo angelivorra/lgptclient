@@ -50,6 +50,23 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
    usados en las canciones de `songs/` (`FX_USED` en `phrase_view.py`: VOLM, KILL,
    DLAY, LEGA, TABL, STOP, MDCC, MDPG, PTCH, RTRG). *(Selección multicelda:
    pendiente — por ahora solo SONG y CHAIN.)*
+
+   **Canal de robotas** (canal 8, `robots.py`): en vez de las 6 columnas
+   genéricas se muestran solo 2, con datos reales (migrado del control MIDI
+   que usaba lgpt/LGPT tracker clásico):
+   - **HIT** — el golpe de percusión (BOMBO/CAJA1/CAJA2/BOM+C1/BOM+C2/C1+C2,
+     notas 62/63/65/64/66/67 — el mapeo real de `bin/cliente.*.json`, no el de
+     NOTAS.md que ya no coincide con lo que usan las robotas) en vez de una
+     nota LGPT críptica. A+dir cicla los 6 golpes; fija el instrumento a
+     `ROBOT_INSTR` (0x80) sola.
+   - **SCREEN** — el evento de pantalla (FX1 "MDCC ccvv", decodificado a
+     "IMG 007" / "ANI 003"). **A** siempre abre el **navegador visual de
+     `images/`** (`screens/image_browser.py`): elige la carpeta (imágenes
+     estáticas o animación), ve la miniatura real de cada entrada al pasar
+     por ella, **A** entra/elige (inmediato, sin doble-tap — la vista previa
+     ya es gratis al moverse), **B** vuelve/cancela. Al elegir, escribe el
+     MDCC correspondiente. FX2 no se usa para esto en las canciones reales y
+     queda fuera de esta vista especial (se conserva, no es editable aquí).
 6. **GROOVE** (`screens/groove_view.py`): el groove seleccionado (nº en la
    cabecera), 16 steps de duración en **ticks** (0xFF = `--`). Dpad: arr/abj
    step, **izq/dcha cambia de groove** (00–1F); **A+dir** edita ticks, **A**
@@ -153,13 +170,16 @@ robotracker2/odin/install.sh [usuario@]IP_de_la_odin
 | `controls.py` | Botones lógicos + perfiles teclado (PC) / gamepad (Odin) |
 | `lgpt_model.py` | Modelo LGPT (SongView/ChainView/PhraseView) sobre sinte |
 | `sinte_bridge.py` | Puente a `../sinte` (parser + engine) |
+| `robots.py` | Constantes canal de robotas: golpes reales, MDCC↔`images/` |
 | `screens/load_song.py` | Pantalla de cargar canción |
 | `screens/editor.py` | Editor: cabecera S C P I + contenido por pantalla + toast |
 | `screens/song_view.py` | Rejilla SONG 256×8 (canvas) |
 | `screens/chain_view.py` | Chain: 16 steps × phrase/transpose (canvas) |
-| `screens/phrase_view.py` | Phrase: 16 steps × nota/instr/fx1/fx2 (canvas) |
+| `screens/phrase_view.py` | Phrase: 16 steps × nota/instr/fx1/fx2 (canal 8: HIT/SCREEN) |
 | `screens/groove_view.py` | Groove: 16 steps de ticks, 32 grooves (canvas) |
 | `screens/table_view.py` | Table: 16 filas × 3 FX (canvas) |
 | `screens/instrument_view.py` | Instrument: menú de parámetros (canvas) |
+| `screens/sample_browser.py` | Navegador de samples (escuchar/importar) |
+| `screens/image_browser.py` | Navegador visual de `images/` (evento de pantalla) |
 | `screens/project_view.py` | Menú PROJECT (tempo/master/load/save/exit) |
 | `screens/confirm.py` | Diálogo modal de cambios sin guardar |

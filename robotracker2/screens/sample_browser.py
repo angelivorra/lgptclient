@@ -1,13 +1,16 @@
 """Navegador de samples estilo LGPT: navegar la carpeta, escuchar e importar.
 
 Todo centrado. Abajo, tres acciones como en LGPT: Escuchar / Import / Cancelar.
-Arr/abj mueve; **A** escucha el sample seleccionado (o entra en la carpeta);
-**doble A** importa el sample (lo copia a la canción y lo asigna al instrumento);
-**B/Cancelar** sube de carpeta (o cierra en la raíz).
+Arr/abj mueve; **A** (`activate()`) escucha el sample seleccionado (o entra en
+la carpeta); **doble A** importa el sample (lo copia a la canción y lo asigna
+al instrumento); **B/Cancelar** sube de carpeta (o cierra en la raíz). El
+doble-tap se gestiona dentro del propio widget (ver `activate()`), así la app
+solo necesita mover/activar/volver: la misma interfaz que `ImageBrowser`.
 """
 
 from pathlib import Path
 
+from kivy.clock import Clock
 from kivy.core.text import Label as CoreLabel
 from kivy.graphics import Color, Rectangle, RoundedRectangle
 from kivy.metrics import dp
@@ -40,6 +43,7 @@ class SampleBrowser(Widget):
         self.entries = []
         self.index = 0
         self.top_idx = 0
+        self._a_pending = False        # para el doble-tap (escuchar / importar)
         self._tex = {}
         self.bind(pos=self._redraw, size=self._redraw)
         self._scan()
@@ -73,12 +77,32 @@ class SampleBrowser(Widget):
         self._ensure_visible()
         self._redraw()
 
-    def enter(self):
-        # A sobre carpeta: entrar.
+    def activate(self):
+        """A: entra en carpeta, o escucha el sample (doble-tap = importar)."""
         sel = self.selected()
-        if sel is not None and sel.is_dir():
+        if sel is None:
+            return
+        if sel.is_dir():
             self.cwd = sel
             self._scan()
+            return
+        if self._a_pending:
+            self._a_pending = False
+            Clock.unschedule(self._clear_pending)
+            self.import_current()
+        else:
+            self.preview_current()
+            self._a_pending = True
+            Clock.schedule_once(self._clear_pending, 0.5)
+
+    def _clear_pending(self, *_):
+        self._a_pending = False
+
+    def cleanup(self):
+        """Al cerrar el navegador: parar audio y cancelar el doble-tap pendiente."""
+        self.stop_preview()
+        Clock.unschedule(self._clear_pending)
+        self._a_pending = False
 
     def preview_current(self):
         sel = self.selected()

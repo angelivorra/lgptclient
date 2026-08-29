@@ -6,6 +6,16 @@ Cursor: arr/abj = step, izq/dcha = campo (nota, instr, fx1cmd, fx1prm, fx2cmd,
 fx2prm). A+dir edita el campo; A copia/pega/valor por defecto; B borra el campo.
 Editar un hueco crea la chain y la phrase (estilo Piggy), reutilizando
 `PhraseView` del modelo. Portapapeles propio (por campo).
+
+**Canal de robotas** (`track == ROBOT_TRACK`, el canal 8): en vez de las 6
+columnas genéricas se muestran solo 2, con datos reales (ver `robots.py`):
+**HIT** (el golpe de percusión — BOMBO/CAJA1/CAJA2/combos — en vez de una nota
+LGPT críptica; fija el instrumento a `ROBOT_INSTR` sola) y **SCREEN** (el
+evento de pantalla, decodificado del FX1 "MDCC ccvv" a algo legible como
+"IMG 007"; **A** abre siempre el navegador visual de `images/` en vez de
+copiar/pegar). FX2 no se usa en las canciones reales para esto y queda fuera
+de esta vista especial (se conserva en los datos, simplemente no es editable
+aquí).
 """
 
 from kivy.core.text import Label as CoreLabel
@@ -15,6 +25,7 @@ from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
 from lgpt_model import EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView, note_name_to_byte
+from robots import HIT_NOTES, ROBOT_INSTR, ROBOT_TRACK, hit_label, mdcc_unpack, screen_label
 from sinte_bridge import note_byte_to_name
 from theme import COLOR_ACCENT, COLOR_BG
 
@@ -30,15 +41,20 @@ MAX_NOTE = 131                     # (9+2)*12 - 1
 FX_USED = ["VOLM", "KILL", "DLAY", "LEGA", "TABL", "STOP", "MDCC", "MDPG",
            "PTCH", "RTRG"]
 
-# (kind, ancho_px)
+# (kind, ancho_px) — columnas normales (6) y las del canal de robotas (2).
 COLS = [("note", dp(70)), ("instr", dp(52)),
         ("fx1cmd", dp(74)), ("fx1prm", dp(74)),
         ("fx2cmd", dp(74)), ("fx2prm", dp(74))]
+ROBOT_COLS = [("hit", dp(110)), ("screen", dp(150))]
+
+_HIT_NOTE_LIST = [note for _label, note in HIT_NOTES]
 
 COLOR_NOTE = (0.87, 0.89, 0.92, 1)
 COLOR_INSTR = (0.55, 0.82, 0.55, 1)
 COLOR_FX1 = (0.85, 0.58, 0.75, 1)
 COLOR_FX2 = (0.65, 0.55, 0.85, 1)
+COLOR_HIT = (0.95, 0.55, 0.35, 1)
+COLOR_SCREEN = (0.55, 0.75, 0.95, 1)
 COLOR_EMPTY = (0.30, 0.31, 0.36, 1)
 COLOR_LINENUM = (0.45, 0.46, 0.52, 1)
 COLOR_LINENUM_CUR = (1.0, 0.85, 0.40, 1)
@@ -48,29 +64,35 @@ COLOR_PLAY = (0.16, 0.42, 0.24, 1)
 
 _COL_COLOR = {"note": COLOR_NOTE, "instr": COLOR_INSTR,
               "fx1cmd": COLOR_FX1, "fx1prm": COLOR_FX1,
-              "fx2cmd": COLOR_FX2, "fx2prm": COLOR_FX2}
+              "fx2cmd": COLOR_FX2, "fx2prm": COLOR_FX2,
+              "hit": COLOR_HIT, "screen": COLOR_SCREEN}
 _KIND = {"note": "note", "instr": "instr", "fx1cmd": "cmd", "fx2cmd": "cmd",
-         "fx1prm": "prm", "fx2prm": "prm"}
+         "fx1prm": "prm", "fx2prm": "prm", "hit": "hit", "screen": "screen"}
 _WHICH = {"fx1cmd": 1, "fx1prm": 1, "fx2cmd": 2, "fx2prm": 2}
 
 
 class PhraseGrid(Widget):
-    def __init__(self, on_change=None, fx_commands=None, on_nav=None, **kw):
+    def __init__(self, on_change=None, fx_commands=None, on_nav=None,
+                 on_pick_screen=None, **kw):
         super().__init__(**kw)
         # comandos FX que se pueden ciclar (solo los usados en las canciones)
         self.fx_commands = list(fx_commands) if fx_commands else list(FX_USED)
         self.on_nav = on_nav           # refresca la cabecera al mover el cursor
+        self.on_pick_screen = on_pick_screen   # abre el navegador de images/
         self.project = None
         self.pv = None
         self.track = 0
         self.cursor_step = 0
-        self.cursor_col = 0            # índice en COLS
+        self.cursor_col = 0            # índice en self._cols()
         self.octave = 4
         self.clipboard = None          # (kind, value) — portapapeles propio
         self.play_step = None
         self.on_change = on_change
         self._tex = {}
         self.bind(pos=self._redraw, size=self._redraw)
+
+    def _cols(self):
+        return ROBOT_COLS if self.track == ROBOT_TRACK else COLS
 
     # -- contexto -------------------------------------------------------
     def set_context(self, project, song_row, track, chain_step):
@@ -114,7 +136,16 @@ class PhraseGrid(Widget):
         return self.pv.fx_param_at(step, self.track, which)
 
     def _get_raw(self, step, col):
-        kind = COLS[col][0]
+        kind = self._cols()[col][0]
+        if kind == "hit":
+            return self._note(step)
+        if kind == "screen":
+            cmd = self._cmd(step, 1)
+            if cmd is None:
+                return None
+            if cmd.strip() == "MDCC":
+                return self.pv.fx_param_at(step, self.track, 1)
+            return ("raw", cmd, self.pv.fx_param_at(step, self.track, 1))
         if kind == "note":
             return self._note(step)
         if kind == "instr":
@@ -124,7 +155,23 @@ class PhraseGrid(Widget):
         return self._prm(step, _WHICH[kind])
 
     def _set_raw(self, step, col, value):
-        kind = COLS[col][0]
+        kind = self._cols()[col][0]
+        if kind == "hit":
+            self.pv.set_note(step, self.track, value)
+            self.pv.set_instr(step, self.track,
+                              ROBOT_INSTR if value is not None else None)
+            return
+        if kind == "screen":
+            if value is None:
+                self.pv.clear_fx(step, self.track, 1)
+            elif isinstance(value, tuple):
+                _tag, cmd, prm = value
+                self.pv.set_fx_cmd(step, self.track, 1, cmd)
+                self.pv.set_fx_param(step, self.track, 1, prm)
+            else:
+                self.pv.set_fx_cmd(step, self.track, 1, "MDCC")
+                self.pv.set_fx_param(step, self.track, 1, value)
+            return
         if kind == "note":
             self.pv.set_note(step, self.track, value)
         elif kind == "instr":
@@ -149,14 +196,15 @@ class PhraseGrid(Widget):
         elif button == LEFT:
             self.cursor_col = max(0, self.cursor_col - 1)
         elif button == RIGHT:
-            self.cursor_col = min(len(COLS) - 1, self.cursor_col + 1)
+            self.cursor_col = min(len(self._cols()) - 1, self.cursor_col + 1)
         if self.on_nav:
             self.on_nav()              # actualiza cabecera (nombre del sample)
         self._redraw()
 
     def current_sample_name(self):
-        """Nombre del wav del instrumento del step del cursor (o None)."""
-        if self.pv is None:
+        """Nombre del wav del instrumento del step del cursor (o None).
+        En el canal de robotas el instrumento es fijo (no hay sample)."""
+        if self.pv is None or self.track == ROBOT_TRACK:
             return None
         iid = self._instr(self.cursor_step)
         if iid is None:
@@ -168,13 +216,17 @@ class PhraseGrid(Widget):
 
     def edit(self, button):
         step, col = self.cursor_step, self.cursor_col
-        kind = COLS[col][0]
+        kind = self._cols()[col][0]
         big = 12 if kind == "note" else 0x10
         if button in (LEFT, RIGHT):
             delta = 1 if button == RIGHT else -1
         else:
             delta = big if button == UP else -big
-        if kind == "note":
+        if kind == "hit":
+            self._edit_hit(step, delta)
+        elif kind == "screen":
+            return                     # el evento de pantalla se elige con A
+        elif kind == "note":
             self._edit_note(step, delta)
         elif kind == "instr":
             cur = self._instr(step)
@@ -203,6 +255,26 @@ class PhraseGrid(Widget):
         else:
             self.pv.set_note(step, self.track, max(0, min(MAX_NOTE, cur + delta)))
 
+    def _edit_hit(self, step, delta):
+        cur = self._note(step)
+        d = 1 if delta > 0 else -1
+        if cur is None or cur not in _HIT_NOTE_LIST:
+            if delta > 0:
+                self._set_hit(step, _HIT_NOTE_LIST[0])
+            return
+        idx = _HIT_NOTE_LIST.index(cur)
+        self._set_hit(step, _HIT_NOTE_LIST[(idx + d) % len(_HIT_NOTE_LIST)])
+
+    def _set_hit(self, step, note):
+        self.pv.set_note(step, self.track, note)
+        self.pv.set_instr(step, self.track, ROBOT_INSTR)
+
+    def set_screen(self, step, cc, value):
+        """Escribe el MDCC (cc,value) elegido en el navegador en FX1."""
+        self.pv.set_fx_cmd(step, self.track, 1, "MDCC")
+        self.pv.set_fx_param(step, self.track, 1, (cc & 0x7F) << 8 | (value & 0x7F))
+        self._changed()
+
     def _edit_cmd(self, step, which, delta):
         cur = self._cmd(step, which)
         cmds = self.fx_commands
@@ -221,12 +293,17 @@ class PhraseGrid(Widget):
     # -- copiar / pegar por campo --------------------------------------
     def a_tap(self):
         step, col = self.cursor_step, self.cursor_col
+        kind = self._cols()[col][0]
+        if kind == "screen":
+            if self.on_pick_screen:
+                self.on_pick_screen(step)          # siempre abre el navegador
+            return
         val = self._get_raw(step, col)
-        kind = _KIND[COLS[col][0]]
+        ckind = _KIND[kind]
         if val is not None:
-            self.clipboard = (kind, val)          # copiar
+            self.clipboard = (ckind, val)          # copiar
             self._redraw()
-        elif self.clipboard is not None and self.clipboard[0] == kind:
+        elif self.clipboard is not None and self.clipboard[0] == ckind:
             self._set_raw(step, col, self.clipboard[1])   # pegar
             self._changed()
         else:
@@ -235,13 +312,16 @@ class PhraseGrid(Widget):
 
     def paste_field(self):
         col = self.cursor_col
-        if self.clipboard is not None and self.clipboard[0] == _KIND[COLS[col][0]]:
+        kind = _KIND[self._cols()[col][0]]
+        if self.clipboard is not None and self.clipboard[0] == kind:
             self._set_raw(self.cursor_step, col, self.clipboard[1])
             self._changed()
 
     def _set_default(self, step, col):
-        kind = COLS[col][0]
-        if kind == "note":
+        kind = self._cols()[col][0]
+        if kind == "hit":
+            self._set_hit(step, _HIT_NOTE_LIST[0])
+        elif kind == "note":
             self.pv.set_note(step, self.track,
                              note_name_to_byte(f"C-{self.octave}"))
         elif kind == "instr":
@@ -259,8 +339,18 @@ class PhraseGrid(Widget):
 
     # -- dibujo ---------------------------------------------------------
     def _field_text(self, step, col):
-        kind = COLS[col][0]
+        kind = self._cols()[col][0]
         raw = self._get_raw(step, col)
+        if kind == "hit":
+            return hit_label(raw) if raw is not None else "----"
+        if kind == "screen":
+            if raw is None:
+                return "-- --"
+            if isinstance(raw, tuple):
+                _tag, cmd, prm = raw
+                return f"{cmd.strip()} {prm:04X}"     # fallback (fx1 no-MDCC)
+            cc, value = mdcc_unpack(raw)
+            return screen_label(cc, value)
         if kind == "note":
             return note_byte_to_name(raw) if raw is not None else "---"
         if kind == "instr":
@@ -289,11 +379,12 @@ class PhraseGrid(Widget):
         self.canvas.clear()
         if self.pv is None:
             return
-        block_w = STEP_W + dp(8) + sum(w for _k, w in COLS)   # centrar bloque
+        cols = self._cols()
+        block_w = STEP_W + dp(8) + sum(w for _k, w in cols)   # centrar bloque
         x_step = self.x + max(dp(8), (self.width - block_w) / 2)
         xs = []
         x = x_step + STEP_W + dp(8)
-        for _kind, w in COLS:
+        for _kind, w in cols:
             xs.append(x)
             x += w
         with self.canvas:
@@ -313,7 +404,7 @@ class PhraseGrid(Widget):
                 num_c = (COLOR_LINENUM_CUR if step == self.cursor_step
                          else COLOR_LINENUM)
                 self._text(x_step, y, STEP_W, f"{step:02X}", num_c)
-                for col, (kind, w) in enumerate(COLS):
+                for col, (kind, w) in enumerate(cols):
                     cx = xs[col]
                     raw = self._get_raw(step, col)
                     text = self._field_text(step, col)
