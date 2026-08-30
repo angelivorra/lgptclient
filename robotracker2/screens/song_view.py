@@ -20,8 +20,9 @@ from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
-from lgpt_model import (EMPTY, NUM_TRACKS, SongView, clip_region, paste_region,
-                        read_cell)
+from lgpt_model import (EMPTY, NUM_TRACKS, SongView, clip_region,
+                        duplicate_chain, paste_region, read_cell)
+
 from theme import COLOR_ACCENT, COLOR_BG
 
 ROW_H = dp(30)
@@ -154,7 +155,23 @@ class SongGrid(Widget):
             self._changed()
         self.cancel_selection()
 
+    def duplicate_chain(self):
+        """Ctrl+A con selección: duplica la chain de la celda del cursor a la
+        primera chain libre con índice mayor, y apunta la celda a la copia."""
+        r, t = self.cursor_row, self.cursor_track
+        src = self.view.chain_at(r, t)
+        if src == EMPTY:
+            return False
+        dst = duplicate_chain(self.view.project, src)
+        if dst is None:
+            return False
+        self.view.set_value(r, t, dst)
+        self.cancel_selection()
+        self._changed()
+        return True
+
     # -- selección (Ctrl+S cicla, Esc cancela) -------------------------
+
     def cycle_selection(self):
         if self.sel_stage == 0:
             self.sel_anchor = (self.cursor_row, self.cursor_track)

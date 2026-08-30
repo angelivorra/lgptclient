@@ -55,6 +55,68 @@ def alloc_phrase(project: LGPTProject) -> int | None:
     return None
 
 
+def alloc_chain_above(project: LGPTProject, src: int) -> int | None:
+    """Primera chain libre con índice mayor que `src`; si no hay ninguna por
+    encima, da la vuelta y busca desde 0 (búsqueda circular). Devuelve None
+    solo si la song referencia TODAS las chains (espacio lleno)."""
+    used = {b for b in project.song if b != EMPTY}
+    for i in range(src + 1, MAX_CHAINS):
+        if i not in used:
+            return i
+    for i in range(src):
+        if i not in used:
+            return i
+    return None
+
+
+def alloc_phrase_above(project: LGPTProject, src: int) -> int | None:
+    """Primera phrase libre con índice mayor que `src`; si no hay ninguna por
+    encima, da la vuelta y busca desde 0 (búsqueda circular). Devuelve None
+    solo si las chains referencian TODAS las phrases (espacio lleno)."""
+    used = {b for b in project.chains if b != EMPTY}
+    for i in range(src + 1, MAX_PHRASES):
+        if i not in used:
+            return i
+    for i in range(src):
+        if i not in used:
+            return i
+    return None
+
+
+def duplicate_chain(project: LGPTProject, src: int) -> int | None:
+    """Copia la chain `src` (16 steps + transposes) a la primera chain libre
+    con índice mayor que `src` (o, si no hay, la primera libre desde 0).
+    Devuelve el índice nuevo, o None si no hay ningún hueco libre."""
+    dst = alloc_chain_above(project, src)
+    if dst is None:
+        return None
+    s0 = src * CHAIN_LEN
+    d0 = dst * CHAIN_LEN
+    project.chains[d0:d0 + CHAIN_LEN] = project.chains[s0:s0 + CHAIN_LEN]
+    project.transposes[d0:d0 + CHAIN_LEN] = project.transposes[s0:s0 + CHAIN_LEN]
+    return dst
+
+
+def duplicate_phrase(project: LGPTProject, src: int) -> int | None:
+    """Copia la phrase `src` (16 steps: notas, instrumentos y fx) a la primera
+    phrase libre con índice mayor que `src` (o, si no hay, la primera libre
+    desde 0). Devuelve el índice nuevo, o None si no hay ningún hueco libre."""
+    dst = alloc_phrase_above(project, src)
+    if dst is None:
+        return None
+    s0 = src * PHRASE_LEN
+    d0 = dst * PHRASE_LEN
+    project.notes[d0:d0 + PHRASE_LEN] = project.notes[s0:s0 + PHRASE_LEN]
+    project.instruments[d0:d0 + PHRASE_LEN] = (
+        project.instruments[s0:s0 + PHRASE_LEN])
+    project.cmd1[d0:d0 + PHRASE_LEN] = project.cmd1[s0:s0 + PHRASE_LEN]
+    project.param1[d0:d0 + PHRASE_LEN] = project.param1[s0:s0 + PHRASE_LEN]
+    project.cmd2[d0:d0 + PHRASE_LEN] = project.cmd2[s0:s0 + PHRASE_LEN]
+    project.param2[d0:d0 + PHRASE_LEN] = project.param2[s0:s0 + PHRASE_LEN]
+    return dst
+
+
+
 @dataclass
 class Cell:
     note: str | None = None    # "C-4" (o índice hex en vistas song/chain)

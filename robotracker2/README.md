@@ -16,8 +16,9 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
    ```
            PROJECT   GROOVE
    SONG    CHAIN     PHRASE    INSTRUMENT
-           TABLE
+   CONFIG            TABLE     TABLE
    ```
+
 
    Se navega con **Ctrl+flechas** hacia la pantalla adyacente. La cabecera
    muestra el nombre de la pantalla + la canción, y a la derecha una tira fija
@@ -33,14 +34,21 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
    edita (±1 izq/dcha, ±0x10 arr/abj; en vacío crea chain), **B** borra.
    Portapapeles/selección estilo LGPT: **A** copia/pega/pone 00; **Ctrl+S**
    cicla selección (libre → filas → todo visible); **S** copia selección;
-   **Ctrl+A** corta (con selección) o pega (sin selección); **Esc** cancela.
+   **Ctrl+A** con selección **duplica la chain** de la celda del cursor a la
+   primera chain libre con índice mayor (si no hay ninguna por encima, da la
+   vuelta y usa la primera libre desde 00; copia sus 16 steps + transposes y
+   apunta la celda a la copia) o pega (sin selección); **Esc** cancela.
 4. **CHAIN** (`screens/chain_view.py`): la chain de la celda de SONG donde
    está el cursor (nº en la cabecera). 16 steps × 2 columnas: **phrase** y
    **transpose**. Dpad mueve (arr/abj step, izq/dcha columna), **A+dir** edita,
    **A** copia/pega/00, **B** borra; crear phrase en un hueco crea la chain si
    hace falta (estilo Piggy). Selección igual que SONG (**Ctrl+S** cicla
-   libre→columnas→todo, **S** copia, **Ctrl+A** corta/pega) con su **propio
-   portapapeles** (independiente del de SONG).
+   libre→columnas→todo, **S** copia, **Ctrl+A** con selección **duplica la
+   phrase** del step del cursor (columna PHRASE) a la primera phrase libre con
+   índice mayor (o la primera libre desde 00 si no hay por encima), o pega sin
+   selección) con su **propio portapapeles**
+   (independiente del de SONG).
+
 5. **PHRASE** (`screens/phrase_view.py`): la phrase del step de CHAIN (nº en la
    cabecera). 16 steps × campos **nota · instr · FX1(cmd+param) · FX2(cmd+param)**.
    Dpad mueve (arr/abj step, izq/dcha campo), **A+dir** edita (nota: ±1 semitono
@@ -48,11 +56,14 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
    por campo (portapapeles propio), **B** borra el campo. Editar un hueco crea la
    chain y la phrase (estilo Piggy). El ciclado de **comandos FX** solo ofrece los
    usados en las canciones de `songs/` (`FX_USED` en `phrase_view.py`: VOLM, KILL,
-   DLAY, LEGA, TABL, STOP, MDCC, MDPG, PTCH, RTRG). *(Selección multicelda:
-   pendiente — por ahora solo SONG y CHAIN.)*
+   DLAY, LEGA, TABL, STOP, MDCC, MDPG, PTCH, RTRG). Selección multicelda igual que
+   SONG/CHAIN (**Ctrl+S** cicla libre→columnas→todo, **S** copia, **Ctrl+A**
+   corta/pega, **Esc** cancela) con su **propio portapapeles de bloque**
+   (independiente del de SONG/CHAIN y del portapapeles por campo).
 
    **Canal de robotas** (canal 8, `robots.py`): en vez de las 6 columnas
    genéricas se muestran solo 2, con datos reales (migrado del control MIDI
+
    que usaba lgpt/LGPT tracker clásico):
    - **HIT** — el golpe de percusión (BOMBO/CAJA1/CAJA2/BOM+C1/BOM+C2/C1+C2,
      notas 62/63/65/64/66/67 — el mapeo real de `bin/cliente.*.json`, no el de
@@ -112,12 +123,33 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
    **Save Song** (persiste el `.dat`), **Exit**; *Compact Sequencer/Instruments*
    y *Save Song As* quedan como pendientes (toast). Arriba/abajo navegan, **A**
    activa.
+10. **CONFIG** (`screens/config_view.py`): selección de las **interfaces MIDI
+    de entrada** (debajo de SONG en la rejilla). Dos campos editables
+    (izq/dcha ciclan entre los puertos MIDI de entrada disponibles, A+izq/dcha
+    salta al primero/último): **MIDI Notas** (entrada para notas) y **MIDI
+    Control** (entrada para control). **No pueden ser la misma interfaz** (al
+    ciclar salta al siguiente puerto distinto). **B** pone el campo a
+    "(ninguna)". La selección **se persiste** en `robotracker2/config.json`
+    (módulo `config`), entre ejecuciones. Si una interfaz guardada ya no
+    existe al arrancar, se conserva en el fichero pero se muestra en rojo
+    "(no disponible)" y se avisa con un toast al entrar en la pantalla.
 
-**Reproducción**: **Espacio** (PC) / **Start** (Odin) arranca desde la fila del
-cursor de SONG y vuelve a pulsarse para parar. El **playhead** se resalta en
-verde: en SONG por canal (cada canal en su fila), en CHAIN el step activo del
-canal de esa chain. Usa el motor de `../sinte` sobre el proyecto en memoria
-(`player.py`), así que refleja las ediciones sin guardar.
+**Reproducción**: **Espacio** (PC) / **Start** (Odin) arranca y vuelve a
+
+pulsarse para parar. El **playhead** se resalta en verde: en SONG por canal
+(cada canal en su fila), en CHAIN el step activo del canal de esa chain, en
+PHRASE el step activo de esa phrase. El alcance depende de la pantalla:
+- En **SONG** arranca desde la fila del cursor (canción completa, como LGPT).
+- En **CHAIN** reproduce **solo esa chain en bucle** (el canal de esa chain,
+  ignorando el resto de la canción).
+- En **PHRASE** reproduce **solo esa phrase en bucle** (el canal de esa phrase,
+  sin transpose ni avance de chain).
+
+Usa el motor de `../sinte` sobre el proyecto en memoria (`player.py`), así que
+refleja las ediciones sin guardar. El loop de chain/phrase lo gestiona el
+propio motor (`Engine.loop_scope` en `../sinte/lgpt_engine.py`): solo se
+arranca ese canal y, al terminar la chain/phrase, vuelve a su step 0.
+
 
 **Mute (SONG, mientras suena)**: con **L2** mantenido, **cada pulsación nueva
 de S** alterna el mute de la pista del cursor (columna atenuada + cabecera en
@@ -185,6 +217,7 @@ robotracker2/odin/install.sh [usuario@]IP_de_la_odin
 |---|---|
 | `robotracker2.py` | App + `ScreenManager` + input de teclado global |
 | `theme.py` | Colores y fuente de iconos (portados de robotracker) |
+| `config.py` | Configuración global persistente (interfaces MIDI) en `config.json` |
 | `songs.py` | `find_songs` / `display_name` / `load_project` |
 | `navmap.py` | Rejilla de pantallas LGPT + `neighbor()` (navegación) |
 | `controls.py` | Botones lógicos + perfiles teclado (PC) / gamepad (Odin) |
@@ -202,4 +235,6 @@ robotracker2/odin/install.sh [usuario@]IP_de_la_odin
 | `screens/sample_browser.py` | Navegador de samples (escuchar/importar) |
 | `screens/image_browser.py` | Navegador visual de `images/` (evento de pantalla) |
 | `screens/project_view.py` | Menú PROJECT (tempo/master/load/save/exit) |
+| `screens/config_view.py` | Menú CONFIG (interfaces MIDI de entrada) |
 | `screens/confirm.py` | Diálogo modal de cambios sin guardar |
+

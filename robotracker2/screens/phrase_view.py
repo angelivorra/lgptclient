@@ -71,6 +71,8 @@ COLOR_LINENUM_CUR = (1.0, 0.85, 0.40, 1)
 COLOR_BEAT = (0.13, 0.14, 0.18, 1)
 COLOR_ROW_CURSOR = (0.19, 0.21, 0.27, 1)
 COLOR_PLAY = (0.16, 0.42, 0.24, 1)
+COLOR_SEL = (0.95, 0.75, 0.20, 0.30)   # selección (oro translúcido)
+
 
 _COL_COLOR = {"note": COLOR_NOTE, "instr": COLOR_INSTR,
               "fx1cmd": COLOR_FX1, "fx1prm": COLOR_FX1,
@@ -97,6 +99,9 @@ class PhraseGrid(Widget):
         self.cursor_col = 0            # índice en self._cols()
         self.octave = 4
         self.clipboard = None          # (kind, value) — portapapeles propio
+        self.block_clipboard = None    # list[list] de valores crudos (bloque)
+        self.sel_stage = 0             # 0=sin sel, 1=libre, 2=columnas, 3=todo
+        self.sel_anchor = None         # (step, col) extremo fijo de la selección
         self.play_step = None
         self.on_change = on_change
         self._tex = {}
@@ -115,6 +120,9 @@ class PhraseGrid(Widget):
         self.cursor_step = 0
         self.cursor_col = 0
         self.clipboard = None
+        self.block_clipboard = None
+        self.sel_stage = 0
+        self.sel_anchor = None
         self._update_preview()
         self._redraw()
 
@@ -126,6 +134,7 @@ class PhraseGrid(Widget):
             if isinstance(raw, int):
                 cc, value = mdcc_unpack(raw)
                 path = ayuda_preview_path(self.ayuda_dir, cc, value)
+
         if path == self._preview_path:
             return
         self._preview_path = path
@@ -323,7 +332,79 @@ class PhraseGrid(Widget):
         self._set_raw(self.cursor_step, self.cursor_col, None)
         self._changed()
 
+    # -- selección multicelda (Ctrl+S cicla, S copia, Ctrl+A corta/pega) --
+    @property
+    def has_selection(self):
+        return self.sel_stage > 0
+
+    def cycle_selection(self):
+        if self.sel_stage == 0:
+            self.sel_anchor = (self.cursor_step, self.cursor_col)
+            self.sel_stage = 1
+        elif self.sel_stage == 1:
+            self.sel_stage = 2
+        elif self.sel_stage == 2:
+            self.sel_stage = 3
+        else:
+            self.sel_stage = 1
+        self._redraw()
+
+    def cancel_selection(self):
+        had = self.sel_stage > 0
+        self.sel_stage = 0
+        self.sel_anchor = None
+        self._redraw()
+        return had
+
+    def _region(self):
+        """(s0, c0, s1, c1) de la selección según la etapa, o None."""
+        if self.sel_stage == 0 or self.sel_anchor is None:
+            return None
+        as_, ac = self.sel_anchor
+        s0, s1 = sorted((as_, self.cursor_step))
+        if self.sel_stage == 1:
+            c0, c1 = sorted((ac, self.cursor_col))
+            return (s0, c0, s1, c1)
+        if self.sel_stage == 2:                 # columnas completas
+            return (s0, 0, s1, len(self._cols()) - 1)
+        return (0, 0, PHRASE_LEN - 1, len(self._cols()) - 1)   # todo
+
+    def _read_block(self, region):
+        s0, c0, s1, c1 = region
+        return [[self._get_raw(s, c) for c in range(c0, c1 + 1)]
+                for s in range(s0, s1 + 1)]
+
+    def copy_selection(self):
+        region = self._region()
+        if region:
+            self.block_clipboard = self._read_block(region)
+        self.cancel_selection()
+
+    def cut_selection(self):
+        region = self._region()
+        if region:
+            self.block_clipboard = self._read_block(region)
+            s0, c0, s1, c1 = region
+            for s in range(s0, s1 + 1):
+                for c in range(c0, c1 + 1):
+                    self._set_raw(s, c, None)
+            self._changed()
+        self.cancel_selection()
+
+    def paste_block(self):
+        if self.block_clipboard is not None:
+            self._paste_block_at(self.cursor_step, self.cursor_col)
+            self._changed()
+
+    def _paste_block_at(self, step, col):
+        for dr, row in enumerate(self.block_clipboard):
+            for dc, val in enumerate(row):
+                s, c = step + dr, col + dc
+                if s < PHRASE_LEN and c < len(self._cols()):
+                    self._set_raw(s, c, val)
+
     # -- copiar / pegar por campo --------------------------------------
+
     def a_tap(self):
         step, col = self.cursor_step, self.cursor_col
         kind = self._cols()[col][0]
@@ -427,7 +508,9 @@ class PhraseGrid(Widget):
         for _kind, w in cols:
             xs.append(x)
             x += w
+        region = self._region()
         with self.canvas:
+
             Color(*COLOR_BG)
             Rectangle(pos=self.pos, size=self.size)
             for step in range(PHRASE_LEN):
@@ -453,13 +536,20 @@ class PhraseGrid(Widget):
                     raw = self._get_raw(step, col)
                     text = self._field_text(step, col)
                     color = _COL_COLOR[kind] if raw is not None else COLOR_EMPTY
+                    in_sel = (region and region[0] <= step <= region[2]
+                              and region[1] <= col <= region[3])
                     if step == self.cursor_step and col == self.cursor_col:
                         Color(*COLOR_ACCENT)
                         RoundedRectangle(pos=(cx + dp(2), y + dp(3)),
                                          size=(w - dp(4), ROW_H - dp(6)),
                                          radius=[dp(6)])
                         color = COLOR_BG
+                    elif in_sel:
+                        Color(*COLOR_SEL)
+                        Rectangle(pos=(cx + dp(1), y + dp(1)),
+                                  size=(w - dp(2), ROW_H - dp(2)))
                     self._text(cx, y, w, text, color)
+
             if is_robot:
                 free_x = x + dp(32)
                 avail_w = self.width - (free_x - self.x) - dp(24)

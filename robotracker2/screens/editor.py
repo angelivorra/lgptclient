@@ -23,6 +23,7 @@ from kivy.uix.screenmanager import Screen
 from navmap import SCREENS, neighbor
 from robots import ROBOT_TRACK
 from screens.chain_view import ChainGrid
+from screens.config_view import ConfigMenu
 from screens.groove_view import GrooveGrid
 from screens.instrument_view import InstrumentMenu
 from screens.phrase_view import PhraseGrid
@@ -31,6 +32,7 @@ from screens.song_view import SongGrid
 from screens.table_view import TableGrid
 from theme import (COLOR_ACCENT, COLOR_BAR_BG, COLOR_BG, COLOR_BORDER,
                    COLOR_OK)
+
 
 BAR_H = dp(52)
 NAV_CELL_W = dp(38)
@@ -76,6 +78,9 @@ class EditorScreen(Screen):
         self.current = "song"
         self.song_name = ""
         self.project = None
+        self.config = {}          # configuración global (interfaces MIDI)
+        self._config_cb = None    # callback al cambiar la config
+
 
         outer = FloatLayout()
         root = BoxLayout(orientation="vertical")
@@ -97,6 +102,18 @@ class EditorScreen(Screen):
                             font_size=dp(22), halign="left", valign="middle")
         self.header.bind(size=lambda w, *_: setattr(w, "text_size", w.size))
         bar.add_widget(self.header)
+
+        # indicador de reproducción (▶ + temporizador); invisible al parar
+        self.play_ind = Label(text="", bold=True, font_name="Icons",
+                              font_size=dp(22), color=COLOR_OK,
+                              size_hint_x=None, width=dp(120),
+                              halign="center", valign="middle")
+        self.play_ind.bind(size=lambda w, *_: setattr(w, "text_size", w.size))
+        with self.play_ind.canvas.before:
+            self._play_chip_color = Color(0.45, 0.85, 0.45, 0.14)
+            self._play_chip = RoundedRectangle(radius=[dp(6)])
+        self.play_ind.bind(pos=self._sync_play_chip, size=self._sync_play_chip)
+        bar.add_widget(self.play_ind)
 
         self.nav_cells = []
         for letter in NAV_COLUMNS:
@@ -137,10 +154,15 @@ class EditorScreen(Screen):
                                         on_change=self._grid_changed,
                                         size_hint=(1, 1),
                                         pos_hint={"x": 0, "y": 0})
+        self.config_menu = ConfigMenu(on_change=self._config_changed,
+                                      on_toast=self.toast_msg,
+                                      size_hint=(1, 1),
+                                      pos_hint={"x": 0, "y": 0})
         self.placeholder = Label(text="", halign="center", valign="middle",
                                  font_size=dp(40), bold=True,
                                  color=(*COLOR_BORDER[:3], 1),
                                  pos_hint={"center_x": 0.5, "center_y": 0.5})
+
 
         outer.add_widget(root)
         # toast de feedback (guardado, acciones pendientes...)
@@ -168,6 +190,28 @@ class EditorScreen(Screen):
     def refresh_header(self, *_):
         self.header.text = self._header_text()
 
+    def _sync_play_chip(self, *_):
+        self._play_chip.pos = (self.play_ind.x + dp(2),
+                               self.play_ind.y + dp(6))
+        self._play_chip.size = (self.play_ind.width - dp(4),
+                                self.play_ind.height - dp(12))
+
+    def set_play_indicator(self, playing, elapsed=0.0):
+        """Muestra \"▶ m:ss\" en la cabecera mientras suena (vacío al parar)."""
+        if playing:
+            s = int(elapsed)
+            if s >= 3600:
+                text = f"▶ {s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}"
+            else:
+                text = f"▶ {s // 60}:{s % 60:02d}"
+            self.play_ind.text = text
+            self.play_ind.color = COLOR_OK
+            self._play_chip_color.rgba = (0.45, 0.85, 0.45, 0.14)
+        else:
+            self.play_ind.text = ""
+            self.play_ind.color = (0, 0, 0, 0)
+            self._play_chip_color.rgba = (0, 0, 0, 0)
+
     def toast_msg(self, text):
         self.toast.text = text
         self.toast.opacity = 1
@@ -182,19 +226,39 @@ class EditorScreen(Screen):
             self._dirty_cb()
         self.header.text = self._header_text()
 
+    # -- configuración global (interfaces MIDI) ------------------------
+    def set_config(self, cfg, on_change=None):
+        """Inyecta la configuración global y el callback de persistencia."""
+        self.config = cfg
+        self._config_cb = on_change
+        self.config_menu.set_config(cfg)
+
+    def _config_changed(self):
+        if self._config_cb:
+            self._config_cb()
+        self.header.text = self._header_text()
+
     def navigate(self, dx, dy):
         nxt = neighbor(self.current, dx, dy)
         if nxt:
             self.goto(nxt)
 
+
     def goto(self, key):
         self.current = key
         (col, row), _label, letter = SCREENS[key]
         if key == "chain":
-            # la chain es la de la celda de SONG donde está el cursor
-            self.chain_grid.set_context(self.project,
-                                        self.song_grid.cursor_row,
-                                        self.song_grid.cursor_track)
+            # la chain es la de la celda de SONG donde está el cursor. Solo se
+            # re-crea el contexto si la celda ha cambiado: así, al volver de
+            # PHRASE a la misma chain se conserva la posición del cursor (y la
+            # selección/portapapeles) en vez de resetearla a 0.
+            if (self.chain_grid.cv is None
+                    or self.chain_grid.song_row != self.song_grid.cursor_row
+                    or self.chain_grid.track != self.song_grid.cursor_track):
+                self.chain_grid.set_context(self.project,
+                                            self.song_grid.cursor_row,
+                                            self.song_grid.cursor_track)
+
         elif key == "phrase":
             # la phrase es la del step de CHAIN (o del cursor de SONG si no
             # se pasó por CHAIN)
@@ -213,9 +277,17 @@ class EditorScreen(Screen):
                 iid = self.phrase_grid._instr(self.phrase_grid.cursor_step)
                 if iid is not None:
                     self.instrument_menu.select_instrument(iid)
+        elif key == "config":
+            # refresca la lista de puertos MIDI y avisa si alguna interfaz
+            # guardada ya no existe (se conserva para la siguiente ejecución)
+            self.config_menu.set_config(self.config)
+            missing = self.config_menu._missing
+            if missing:
+                self.toast_msg("Interfaz MIDI guardada no disponible")
         self.header.text = self._header_text()
         self._update_nav(col, row, letter)
         self._show_content(key)
+
 
     def _table_id(self, key):
         # desde PHRASE: la tabla del comando TABL del step si lo hay
@@ -270,9 +342,13 @@ class EditorScreen(Screen):
         elif key == "project":
             self.content.add_widget(self.project_menu)
             self.project_menu._redraw()
+        elif key == "config":
+            self.content.add_widget(self.config_menu)
+            self.config_menu._redraw()
         else:
             self.placeholder.text = f"{SCREENS[key][1]}\n(vacía)"
             self.content.add_widget(self.placeholder)
+
 
     def _update_nav(self, cur_col, cur_row, cur_letter):
         for i, cell in enumerate(self.nav_cells):

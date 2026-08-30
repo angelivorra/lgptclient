@@ -1169,6 +1169,12 @@ class Engine:
         self.tick_phase = 0.0           # samples hasta el próximo tick
         self.playing = False
         self.finished = False           # True al recibir STOP
+        # Modo de reproducción restringida (loop de un solo elemento):
+        # None = canción completa; ("chain", track, chain) o
+        # ("phrase", track, phrase) = solo ese elemento del canal `track`,
+        # en bucle. Lo usa robotracker2 para "play" desde CHAIN/PHRASE.
+        self.loop_scope = None
+
         self.events: queue.SimpleQueue = queue.SimpleQueue()
         self.unsupported_cmds: set[str] = set()
         self.muted: set[int] = set()    # canales silenciados (índice 0-7)
@@ -1242,7 +1248,10 @@ class Engine:
 
     def start(self, from_row: int = 0):
         """(Re)inicia la canción. Con `from_row` arranca en esa fila de la
-        song (play desde el cursor, estilo Piggy); 0 = desde el principio."""
+        song (play desde el cursor, estilo Piggy); 0 = desde el principio.
+
+        Si `loop_scope` está activo (play desde CHAIN/PHRASE en robotracker2)
+        solo se arranca ese canal, en la chain/phrase indicada, en bucle."""
         for ch in self.channels:
             ch.playing = False
             ch.voice = None
@@ -1258,17 +1267,42 @@ class Engine:
             ch.groove = 0
             ch.g_pos = 0
             ch.g_ticks = self._groove_len(0, 0)
-            for pos in range(max(0, min(from_row, 255)), 256):
-                if self._is_playable(pos, ch.idx):
-                    ch.playing = True
-                    self._set_song_pos(ch, pos, 0, -1)
-                    break
+        if self.loop_scope is not None:
+            self._start_loop()
+        else:
+            for ch in self.channels:
+                for pos in range(max(0, min(from_row, 255)), 256):
+                    if self._is_playable(pos, ch.idx):
+                        ch.playing = True
+                        self._set_song_pos(ch, pos, 0, -1)
+                        break
         self.tick_count = 0
         self.tick_phase = 0.0
         self.finished = False
         self.playing = True
         self.unsupported_cmds.clear()
         self._transport("transport_start")
+
+    def _start_loop(self):
+        """Arranca solo el canal objetivo de `loop_scope` en su chain/phrase
+        (en bucle). El resto de canales quedan en silencio."""
+        kind, track, idx = self.loop_scope
+        if not 0 <= track < CHANNEL_COUNT:
+            return
+        ch = self.channels[track]
+        if kind == "chain":
+            if idx == 0xFF or idx >= len(self.project.chains) // 16:
+                return
+            ch.playing = True
+            ch.chain = idx
+            self._set_chain_pos(ch, 0, -1)
+        elif kind == "phrase":
+            if idx == 0xFF or idx >= len(self.project.notes) // 16:
+                return
+            ch.playing = True
+            ch.phrase = idx
+            self._set_phrase_pos(ch, 0)
+
 
     def event_time_ms(self) -> int:
         """Instante de reloj (ms) en que se OIRÁ el evento que se está
@@ -1707,6 +1741,13 @@ class Engine:
             ch.time_to_start = (self.project.param1[row] & 0xF) + 1
 
     def _next_phrase(self, ch: Channel, hop: int = -1):
+        # Loop de una sola phrase (play desde PHRASE): al terminar la
+        # phrase vuelve a su step 0, sin avanzar de chain.
+        if (self.loop_scope is not None
+                and self.loop_scope[0] == "phrase"
+                and ch.idx == self.loop_scope[1]):
+            self._set_phrase_pos(ch, 0)
+            return
         pos = ch.chain_pos + 1
         can = (
             pos < 16
@@ -1719,9 +1760,17 @@ class Engine:
             self._next_chain(ch, hop)
 
     def _next_chain(self, ch: Channel, hop: int = -1):
+        # Loop de una sola chain (play desde CHAIN): al terminar la chain
+        # vuelve a su step 0, sin avanzar a la siguiente fila de la song.
+        if (self.loop_scope is not None
+                and self.loop_scope[0] == "chain"
+                and ch.idx == self.loop_scope[1]):
+            self._set_chain_pos(ch, 0, hop)
+            return
         song = self.project.song
         chains = self.project.chains
         pos = ch.song_pos + 1
+
         loop_back = True
         if pos < 256:
             data = song[pos * 8 + ch.idx]

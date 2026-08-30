@@ -4,3 +4,6 @@ kivy
 numpy
 sounddevice
 soundfile
+mido
+python-rtmidi
+

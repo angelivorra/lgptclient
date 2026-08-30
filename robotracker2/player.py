@@ -40,6 +40,7 @@ class Player:
         if not self._ensure_stream():
             return False
         eng = self.engine
+        eng.loop_scope = None          # play de canción completa
         if not self._started or eng.finished:
             eng.start(from_row)
             self._started = True
@@ -47,9 +48,22 @@ class Player:
             eng.push_event("play")
         return True
 
+    def play_loop(self, kind, track, idx):
+        """Reproduce solo una chain o phrase (`kind` = "chain" | "phrase")
+        del canal `track` en bucle, ignorando el resto de la canción."""
+        if not self._ensure_stream():
+            return False
+        eng = self.engine
+        eng.loop_scope = (kind, track, idx)
+        eng.start()
+        self._started = True
+        return True
+
     def stop(self):
+        self.engine.loop_scope = None
         self.engine.push_event("stop")
         self._started = False
+
 
     @property
     def playing(self):

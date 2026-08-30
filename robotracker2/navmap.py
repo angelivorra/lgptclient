@@ -5,10 +5,10 @@ navega con Ctrl+flechas hacia la pantalla adyacente. Diagrama:
 
     PROJECT           GROOVE
     SONG    CHAIN     PHRASE    INSTRUMENT
-                      TABLE     TABLE
+    CONFIG            TABLE     TABLE
 
-PROJECT está encima de SONG y GROOVE encima de PHRASE; PHRASE e INSTRUMENT
-tienen cada uno su TABLE debajo. Cada entrada:
+PROJECT está encima de SONG y GROOVE encima de PHRASE; CONFIG debajo de SONG;
+PHRASE e INSTRUMENT tienen cada uno su TABLE debajo. Cada entrada:
 clave -> ((col, fila), etiqueta, letra). Fila 0 = arriba.
 """
 
@@ -19,9 +19,11 @@ SCREENS = {
     "chain":            ((1, 1), "CHAIN",      "C"),
     "phrase":           ((2, 1), "PHRASE",     "P"),
     "instrument":       ((3, 1), "INSTRUMENT", "I"),
+    "config":           ((0, 2), "CONFIG",     "C"),
     "phrase_table":     ((2, 2), "TABLE",      "T"),
     "instrument_table": ((3, 2), "TABLE",      "T"),
 }
+
 
 GRID_COLS = 4
 GRID_ROWS = 3

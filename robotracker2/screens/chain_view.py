@@ -13,7 +13,9 @@ from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
-from lgpt_model import CHAIN_LEN, EMPTY, NUM_TRACKS, ChainView, SongView
+from lgpt_model import (CHAIN_LEN, EMPTY, NUM_TRACKS, ChainView, SongView,
+                        duplicate_phrase)
+
 from theme import COLOR_ACCENT, COLOR_BG
 
 ROW_H = dp(30)
@@ -181,6 +183,24 @@ class ChainGrid(Widget):
                     self._set(s, c, None)
             self._changed()
         self.cancel_selection()
+
+    def duplicate_phrase(self):
+        """Ctrl+A con selección: duplica la phrase del step del cursor (columna
+        PHRASE) a la primera phrase libre con índice mayor, y apunta el step a
+        la copia."""
+        if self.cursor_col != 0:
+            return False
+        src = self._get(self.cursor_step, 0)
+        if src is None:
+            return False
+        dst = duplicate_phrase(self.project, src)
+        if dst is None:
+            return False
+        self._set(self.cursor_step, 0, dst)
+        self.cancel_selection()
+        self._changed()
+        return True
+
 
     def _read_block(self, region):
         s0, c0, s1, c1 = region
