@@ -77,7 +77,7 @@ class Robotracker2App(App):
         self._a_consumed = False   # A se usó en un acorde (no disparar tap)
         self.dialog = None         # ConfirmDialog activo (o None)
         self.player = None         # reproductor de la canción cargada
-        self._mute_combo = None    # combo L2+S en curso (mute) o None
+        self._fresh_press = False  # el botón actual no estaba ya en self.held
 
     def build(self):
         setup_window(self.fullscreen)
@@ -116,6 +116,10 @@ class Robotracker2App(App):
         button = key_to_button(key, codepoint)
         if button is None:
             return False
+        # Distingue una pulsación nueva de la repetición que manda el SO al
+        # mantener la tecla (p.ej. para no alternar el mute varias veces
+        # solo por mantener S pulsada).
+        self._fresh_press = button not in self.held
         self.held.add(button)
         return self._dispatch(button, set(self.held))
 
@@ -129,6 +133,7 @@ class Robotracker2App(App):
         button = GAMEPAD_BUTTONS.get(buttonid)
         if button is None:
             return False
+        self._fresh_press = button not in self.held
         self.held.add(button)
         return self._dispatch(button, set(self.held))
 
@@ -140,11 +145,6 @@ class Robotracker2App(App):
 
     def _release(self, button):
         if self.browser is not None:
-            self.held.discard(button)
-            return
-        # Combo de mute (L2+S): el orden de soltado decide si queda o revierte.
-        if self._mute_combo is not None and button in (L2, B):
-            self._release_mute(button)
             self.held.discard(button)
             return
         self.held.discard(button)
@@ -296,12 +296,13 @@ class Robotracker2App(App):
                 self._a_consumed = False             # A tap: se resuelve al soltar
             return True
         if button == L2:                             # L2(+S): mute mientras suena
-            if B in active and self._playing_song():
-                self._mute_start()
+            if B in active and self._playing_song() and self._fresh_press:
+                self._mute_toggle(g.cursor_track)
             return True
         if button == B:
-            if L2 in active and self._playing_song():  # L2+S: mute de pista
-                self._mute_start()
+            if L2 in active and self._playing_song():  # L2+S: alterna mute
+                if self._fresh_press:                # no en repetición del SO
+                    self._mute_toggle(g.cursor_track)
             elif R2 in active:                       # Ctrl+S: ciclar selección
                 g.cycle_selection()
             elif g.has_selection:                    # S: copiar selección
@@ -588,28 +589,12 @@ class Robotracker2App(App):
         (eng.muted.add if muted else eng.muted.discard)(track)
         self.editor_screen.song_grid.set_muted(eng.muted)
 
-    def _mute_start(self):
-        if self._mute_combo is not None:
-            return
-        track = self.editor_screen.song_grid.cursor_track
-        original = track in self.player.engine.muted
-        self._set_mute(track, not original)          # toggle en vivo (preview)
-        self._mute_combo = {"track": track, "original": original,
-                            "committed": False}
-
-    def _release_mute(self, button):
-        combo = self._mute_combo
-        if button == L2:
-            # soltar Ctrl(L2) con S aún pulsada -> queda (commit)
-            if B in self.held:
-                combo["committed"] = True
-        elif button == B:
-            # soltar S antes -> revierte al estado anterior
-            if not combo["committed"]:
-                self._set_mute(combo["track"], combo["original"])
-        remaining = self.held - {button}
-        if L2 not in remaining and B not in remaining:
-            self._mute_combo = None
+    def _mute_toggle(self, track):
+        """L2+S: cada pulsación NUEVA de S (no la repetición del SO al
+        mantenerla) alterna el mute de `track` ahí mismo. No hay "revertir":
+        lo que quede en el momento de soltar Ctrl es lo que se queda —
+        no hace falta más lógica al soltar ninguna de las dos teclas."""
+        self._set_mute(track, track not in self.player.engine.muted)
 
     def _tick(self, _dt):
         ed = self.editor_screen

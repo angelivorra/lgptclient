@@ -119,10 +119,12 @@ verde: en SONG por canal (cada canal en su fila), en CHAIN el step activo del
 canal de esa chain. Usa el motor de `../sinte` sobre el proyecto en memoria
 (`player.py`), así que refleja las ediciones sin guardar.
 
-**Mute (SONG, mientras suena)**: **L2+S** togglea el mute de la pista del
-cursor (columna atenuada + cabecera en rojo). Orden de soltado, como LGPT: si
-sueltas **L2 antes que S**, el cambio **queda**; si sueltas **S antes**,
-**revierte** al estado anterior.
+**Mute (SONG, mientras suena)**: con **L2** mantenido, **cada pulsación nueva
+de S** alterna el mute de la pista del cursor (columna atenuada + cabecera en
+rojo) — se puede tocar varias veces seguidas para ir probando; una tecla
+mantenida no repite el toggle sola (se ignora la autorepetición del SO). Lo
+que quede al soltar **L2** es lo que se queda; soltar S no hace nada especial
+por sí sola.
 
 Si hay **cambios sin guardar**, al **salir** o **cargar otra canción** (o cerrar
 la ventana) aparece un diálogo modal (`screens/confirm.py`) con **Guardar /
