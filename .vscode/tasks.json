@@ -102,10 +102,7 @@
     {
       "label": "Sinte: arrancar (venv + dependencias)",
       "type": "shell",
-      "command": "test -d .venv || { python3 -m venv .venv && .venv/bin/pip install -r requirements.txt; }; .venv/bin/python lgpt_player.py --device default",
-      "options": {
-        "cwd": "${workspaceFolder}/sinte"
-      },
+      "command": "${workspaceFolder}/sinte/run.sh",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
