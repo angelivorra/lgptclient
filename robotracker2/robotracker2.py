@@ -12,8 +12,17 @@ se resuelve aquí sobre botones lógicos.
 Ejecutar:  robotracker/.venv/bin/python robotracker2/robotracker2.py [--songs RUTA]
 """
 
-import argparse
 import os
+
+# Kivy escanea sys.argv él solo (getopt con sus propias -f/-p/--size/...) al
+# importarse, ANTES de que nuestro propio argparse (más abajo) tenga ocasión
+# de correr. Con argumentos que Kivy no reconoce (--samples, --images,
+# --ayuda: los que pasa el launcher de la Odin) esto imprime su uso y mata el
+# proceso — invisible en PC porque ahí se lanza sin argumentos extra. Hay que
+# desactivarlo antes de la primera importación de kivy, sea cual sea.
+os.environ.setdefault("KIVY_NO_ARGS", "1")
+
+import argparse
 import shutil
 from pathlib import Path
 

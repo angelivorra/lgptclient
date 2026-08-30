@@ -18,7 +18,20 @@ trap "kill $GPTK_PID 2>/dev/null" EXIT INT TERM
 export KIVY_METRICS_DENSITY=2
 
 # La app abre ventana X11 (XWayland) titulada ROBOTRACKER2: fullscreen en Sway.
+# El helper del sistema (sway_fullscreen, en /etc/profile.d/001-functions)
+# solo reintenta 5 veces a 1s cada una (5s) antes de rendirse — insuficiente
+# aquí: Kivy usa GL vía zink/Vulkan (Turnip) en este hardware y tarda más de
+# 5s en crear la ventana, así que se queda sin pantalla completa (ventana
+# 1280x720 detrás de EmulationStation, parece que "no hace nada"). Se lanza
+# igual por compatibilidad, más un reintento propio de respaldo, mucho más
+# paciente (hasta 40s), que sigue intentándolo si el del sistema ya se rindió.
 sway_fullscreen "ROBOTRACKER2" title &
+(
+    for _ in $(seq 1 40); do
+        swaymsg '[title="ROBOTRACKER2"] fullscreen enable' >/dev/null 2>&1 && break
+        sleep 1
+    done
+) &
 
 cd "$GAMEDIR"
 # Biblioteca de samples, images/ (eventos de pantalla) y sus miniaturas ya
