@@ -1,0 +1,10 @@
+# SDL GameControllerDB propio para robotracker2 (Odin 2).
+#
+# ROCKNIX no trae mapeado el DualSense (o se conecta como joystick genérico),
+# así que gptokeyb no sabe traducir los gatillos L2/R2 (ejes analógicos) a
+# teclas. Esta entrada es la oficial de SDL_GameControllerDB para el
+# "Sony Interactive Entertainment DualSense Wireless Controller"
+# (VID 054c, PID 0ce6, versión 8111) en Linux.
+#
+# El launcher exporta SDL_GAMECONTROLLERCONFIG_FILE apuntando a este fichero.
+030000004c050000e60c000011810000,PS5 Controller,a:b0,b:b1,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b10,leftshoulder:b4,leftstick:b11,lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b12,righttrigger:a5,rightx:a3,righty:a4,start:b9,x:b3,y:b2,platform:Linux,

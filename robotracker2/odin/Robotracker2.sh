@@ -9,6 +9,10 @@ GAMEDIR=/storage/robotracker2
 # Reutiliza el venv de robotracker (mismas dependencias: kivy/numpy/sound*).
 VENV=/storage/robotracker-venv
 
+# Mapeo del mando para SDL/gptokeyb: sin esto, el DualSense se ve como
+# joystick genérico y los gatillos L2/R2 (ejes analógicos) no se traducen.
+export SDL_GAMECONTROLLERCONFIG_FILE="$GAMEDIR/gamecontrollerdb.txt"
+
 # Gamepad -> teclas (mapeo en robotracker2.gptk)
 /usr/bin/gptokeyb -c "$GAMEDIR/robotracker2.gptk" &
 GPTK_PID=$!

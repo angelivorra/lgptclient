@@ -14,3 +14,7 @@ r2 = rightctrl
 l2 = leftctrl
 start = space
 back = esc
+# Los gatillos son analógicos: umbral a partir del cual L2/R2 cuentan como
+# pulsados (mismo valor que el default.gptk del sistema).
+deadzone_triggers = 3000
+

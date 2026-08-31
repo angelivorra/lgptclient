@@ -56,9 +56,10 @@ rsync -a --delete \
   --exclude 'odin' \
   "$SRC/" "$HOST:/storage/robotracker2/"
 
-echo ">> Copiando gptk y launcher del port ..."
-scp "$SRC/odin/robotracker2.gptk" "$HOST:/storage/robotracker2/robotracker2.gptk"
-scp "$SRC/odin/Robotracker2.sh"   "$HOST:/storage/roms/ports/Robotracker2.sh"
+echo ">> Copiando gptk, gamecontrollerdb y launcher del port ..."
+scp "$SRC/odin/robotracker2.gptk"   "$HOST:/storage/robotracker2/robotracker2.gptk"
+scp "$SRC/odin/gamecontrollerdb.txt" "$HOST:/storage/robotracker2/gamecontrollerdb.txt"
+scp "$SRC/odin/Robotracker2.sh"      "$HOST:/storage/roms/ports/Robotracker2.sh"
 ssh "$HOST" 'chmod +x /storage/roms/ports/Robotracker2.sh'
 
 # Sincronización opcional de la biblioteca completa de samples (18 GB).
