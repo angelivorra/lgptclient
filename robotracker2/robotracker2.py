@@ -40,10 +40,16 @@ from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.screenmanager import ScreenManager, NoTransition
 
 from config import load_config, save_config
-from controls import (A, B, BACK, DOWN, DPAD, L2, LEFT, R2, RIGHT, START, UP,
-                      GAMEPAD_BUTTONS, hat_to_buttons, key_to_button)
+from controls import (A, B, BACK, DOWN, DPAD, L2, LEFT, R2, RIGHT, SELECT,
+                      START, UP, GAMEPAD_BUTTONS, hat_to_buttons, key_to_button,
+                      trigger_axis_buttons)
+from midi_ctrl import POTS_KNOBS, MidiControl
 from midi_input import MidiNotesInput, midi_input_names
 from sinte_bridge import save_project
+try:
+    from evdev_triggers import GamepadReader  # entrada evdev (Odin)
+except ImportError:
+    GamepadReader = None
 from songs import DEFAULT_SONGS, display_name, find_songs, load_project
 from player import Player
 from robots import screen_label
@@ -76,24 +82,47 @@ class Robotracker2App(App):
 
     def __init__(self, songs_dir=DEFAULT_SONGS, fullscreen=False,
                  samples_dir=DEFAULT_SAMPLES, images_dir=DEFAULT_IMAGES,
-                 ayuda_dir=DEFAULT_AYUDA, **kwargs):
+                 ayuda_dir=DEFAULT_AYUDA, pads_dir=None, **kwargs):
         super().__init__(**kwargs)
         self.songs_dir = songs_dir
         self.samples_dir = Path(samples_dir)
+        # Biblioteca de samples de los pads (clave "pads" del robotraca.json
+        # de cada canción, resuelta contra esta carpeta): pads/ en la raíz
+        # del repo, p.ej. <repo>/pads con canciones en <repo>/sinte/songs
+        # (Odin: /storage/pads con /storage/sinte/songs). Los pads NO tienen
+        # configuración global: sin la clave "pads", la canción los tiene
+        # vacíos. Si la biblioteca no existe se usa samples_dir (siguen
+        # vacíos y el navegador enseña la biblioteca general).
+        if pads_dir:
+            self.pads_dir = Path(pads_dir)
+        else:
+            songs = Path(songs_dir).resolve()
+            self.pads_dir = next(
+                (p for p in (songs.parent.parent / "pads",
+                             songs.parent / "pads",
+                             self.samples_dir.parent / "pads")
+                 if p.is_dir()), self.samples_dir)
         self.images_dir = Path(images_dir)
         self.ayuda_dir = Path(ayuda_dir)
         self.browser = None        # SampleBrowser/ImageBrowser activo (o None)
         self._screen_step = None   # step de PHRASE que se está editando
+        self._pads_pad = None      # pad (1-4) al que apunta el navegador PADS
+        self._pads_dirty = False   # pads de la canción sin guardar (memoria)
+        self._pots_dirty = False   # knobs de la canción sin guardar (memoria)
         self.fullscreen = fullscreen
         self.held = set()          # botones lógicos pulsados ahora
+        self._trig_buttons = set()  # gatillos (ejes) actualmente "pulsados"
+        self._ev_pad = None       # GamepadReader evdev (modo Odin) o None
         self.dirty = False
         self._a_consumed = False   # A se usó en un acorde (no disparar tap)
         self.dialog = None         # ConfirmDialog activo (o None)
         self.player = None         # reproductor de la canción cargada
+        self._song_dir = None      # directorio de la canción cargada
         self._play_start = None    # monotonic() al arrancar (temporizador)
         self._fresh_press = False  # el botón actual no estaba ya en self.held
         self.midi_live = False     # pintado MIDI en vivo en PHRASE (R2+START)
         self._midi_notes = MidiNotesInput()
+        self._midi_ctrl = None     # controlador MIDI (botones+knobs, mixer)
 
     def build(self):
         setup_window(self.fullscreen)
@@ -111,6 +140,18 @@ class Robotracker2App(App):
         # Configuración global (interfaces MIDI) persistida entre ejecuciones.
         self.config = load_config()
         self.editor_screen.set_config(self.config, on_change=self._config_changed)
+
+        # Controlador MIDI del reproductor (botones + knobs), como el mixer:
+        # los botones llegan a ui_queue (drenada en _tick) y los knobs se
+        # reconfiguran por canción desde robotraca.json (MidiControl.set_song).
+        self._midi_ctrl = MidiControl(
+            self.config.get("buttons") or {},
+            self.config.get("hw_pots") or {},
+            self.config.get("pad_volume", 45),
+            pads_dir=self.pads_dir,
+            on_trigger=self._ensure_pad_audio)
+        if self.config.get("midi_control"):
+            self._midi_ctrl.open(self.config["midi_control"])
         self.sm.add_widget(self.load_screen)
         self.sm.add_widget(self.editor_screen)
         self.sm.current = "load"
@@ -121,11 +162,27 @@ class Robotracker2App(App):
 
         Window.bind(on_key_down=self._on_key_down, on_key_up=self._on_key_up)
         Window.bind(on_request_close=self._on_request_close)
-        # Gamepad (Odin 2 Portal); inofensivo si no hay mando conectado.
-        Window.bind(on_joy_button_down=self._on_joy_button_down,
-                    on_joy_button_up=self._on_joy_button_up,
-                    on_joy_hat=self._on_joy_hat)
         self._hat_buttons = set()
+        if os.environ.get("ROBOTRACKER2_EVDEV_GAMEPAD"):
+            # Odin 2 (ROCKNIX): InputPlumber oculta el mando a SDL; toda la
+            # entrada (cruceta, stick, botones, gatillos) llega en su
+            # DualSense virtual, que se lee aquí por evdev
+            # (evdev_triggers.py). El teclado sigue enlazado: según el
+            # perfil activo de InputPlumber puede traducir a teclas, pero en
+            # el perfil por defecto no emite nada. Sin joystick nativo: con
+            # el mando oculto no hay nada que ver, y si algún día SDL viera
+            # el DualSense virtual duplicaría la entrada.
+            if GamepadReader is not None:
+                self._ev_pad = GamepadReader(
+                    on_event=lambda b, p: Clock.schedule_once(
+                        lambda _dt: self._on_evdev_button(b, p), 0))
+                self._ev_pad.start()
+        else:
+            # Gamepad (Odin 2 Portal); inofensivo si no hay mando conectado.
+            Window.bind(on_joy_button_down=self._on_joy_button_down,
+                        on_joy_button_up=self._on_joy_button_up,
+                        on_joy_hat=self._on_joy_hat,
+                        on_joy_axis=self._on_joy_axis)
         Clock.schedule_interval(self._tick, 1 / 30)   # playhead
         return self.root_layout
 
@@ -196,7 +253,8 @@ class Robotracker2App(App):
 
     def _on_request_close(self, *_a, **_k):
         # Botón de cerrar la ventana: avisa si hay cambios sin guardar.
-        if self.dirty and self.dialog is None \
+        if (self.dirty or self._pads_dirty or self._pots_dirty) \
+                and self.dialog is None \
                 and self.editor_screen.project is not None:
             self._confirm_exit()
             return True     # cancela el cierre; se decide en el diálogo
@@ -211,6 +269,36 @@ class Robotracker2App(App):
         for b in self._hat_buttons - new:
             self.held.discard(b)
         self._hat_buttons = new
+        return True
+
+    def _on_joy_axis(self, _win, _stick, axisid, value):
+        # Gatillos analógicos L2/R2: ejes del joystick nativo. Cada eje de
+        # gatillo genera press/release al cruzar el umbral, como un botón
+        # (los ejes de los sticks no se mapean y se ignoran aquí).
+        new = trigger_axis_buttons(axisid, value)
+        for b in new - self._trig_buttons:
+            self._fresh_press = b not in self.held
+            self.held.add(b)
+            self._dispatch(b, set(self.held))
+        for b in self._trig_buttons - new:
+            self.held.discard(b)
+            self._release(b)
+        self._trig_buttons = new
+        return True
+
+    def _on_evdev_button(self, button, pressed):
+        # Entrada leída por evdev (GamepadReader, Odin): transiciones ya
+        # filtradas (umbrales/histéresis) desde el hilo lector. Misma
+        # semántica que _on_joy_axis (press/release como botón).
+        if pressed:
+            self._fresh_press = button not in self.held
+            self.held.add(button)
+            self._dispatch(button, set(self.held))
+            self._trig_buttons = self._trig_buttons | {button}
+        else:
+            self._trig_buttons = self._trig_buttons - {button}
+            self.held.discard(button)
+            self._release(button)
         return True
 
     # ------------------------------------------------------------------
@@ -256,6 +344,10 @@ class Robotracker2App(App):
             else:
                 self._toggle_play()
             return True
+        if ed.current == "pots":
+            return self._dispatch_pots(button, active)
+        if ed.current == "pads":
+            return self._dispatch_pads(button, active)
         if ed.current == "song":
             return self._dispatch_song(button, active)
         if ed.current == "chain":
@@ -276,6 +368,193 @@ class Robotracker2App(App):
             self.sm.current = "load"
             return True
         return False
+
+    # ------------------------------------------------------------------
+    # Pantalla EFECTOS (knobs por canción, ver screens/pots_view.py)
+    # ------------------------------------------------------------------
+    def _dispatch_pots(self, button, active):
+        g = self.editor_screen.pots_grid
+        if g.picker is not None:
+            # Lista de efectos abierta (A sobre la columna EFECTO): arr/abj
+            # mueve el cursor, A elige, B cierra. El resto no hace nada.
+            if button in (UP, DOWN):
+                g.picker_move(-1 if button == UP else 1)
+                return True
+            if button == A:
+                if L2 in active or R2 in active:  # L2 navega: A no hace nada
+                    self._a_consumed = True
+                else:
+                    self._midi_ctrl.set_pot_efecto_nombre(
+                        POTS_KNOBS[g.cursor], g.picker_selected())
+                    g.set_state(self._midi_ctrl.pots_state())
+                    g.close_picker()
+                    self._pots_dirty = True
+                return True
+            if button == B:
+                if L2 not in active and R2 not in active:
+                    g.close_picker()
+                return True
+            return True
+        if g.cursor == g.SAVE_ROW:
+            # Fila GUARDAR (abajo del todo): arr/abj la abandonan, solo A
+            # guarda; el resto no hace nada (select ya no guarda).
+            if button in (UP, DOWN):
+                g.move(button)
+                return True
+            if button == A:
+                if L2 in active or R2 in active:  # L2 navega: A no hace nada
+                    self._a_consumed = True
+                else:
+                    self._pots_save()
+            return True
+        pot = POTS_KNOBS[g.cursor]
+        # A + dpad: edición estilo tracker según la columna (el tap de A ya
+        # queda consumido en _dispatch por el acorde).
+        if button in DPAD and A in active:
+            return self._pots_combo(pot, g.col, button)
+        if button in DPAD:
+            if button in (LEFT, RIGHT):
+                g.move_col(-1 if button == LEFT else 1)
+            else:
+                g.move(button)
+            return True
+        if button == A:
+            if L2 in active or R2 in active:      # L2 navega: A no hace nada
+                self._a_consumed = True
+            elif g.col == 1:                      # columna EFECTO: la lista
+                g.open_picker()
+            return True
+        if button == SELECT:
+            return True                           # no guarda: fila GUARDAR
+        # BACK (y el resto) caen al handler genérico del editor: volver a la
+        # lista de carga.
+        return False
+
+    def _pots_combo(self, pot, col, dpad):
+        """A+dpad sobre la fila, estilo tracker: en CANAL arr/abj cicla
+        (1-8); en EFECTO abre la lista; en % izq/dcha fino (±1) y arr/abj
+        de 10 en 10. En memoria + en vivo."""
+        if col == 0:
+            if dpad in (UP, DOWN):
+                self._midi_ctrl.set_pot_canal(pot, 1 if dpad == UP else -1)
+                self.editor_screen.pots_grid.set_state(
+                    self._midi_ctrl.pots_state())
+                self._pots_dirty = True
+        elif col == 1:
+            self.editor_screen.pots_grid.open_picker()
+        else:
+            delta = {LEFT: -1, RIGHT: 1, UP: 10, DOWN: -10}[dpad]
+            self._midi_ctrl.set_pot_mix(pot, delta)
+            self.editor_screen.pots_grid.set_state(
+                self._midi_ctrl.pots_state())
+            self._pots_dirty = True
+        return True
+
+    def _pots_save(self):
+        """Guarda los knobs en memoria al robotraca.json de la canción. Los
+        cambios de EFECTOS no se persisten al instante: viven en el cfg y en
+        el engine hasta la fila GUARDAR (A sobre ella) o hasta guardar la
+        canción (_save)."""
+        self._midi_ctrl.save()
+        self._pots_dirty = False
+        self.editor_screen.toast_msg("Efectos guardados")
+
+    # ------------------------------------------------------------------
+    # Pantalla PADS (pads sampler por canción, ver screens/pads_view.py)
+    # ------------------------------------------------------------------
+    def _dispatch_pads(self, button, active):
+        g = self.editor_screen.pads_grid
+        if g.cursor == g.SAVE_ROW:
+            # Fila GUARDAR (abajo del todo): arr/abj la abandonan, solo A
+            # guarda; el resto no hace nada (select ya no guarda los pads).
+            if button in (UP, DOWN):
+                g.move(button)
+                return True
+            if button == A:
+                if L2 in active or R2 in active:  # L2 navega: A no hace nada
+                    self._a_consumed = True
+                else:
+                    self._pads_save()
+            return True
+        pad = g.cursor + 1                       # cursor 0-based -> pad 1-4
+        if button in DPAD:
+            if button in (LEFT, RIGHT):
+                self._pads_volume(pad, -5 if button == LEFT else 5)
+            else:
+                g.move(button)
+            return True
+        if button == A:
+            if L2 in active or R2 in active:      # L2 navega: A no hace nada
+                self._a_consumed = True
+            else:
+                self._open_pads_browser(pad)
+            return True
+        if button == B:
+            if L2 not in active and R2 not in active:
+                self._pads_clear(pad)
+            return True
+        if button == SELECT:
+            return True                           # ya no guarda: fila GUARDAR
+        # BACK (y el resto) caen al handler genérico del editor: volver a la
+        # lista de carga.
+        return False
+
+    def _pads_volume(self, pad, delta):
+        pct = self._midi_ctrl.pads_state()[pad - 1][1] + delta
+        self._midi_ctrl.set_pad_volume(pad, max(0, min(100, pct)))
+        self.editor_screen.pads_grid.set_state(self._midi_ctrl.pads_state())
+        self._pads_dirty = True
+
+    def _pads_clear(self, pad):
+        self._midi_ctrl.assign_pad(pad, None)
+        self.editor_screen.pads_grid.set_state(self._midi_ctrl.pads_state())
+        self.editor_screen.toast_msg(f"PAD {pad}: sin sample")
+        self._pads_dirty = True
+
+    def _ensure_pad_audio(self):
+        """Los pads suenan aunque la canción no esté reproduciéndose: su
+        Voice se renderiza en el callback del stream, así que basta con
+        que el stream exista. Se crea perezoso (aquí, al disparar un pad
+        desde el callback MIDI), no al cargar la canción."""
+        if self.player is not None:
+            self.player._ensure_stream()
+
+    def _pads_save(self):
+        """Guarda los pads en memoria al robotraca.json de la canción. Los
+        cambios de PADS no se persisten al instante: viven en el cfg y en
+        el engine hasta la fila GUARDAR (A sobre ella) o hasta guardar la
+        canción (_save)."""
+        self._midi_ctrl.save()
+        self._pads_dirty = False
+        self.editor_screen.toast_msg("Pads guardados")
+
+    def _open_pads_browser(self, pad):
+        """Navegador de samples para el pad: enseña la biblioteca de pads
+        (pads/, solo samples de pads, no la biblioteca general) y la carga
+        asigna al pad (clave "pads" de la canción)."""
+        self._pads_pad = pad
+        root = self.pads_dir if self.pads_dir.is_dir() \
+            else self.editor_screen.project.dir / "samples"
+        self._open_browser(SampleBrowser(
+            root, on_load=self._pads_sample_loaded,
+            on_close=self._close_browser))
+
+    def _pads_sample_loaded(self, path):
+        # El WAV ya está en la biblioteca de pads: se referencia por su
+        # nombre relativo a ella (p.ej. "Distorted metal/Dip Spit.wav"),
+        # sin copiarlo a la canción.
+        path = Path(path)
+        try:
+            name = path.relative_to(self.pads_dir).as_posix()
+        except ValueError:                       # navegador en fallback
+            name = path.name
+        self._midi_ctrl.assign_pad(self._pads_pad, name)
+        self.editor_screen.pads_grid.set_state(self._midi_ctrl.pads_state())
+        # sin self.dirty (el robotraca.json no es el lgptsav.dat): la
+        # asignación queda en memoria hasta guardar (fila GUARDAR o Guardar)
+        self._pads_dirty = True
+        self.editor_screen.toast_msg(f"PAD {self._pads_pad}: {name}")
+        self._close_browser()
 
 
     def _dispatch_chain(self, button, active):
@@ -575,6 +854,10 @@ class Robotracker2App(App):
         """Persiste la configuración global (interfaces MIDI) al cambiar."""
         if self.midi_live:        # la interfaz puede haber cambiado: apaga
             self._set_midi_live(False)   # el modo (el usuario lo re-arma)
+        # La interfaz de control puede haber cambiado: reabrir (barato;
+        # los knobs/botones siguen la lista del engine por referencia).
+        if self._midi_ctrl is not None:
+            self._midi_ctrl.open(self.config.get("midi_control"))
         save_config(self.config)
 
     def _project_action(self, key):
@@ -592,13 +875,21 @@ class Robotracker2App(App):
 
 
     def _save(self):
+        """Guarda la canción (lgptsav.dat) y, si las pantallas PADS/POTS
+        tienen cambios en memoria, también su robotraca.json."""
         ed = self.editor_screen
         try:
             save_project(ed.project)
             self.dirty = False
-            ed.toast_msg("Guardado")
+            msg = "Guardado"
         except Exception as exc:                     # noqa: BLE001
-            ed.toast_msg(f"Error: {exc}")
+            msg = f"Error: {exc}"
+        if self._pads_dirty or self._pots_dirty:
+            self._midi_ctrl.save()
+            self._pads_dirty = False
+            self._pots_dirty = False
+            msg += " + pads/knobs"
+        ed.toast_msg(msg)
 
     # ------------------------------------------------------------------
     # Diálogo de cambios sin guardar
@@ -638,7 +929,7 @@ class Robotracker2App(App):
         # "cancel": no hace nada
 
     def _request_exit(self):
-        if self.dirty:
+        if self.dirty or self._pads_dirty or self._pots_dirty:
             self._confirm_exit()
         else:
             self.stop()
@@ -648,7 +939,8 @@ class Robotracker2App(App):
                       on_proceed=self.stop)
 
     def _request_load(self, song_dir):
-        if self.dirty and self.editor_screen.project is not None:
+        if (self.dirty or self._pads_dirty or self._pots_dirty) \
+                and self.editor_screen.project is not None:
             self._confirm("Cambios sin guardar.\n¿Cargar otra canción?",
                           on_proceed=lambda: self.load_song(song_dir))
         else:
@@ -661,9 +953,7 @@ class Robotracker2App(App):
         if self.player is None:
             return
         if self.player.playing:
-            self.player.stop()
-            self._play_start = None
-            self.editor_screen.set_play_indicator(False)
+            self._stop_play()
             return
         ed = self.editor_screen
         if ed.current == "chain":
@@ -685,6 +975,39 @@ class Robotracker2App(App):
         if ok:
             self._play_start = time.monotonic()
             self.editor_screen.set_play_indicator(True, 0)
+
+    def _stop_play(self):
+        """Para la reproducción (botón stop del controlador MIDI)."""
+        if self.player is None:
+            return
+        self.player.stop()
+        self._play_start = None
+        self.editor_screen.set_play_indicator(False)
+
+    # -- controlador MIDI del reproductor (botones, como el mixer) ---------
+    def _midi_action(self, accion):
+        """Traduce una acción del controlador MIDI (up/down/play/stop) a la
+        misma acción que en el player. sampleN no llega aquí: el callback
+        MIDI dispara los pads del engine directamente (ver midi_ctrl)."""
+        if accion == "play":
+            self._toggle_play()
+        elif accion == "stop":
+            self._stop_play()
+        elif accion in ("up", "down"):
+            self._midi_song_step(-1 if accion == "up" else 1)
+
+    def _midi_song_step(self, delta):
+        """Canción anterior/siguiente con up/down del controlador (como la
+        lista del player). En la pantalla de carga mueve el cursor y carga
+        la seleccionada."""
+        if not self.songs:
+            return
+        if self._song_dir is not None and self._song_dir in self.songs:
+            idx = (self.songs.index(self._song_dir) + delta) % len(self.songs)
+            self._request_load(self.songs[idx])
+        else:                       # pantalla de carga (sin canción)
+            self.load_screen.move(delta)
+            self._request_load(self.load_screen.selected())
 
 
     # -- mute (L2+S en SONG, estilo LGPT) ------------------------------
@@ -768,6 +1091,8 @@ class Robotracker2App(App):
             g.live_note(step, note, vel)
 
     def _tick(self, _dt):
+        for accion in self._midi_ctrl.drain():
+            self._midi_action(accion)
         if self.midi_live:
             self._paint_midi_notes()
         ed = self.editor_screen
@@ -810,16 +1135,34 @@ class Robotracker2App(App):
         project = load_project(song_dir)
         if self.player is not None:
             self.player.close()
+        # Sin banco global de pads: los pads son SOLO por canción
+        # (robotraca.json "pads" contra la biblioteca pads/, aplicado en
+        # _midi_ctrl.set_song); el engine se crea sin wavs_dir.
         self.player = Player(project)
+        # Controlador MIDI del reproductor: aplica el robotraca.json de la
+        # canción (mute/vocoder/presence/fx/fx_mix/master/pad_volume/pads)
+        # al engine y reconfigura los knobs a sus targets de esa canción.
+        self._midi_ctrl.set_song(self.player.engine, song_dir)
+        self._song_dir = song_dir
         self._play_start = None
         self.editor_screen.set_play_indicator(False)
         self.editor_screen.enter_song(project, display_name(song_dir.name))
+        # PADS/POTS: estado de esta canción (robotraca.json "pads" y
+        # "pots"/"fx_mix"; sin la clave, vacíos — no hay banco global)
+        self.editor_screen.pads_grid.set_state(self._midi_ctrl.pads_state())
+        self.editor_screen.pots_grid.set_state(self._midi_ctrl.pots_state())
         self.dirty = False
+        self._pads_dirty = False
+        self._pots_dirty = False
         self.sm.current = "editor"
 
     def on_stop(self):
-        """Al salir, cierra la interfaz MIDI abierta (si la hay)."""
+        """Al salir, cierra las interfaces MIDI abiertas (si las hay)."""
+        if self._ev_pad is not None:
+            self._ev_pad.stop()
         self._midi_notes.close()
+        if self._midi_ctrl is not None:
+            self._midi_ctrl.close()
 
 
 def main():

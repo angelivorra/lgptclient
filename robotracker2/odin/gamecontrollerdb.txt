@@ -1,10 +1,16 @@
-# SDL GameControllerDB propio para robotracker2 (Odin 2).
+# SDL GameControllerDB de diagnóstico para robotracker2 (Odin 2).
 #
-# ROCKNIX no trae mapeado el DualSense (o se conecta como joystick genérico),
-# así que gptokeyb no sabe traducir los gatillos L2/R2 (ejes analógicos) a
-# teclas. Esta entrada es la oficial de SDL_GameControllerDB para el
-# "Sony Interactive Entertainment DualSense Wireless Controller"
-# (VID 054c, PID 0ce6, versión 8111) en Linux.
+# La app YA NO usa gptokeyb (lee el mando por el joystick nativo), así que
+# este fichero solo lo consume keylog_test.sh para depurar la vía
+# gptokeyb→teclado. Aun así debe ser COMPLETO para los mandos que se usen:
+# exportar SDL_GAMECONTROLLERCONFIG_FILE sustituye la db global de ROCKNIX
+# (/storage/.config/SDL-GameControllerDB/gamecontrollerdb.txt), así que una
+# entrada que falte aquí deja ese mando sin reconocer como gamecontroller y
+# gptokeyb no traduce NADA de él (esto es exactamente lo que rompía L2/R2).
 #
-# El launcher exporta SDL_GAMECONTROLLERCONFIG_FILE apuntando a este fichero.
+# Entradas: el mando integrado "AYN Odin2 Gamepad" (la de ROCKNIX) y el
+# DualSense por Bluetooth (dos firmwares: ejes/gatillos en distinta posición
+# según la versión). El DualSense por USB ya está en la db interna de SDL2.
+0300b605202000000130000001000000,AYN Odin2 Gamepad,platform:Linux,x:b2,a:b1,b:b0,y:b3,back:b6,guide:b8,start:b7,dpleft:b13,dpdown:b12,dpright:b14,dpup:b11,leftshoulder:b4,lefttrigger:a2,rightshoulder:b5,righttrigger:a5,leftstick:b9,rightstick:b10,leftx:a0,lefty:a1,rightx:a3,righty:a4,
 030000004c050000e60c000011810000,PS5 Controller,a:b0,b:b1,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b10,leftshoulder:b4,leftstick:b11,lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b12,righttrigger:a5,rightx:a3,righty:a4,start:b9,x:b3,y:b2,platform:Linux,
+030000004c050000e60c000011010000,PS5 Controller,a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,misc1:b14,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,touchpad:b13,x:b0,y:b3,platform:Linux,

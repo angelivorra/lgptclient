@@ -33,6 +33,41 @@ def test_navmap_config_below_song():
     print("  navmap config below song OK")
 
 
+def test_navmap_pads_left_of_song():
+    # PADS está a la izquierda de SONG en la rejilla
+    assert neighbor("song", -1, 0) == "pads"
+    assert neighbor("pads", 1, 0) == "song"
+    print("  navmap pads left of song OK")
+
+
+def test_navmap_pots_above_pads():
+    # POTS está encima de PADS (columna 0, fila 0)
+    assert neighbor("pads", 0, -1) == "pots"
+    assert neighbor("pots", 0, 1) == "pads"
+    assert neighbor("pots", 1, 0) == "project"
+    print("  navmap pots above pads OK")
+
+
+def test_editor_navigates_to_pads():
+    from screens.editor import EditorScreen  # noqa: E402
+
+    ed = EditorScreen()
+    ed.goto("pads")
+    assert ed.current == "pads"
+    assert ed.pads_grid is not None
+    print("  editor navigates to pads OK")
+
+
+def test_editor_navigates_to_pots():
+    from screens.editor import EditorScreen  # noqa: E402
+
+    ed = EditorScreen()
+    ed.goto("pots")
+    assert ed.current == "pots"
+    assert ed.pots_grid is not None
+    print("  editor navigates to pots OK")
+
+
 def test_editor_navigates_to_config():
     from screens.editor import EditorScreen  # noqa: E402
 
@@ -78,6 +113,14 @@ if __name__ == "__main__":
         try:
             print("test_navmap_config_below_song:")
             test_navmap_config_below_song()
+            print("test_navmap_pads_left_of_song:")
+            test_navmap_pads_left_of_song()
+            print("test_navmap_pots_above_pads:")
+            test_navmap_pots_above_pads()
+            print("test_editor_navigates_to_pads:")
+            test_editor_navigates_to_pads()
+            print("test_editor_navigates_to_pots:")
+            test_editor_navigates_to_pots()
             print("test_editor_navigates_to_config:")
             test_editor_navigates_to_config()
             print("test_config_change_persists:")

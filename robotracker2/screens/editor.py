@@ -26,7 +26,9 @@ from screens.chain_view import ChainGrid
 from screens.config_view import ConfigMenu
 from screens.groove_view import GrooveGrid
 from screens.instrument_view import InstrumentMenu
+from screens.pads_view import PadsGrid
 from screens.phrase_view import PhraseGrid
+from screens.pots_view import PotsGrid
 from screens.project_view import ProjectMenu
 from screens.song_view import SongGrid
 from screens.table_view import TableGrid
@@ -37,7 +39,7 @@ from theme import (COLOR_ACCENT, COLOR_BAR_BG, COLOR_BG, COLOR_BORDER,
 BAR_H = dp(52)
 NAV_CELL_W = dp(38)
 
-NAV_COLUMNS = ["S", "C", "P", "I"]
+NAV_COLUMNS = ["D", "S", "C", "P", "I"]
 
 ROW_COLORS = {
     1: COLOR_ACCENT,            # fila media (S C P I)
@@ -139,6 +141,10 @@ class EditorScreen(Screen):
         root.add_widget(self.content)
 
         self._dirty_cb = on_change
+        self.pots_grid = PotsGrid(size_hint=(1, 1),
+                                  pos_hint={"x": 0, "y": 0})
+        self.pads_grid = PadsGrid(size_hint=(1, 1),
+                                  pos_hint={"x": 0, "y": 0})
         self.song_grid = SongGrid(on_change=self._grid_changed,
                                   size_hint=(1, 1),
                                   pos_hint={"x": 0, "y": 0})
@@ -353,6 +359,12 @@ class EditorScreen(Screen):
         if key == "song":
             self.content.add_widget(self.song_grid)
             self.song_grid._redraw()
+        elif key == "pots":
+            self.content.add_widget(self.pots_grid)
+            self.pots_grid._redraw()
+        elif key == "pads":
+            self.content.add_widget(self.pads_grid)
+            self.pads_grid._redraw()
         elif key == "chain":
             self.content.add_widget(self.chain_grid)
             self.chain_grid._redraw()

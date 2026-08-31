@@ -189,11 +189,105 @@ pantalla, B = borrar, START = play, BACK = volver) es fija.
   (selección: cut/paste, ciclar selección), `Espacio` = START, `Esc` = BACK,
   `Supr/Retroceso` = B. **R2+START** (Ctrl derecho + Espacio) alterna el
   **pintado MIDI en vivo** en PHRASE (ver arriba).
-- **Odin 2 Portal (gamepad)**: gptokeyb (`odin/robotracker2.gptk`) — X=A, B=B,
-  **L2 = Ctrl izquierdo (navegar)**, **R2 = Ctrl derecho (selección)**,
-  Start = play, Back = Esc. La app también lee joystick nativo (`controls.py`).
+- **Odin 2 Portal (gamepad)**: ROCKNIX (InputPlumber) oculta el mando a SDL;
+  **toda la entrada la lee la app por evdev** del DualSense virtual de
+  InputPlumber (`evdev_triggers.py`): cruceta y stick izquierdo = cursor,
+  X = A, B = B, **L2 = navegar pantallas con dpad, R2 = selección**
+  (L1/R1 valen igual), Start = play, Back = Esc. En el mando, **R2+Start**
+  es el pintado MIDI en vivo.
 
 Para adaptar a otro hardware solo se toca `controls.py`.
+
+## Controlador MIDI del reproductor (botones + knobs)
+
+La misma maquinaria que el mixer (sinte/midi_control.py, compartida): con la
+interfaz **MIDI Control** configurada en CONFIG, el reproductor reacciona al
+controlador físico y a la configuración de cada canción:
+
+- **Botones** (`buttons` en `config.json`, por defecto el mapeo LPD8 de
+  `sinte/lttileplayer.toml`): **play** arranca/para, **stop** para,
+  **up/down** cambian de canción (en la pantalla de carga mueven el cursor y
+  cargan), **sample1-4** disparan los pads sampler del engine (sin canción
+  cargada no hacen nada).
+- **Knobs** (`hw_pots` en `config.json`, por defecto CC 70-77 del canal 0):
+  los targets se leen de `robotraca.json` de cada canción (`"pots"`), igual
+  que en el mixer — al cambiar de canción se reconfiguran solos. Si la
+  canción no define pots, los CC sueltos caen al mapeo por defecto del
+  engine (1/7/10/20).
+- **Al cargar la canción se aplica su `robotraca.json`**: mute, vocoder,
+  presence, cantidades/mezcla de efectos (fx/fx_mix), master y volúmenes de
+  pads (`pad_volume` global en `config.json`, por defecto 45).
+
+### Pantalla EFECTOS (knobs por canción)
+
+Encima de PADS (L2+arriba desde PADS, columna D de la cabecera). Configura
+**solo los 4 knobs del LPD8: POT 1, 2, 5 y 6** (los pot3/4/7/8 no se tocan),
+**por canción** — no hay configuración global. Para cada knob se define su
+**canal** (1-8), su **efecto** y su **porcentaje** de mezcla dry/wet, igual
+que en el mixer; se guarda en el `robotraca.json` de la canción con las
+claves `"pots"` y `"fx_mix"`:
+
+```json
+{
+  "pots": {"pot1": "2:acid", "pot2": "5:delay", "pot5": "0:valve"},
+  "fx_mix": {"2": {"acid": 40}, "5": {"delay": 80}}
+}
+```
+
+(En `"pots"`, el canal se guarda 0-7 como en el mixer; la pantalla lo
+muestra 1-8. Un target multicanal tipo `"1,2:acid"` muestra el **primer**
+canal y, al editarlo, queda como un solo canal.) Sin entrada en
+`"fx_mix"`, el % es 100 (100% wet, como en el mixer).
+
+Controles, estilo tracker: **arr/abj** elige knob (y baja a la fila
+**GUARDAR** de abajo del todo) · **izq/dcha** cambia de columna (canal /
+efecto / %) · en **CANAL**, **A+arr/abj** cicla (1-8) · en **EFECTO**, **A**
+abre la **lista** de efectos (off + los del engine; arr/abj mueve, **A**
+elige, **B** cierra) · en **%**, **A+izq/dcha** fino (±1) y **A+arr/abj**
+de 10 en 10 · **A sobre GUARDAR** guarda. Los cambios quedan **en
+memoria** (los targets del MIDI y el fx_mix se aplican en vivo al engine) y
+solo se persisten al guardar, igual que PADS: con A sobre la fila GUARDAR o
+al **Guardar la canción**. Con knobs sin guardar, cambiar de canción o
+salir pide confirmación igual que con el lgptsav.dat. El efecto "off"
+borra el target del knob.
+
+### Pantalla PADS (pads sampler por canción)
+
+A la izquierda de SONG (L2+izquierda desde SONG). Los pads **no tienen
+configuración global: solo la de cada canción**. Cada canción define los
+suyos en su `robotraca.json`, clave `"pads"` (nombres resueltos contra la
+**biblioteca de pads**, `pads/` en la raíz del repo — en la Odin
+`/storage/pads` —, con subcarpetas como `"Distorted metal/Dip Spit.wav"`)
+junto al `"pad_volume"` por pad ya existente:
+
+```json
+{
+  "pads": {"1": "abduccion.wav", "2": "Kick 10.wav", "4": "risa.wav"},
+  "pad_volume": {"1": 27, "2": 14, "3": 42, "4": 55}
+}
+```
+
+Controles de la pantalla: **arr/abj** elige pad (y baja a la fila
+**GUARDAR** de abajo del todo) · **izq/dcha** volumen ±5 · **A** abre el
+navegador de la biblioteca de pads (enseña solo `pads/`, no la biblioteca
+general de samples; asigna el WAV elegido sin copiarlo) · **B** quita la
+asignación. Los cambios quedan **en memoria** (suenan al momento sobre el
+engine) y solo se persisten al guardar: con **A sobre la fila GUARDAR**, o
+al **Guardar la canción** (menú PROJECT o el diálogo de cambios sin
+guardar). Con pads sin guardar, cambiar de canción o salir pide
+confirmación igual que con el lgptsav.dat.
+
+Los pads **suenan aunque la canción no se esté reproduciendo**: su voz se
+renderiza en el callback del stream de audio, que se crea perezosamente al
+primer disparo de un pad (sin reproducir nada).
+
+Semántica: sin clave `"pads"`, los pads de la canción están **vacíos** (no
+se cae a ningún banco global). El mixer conserva su propio banco
+(`wavs/pads.json`), independiente y sin efecto en robotracker2.
+
+`buttons`, `hw_pots` y `pad_volume` globales solo se editan a mano en
+`config.json` (la pantalla CONFIG edita las interfaces). La lógica vive en
+`sinte/midi_control.py`, importada vía `sinte_bridge.py`.
 
 ## Ejecutar
 
@@ -211,11 +305,25 @@ En **PC arranca en ventana** (1280×720). Con `--fullscreen` (o
 
 ## Odin 2 Portal (ROCKNIX)
 
-Se instala como *port* de EmulationStation. En la Odin el mando se traduce a
-teclado con **gptokeyb** (`odin/robotracker2.gptk`): **X → A**, **B → B**,
-**L2 → Ctrl izq (navegar pantallas con dpad)**, **R2 → Ctrl dcha
-(selección)**, **dpad → cursor**, **A → play**, **Back → Esc**. En el mando,
-**R2+Start** es el pintado MIDI en vivo.
+Se instala como *port* de EmulationStation. ROCKNIX gestiona el mando con
+InputPlumber: **agarra (grab) el mando AYN integrado y lo oculta a SDL**
+(reglas udev dinámicas), así que el joystick nativo de Kivy no ve nada. Lo que
+InputPlumber expone es un **DualSense virtual** (uhid) que recibe toda la
+entrada traducida del mando (cruceta, sticks, botones, gatillos); con el
+perfil por defecto su teclado virtual no emite nada. Por eso la app, con
+`ROBOTRACKER2_EVDEV_GAMEPAD=1` (la pone el launcher), lee **toda la entrada
+por evdev crudo** del DualSense virtual (`evdev_triggers.py`: hat=cruceta,
+ejes=stick/gatillos con umbral, BTN_*=botones) y desactiva el joystick
+nativo: **cruceta o stick izquierdo → cursor**, **X → A**, **B → B**,
+**L2 → navegar pantallas con dpad**, **R2 → selección** (L1/R1 valen
+igual), **Start → play**, **Back → Esc**. En el mando, **R2+Start** es
+el pintado MIDI en vivo. gptokeyb quedó descartado: traducía los gatillos a
+Ctrl por teclado, pero solo si SDL reconocía el DualSense virtual como
+gamecontroller (depende de una db de mapeos), y con el mando oculto a SDL
+no hay nada que reconocer.
+Para depurar la entrada queda `odin/keylog_test.sh` + `odin/keylog.py`
+(registran teclado y joystick nativo, más la lectura cruda evdev del mando,
+del DualSense virtual y de los teclados virtuales).
 El launcher `odin/Robotracker2.sh` fuerza fullscreen (Sway),
 fija densidad ×2 y reutiliza el venv y el `sinte` de robotracker
 (`/storage/robotracker-venv`, `/storage/sinte`).

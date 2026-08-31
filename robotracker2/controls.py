@@ -54,19 +54,46 @@ def key_to_button(keycode, codepoint=None):
 # =========================================================================
 # Perfil gamepad (Odin 2 Portal)
 # =========================================================================
-# En la Odin (ROCKNIX) el mando se traduce a teclado con gptokeyb usando
-# odin/robotracker2.gptk (X->a, B->s, R2->ctrl derecho, L2->ctrl izquierdo,
-# dpad->flechas, Start->space, Back->esc), así que la app lee teclado y estos
-# índices no se usan ahí. Este mapa es para lectura nativa del joystick (misma
-# intención). Ajustar los índices al mando concreto si se usa sin gptokeyb.
+# La Odin (ROCKNIX) se lee por el JOYSTICK NATIVO (Kivy/SDL, sin mapeos):
+# dpad = hat, X = A, B = B, Start/Back, y los gatillos analógicos L2/R2 por
+# ejes (GAMEPAD_TRIGGER_AXES). gptokeyb (odin/robotracker2.gptk) quedó
+# descartado: traducía los gatillos a Ctrl por teclado, pero depende de que
+# SDL reconozca el mando como gamecontroller (la db de mapeos); si no lo
+# reconoce (p.ej. el mando integrado de la Odin sin su entrada en la db), no
+# llega nada. El joystick nativo no necesita mapeo, así que es la vía fiable.
+# Índices de botón RAW del mando integrado de la Odin 2 (y del DualSense):
 GAMEPAD_BUTTONS = {
     2: A,        # X  -> A
     1: B,        # B  -> B
-    5: R2,       # R  -> R2
-    4: L2,       # L  -> L2
+    5: R2,       # R1 -> R2 (hombro digital: misma acción que el gatillo)
+    4: L2,       # L1 -> L2 (hombro digital: misma acción que el gatillo)
     7: START,    # Start -> play/stop
     6: BACK,     # Back  -> volver
 }
+
+# Ejes analógicos RAW del joystick que actúan como gatillos L2/R2. En el
+# mando integrado de la Odin 2 y en el DualSense, el eje 2 es el gatillo
+# izquierdo (L2) y el 5 el derecho (R2); el valor va de 0 (sin pulsar) a
+# 32767 (a fondo). Los ejes de los sticks (0/1/3/4) no se mapean.
+GAMEPAD_TRIGGER_AXES = {2: L2, 5: R2}
+# Umbral a partir del cual un gatillo cuenta como pulsado (~9% del recorrido,
+# el mismo criterio que deadzone_triggers del .gptk).
+TRIGGER_AXIS_THRESHOLD = 3000
+
+
+def trigger_axis_buttons(axisid, value):
+    """Botones de gatillo activos para un eje del joystick (o conjunto vacío).
+
+    Para un eje de gatillo, devuelve {L2}/{R2} si el valor supera el umbral y
+    el conjunto vacío si está por debajo (soltado). Para cualquier otro eje
+    devuelve vacío siempre.
+    """
+    button = GAMEPAD_TRIGGER_AXES.get(axisid)
+    if button is None:
+        return frozenset()
+    if value > TRIGGER_AXIS_THRESHOLD:
+        return frozenset({button})
+    return frozenset()
 
 
 def hat_to_buttons(hx, hy):

@@ -1190,10 +1190,12 @@ class Engine:
         # mixer vía scope_snapshot() para dibujar el osciloscopio.
         self._scope_ring = np.zeros(SCOPE_LEN, dtype=np.float32)
         self._scope_pos = 0
-        # Banco de WAVs para los pads: wavs_dir/pads.json es la única fuente
-        # de verdad ({"1": "ruta/relativa.wav", ...}, la escribe el mixer en
-        # MixerBackend.assign_pad). Cada pad carga el fichero que apunte su
-        # entrada, tal cual, sin copiarlo ni renombrarlo a ningún 00N.wav.
+        # Banco de WAVs para los pads: GLOBAL por defecto (wavs_dir/pads.json,
+        # la única fuente del mixer, escrita en MixerBackend.assign_pad).
+        # Además cada canción puede traer su propio banco en la clave "pads"
+        # de robotraca.json (ver apply_song_config -> load_pad_bank). Cada
+        # pad carga el fichero que apunte su entrada, tal cual, sin copiarlo
+        # ni renombrarlo a ningún 00N.wav.
         self.wavs_dir = Path(wavs_dir) if wavs_dir else None
         self.pad_samples: list[tuple[np.ndarray, int] | None] = [None] * MAX_PADS
         self.pad_names: list[str | None] = [None] * MAX_PADS  # para logs
@@ -1203,18 +1205,21 @@ class Engine:
         if self.wavs_dir:
             self._load_pad_samples(self.wavs_dir)
 
-    def _load_pad_samples(self, wavs_dir: Path):
-        if not wavs_dir.is_dir():
+    def load_pad_bank(self, meta: dict, base: Path):
+        """Banco de pads desde `meta` ({"1": "rel.wav", ...}, claves 1-8),
+        resolviendo cada WAV contra `base`. Los pads sin entrada quedan
+        vacíos. Lo reutilizan `_load_pad_samples` (banco global del mixer,
+        wavs/pads.json) y `apply_song_config` (pads POR CANCIÓN, clave
+        "pads" del robotraca.json, base = <song_dir>/pads)."""
+        self.pad_samples = [None] * MAX_PADS
+        self.pad_names = [None] * MAX_PADS
+        if base is None or not base.is_dir():
             return
-        try:
-            meta = json.loads((wavs_dir / "pads.json").read_text())
-        except (OSError, ValueError):
-            meta = {}
         for i in range(MAX_PADS):
             rel = meta.get(str(i + 1))
             if not rel:
                 continue
-            wav = wavs_dir / rel
+            wav = Path(base) / rel
             if not wav.is_file():
                 print(f"[engine] pad{i + 1}: no existe {rel}")
                 continue
@@ -1225,6 +1230,15 @@ class Engine:
                 print(f"[engine] pad{i + 1} <- {rel}")
             except Exception as exc:
                 print(f"[engine] pad {rel}: {exc}")
+
+    def _load_pad_samples(self, wavs_dir: Path):
+        if not wavs_dir.is_dir():
+            return
+        try:
+            meta = json.loads((wavs_dir / "pads.json").read_text())
+        except (OSError, ValueError):
+            meta = {}
+        self.load_pad_bank(meta, wavs_dir)
 
     def reload_pad_samples(self):
         """Vuelve a leer el banco de pads de `wavs_dir` (p.ej. tras

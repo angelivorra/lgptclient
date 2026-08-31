@@ -41,8 +41,14 @@ import numpy as np
 import sounddevice as sd
 
 from event_server import EventMidiOut, EventServer
-from lgpt_engine import EFFECT_PRESETS, Engine, MasterChain, MidiOut, \
-    NETCC_CHANNEL, SAMPLE_RATE
+from lgpt_engine import Engine, MasterChain, MidiOut, SAMPLE_RATE
+# Botones/knobs MIDI, open_midi_input y aplicación de robotraca.json: en
+# midi_control.py, compartido con robotracker2 (que lo importa vía
+# sinte_bridge). Se re-exportan aquí para no cambiar la API de lgpt_player
+# (los usa mixer/backend.py y sinte/tests/test_player.py).
+from midi_control import _pick_port, apply_song_config, build_song_pots, \
+    load_song_cfg, match_button, match_pot, match_pot_red, \
+    open_midi_input, parse_button_spec, parse_pot_target
 
 DEFAULT_SONGS_DIR = "/home/angel/Documentos/canciones/"
 CONFIG_PATH = Path(__file__).resolve().parent / "lttileplayer.toml"
@@ -174,23 +180,6 @@ def find_projects(songs_dir: Path) -> list[Path]:
     )
 
 
-def _pick_port(names: list[str], wanted: str | None, what: str) -> str | None:
-    """Resuelve un puerto MIDI por nombre parcial. Si el nombre guardado
-    incluye el id de cliente ALSA ("... 128:0"), también se prueba sin él
-    (el número cambia entre arranques)."""
-    if not names:
-        print(f"[midi] no hay puertos MIDI de {what}; desactivado")
-        return None
-    if wanted:
-        base = wanted.rsplit(" ", 1)[0]      # sin el "client:port" final
-        for n in names:
-            if wanted.lower() in n.lower() or base.lower() in n.lower():
-                return n
-        print(f"[midi] puerto '{wanted}' no encontrado; disponibles: {names}")
-        return None
-    return names[0]
-
-
 class WavRecorder:
     """Graba la salida de audio a un WAV sin bloquear el callback:
     el callback encola bloques y un hilo escritor los vuelca a disco."""
@@ -241,222 +230,6 @@ class MidoMidiOut(MidiOut):
     def program_change(self, channel, program):
         self._port.send(self._mido.Message(
             "program_change", channel=channel, program=program))
-
-
-def parse_button_spec(spec: str) -> tuple | None:
-    """'note:canal:nota' o 'cc:canal:control' -> tupla normalizada, o None."""
-    try:
-        kind, ch, num = spec.split(":")
-        ch, num = int(ch), int(num)
-    except (ValueError, AttributeError):
-        return None
-    if kind == "note":
-        return ("note_on", ch & 0x0F, num & 0x7F)
-    if kind == "cc":
-        return ("control_change", ch & 0x0F, num & 0x7F)
-    return None
-
-
-def match_button(mapping: dict, msg) -> str | None:
-    """Devuelve la acción del botón que coincide con el mensaje, o None.
-
-    mapping: acción -> spec de parse_button_spec()."""
-    if msg.type == "note_on" and msg.velocity == 0:
-        return None
-    for action, spec in mapping.items():
-        if spec is None:
-            continue
-        mtype, ch, num = spec
-        if msg.type != mtype or getattr(msg, "channel", None) != ch:
-            continue
-        if mtype == "note_on" and msg.note == num:
-            return action
-        if mtype == "control_change" and msg.control == num and msg.value > 0:
-            return action
-    return None
-
-
-def parse_pot_target(target: str) -> tuple | None:
-    """'canales:parametro[:tope]' -> (canales, parametro, escala).
-
-    canales: uno o varios separados por coma (`2` o `1,2`), canal tracker
-    0-7; un mismo knob puede así mover varias pistas a la vez (p.ej. la
-    reverb de todos los bajos).
-    tope: recorrido máximo del knob en % (100 por defecto). Sirve para dejar
-    un efecto en una zona discreta: `1,2:reverb:35` = de 0 a 35%.
-    Devuelve None si no es válido.
-    """
-    try:
-        parts = target.split(":")
-    except AttributeError:
-        return None
-    if len(parts) == 2:
-        chans_str, name = parts
-        scale = 1.0
-    elif len(parts) == 3:
-        chans_str, name, top = parts
-        try:
-            scale = float(top) / 100.0
-        except ValueError:
-            return None
-        if not 0.0 < scale <= 1.0:
-            return None
-    else:
-        return None
-    if not name:
-        return None
-    chans = []
-    for c in chans_str.split(","):
-        try:
-            ci = int(c)
-        except ValueError:
-            return None
-        if not 0 <= ci < 8:
-            return None
-        chans.append(ci)
-    if not chans:
-        return None
-    return (tuple(chans), name, scale)
-
-
-def match_pot(pots: list, msg) -> tuple | None:
-    """Devuelve (canales, parámetro, nº de knob 0-7, escala) del pot que
-    coincide con el mensaje, o None.
-
-    pots: lista de (spec, target, idx) con target de parse_pot_target
-    (canales|None, param, escala); canales None = se deriva del canal MIDI
-    del mensaje (% 8). `idx` es el knob físico (pot1 -> 0), necesario para
-    pintarlo en el visor."""
-    if msg.type != "control_change":
-        return None
-    for spec, target, idx in pots:
-        if spec is None:
-            continue
-        mtype, ch, num = spec
-        if mtype == "control_change" and msg.channel == ch \
-                and msg.control == num:
-            chans, tparam, scale = target
-            if chans is None:
-                chans = (msg.channel % 8,)
-            return chans, tparam, idx, scale
-    return None
-
-
-def match_pot_red(pots_red: list, msg) -> int | None:
-    """Como `match_pot`, pero para pots configurados en `pots_red` (JSON de
-    la canción): no controlan nada local, solo se reenvían por red. Devuelve
-    el número de control con el que reenviar, o None."""
-    if msg.type != "control_change":
-        return None
-    for spec, control in pots_red:
-        mtype, ch, num = spec
-        if mtype == "control_change" and msg.channel == ch \
-                and msg.control == num:
-            return control
-    return None
-
-
-def open_midi_input(port_name: str | None, engine_ref: dict,
-                    ui_queue: queue.SimpleQueue, buttons: dict,
-                    pots: dict, pots_red: list | None = None,
-                    pots_red_global: list | None = None,
-                    event_out=None):
-    """Abre el puerto MIDI de entrada: botones a la UI y pots/CC al engine.
-
-    engine_ref es un dict mutable con la clave "engine": el callback MIDI
-    siempre usa el engine actual, aunque se cambie de canción.
-    Si hay pots configurados solo se procesan esos; si no, se usa el mapeo
-    CC por defecto del engine (1/7/10/20).
-    pots_red (opcional): pots que no controlan nada local, solo se reenvían
-    por red (ver `pots_red` del JSON de la canción y `match_pot_red`).
-    pots_red_global (opcional): pots de red FIJOS para todas las canciones
-    (`red = true` en `[pots]` del TOML). Se reenvían por `event_out` directo,
-    sin pasar por el engine, así funcionan también en la lista (sin canción)
-    y en cualquier canción sin depender de su JSON. Ver el bloque en
-    `on_message` antes del early-return de engine None.
-    """
-    if port_name == "off":
-        return None
-    try:
-        import mido
-    except ImportError:
-        print("[midi] mido no disponible; control MIDI desactivado")
-        return None
-
-    chosen = _pick_port(mido.get_input_names(), port_name, "entrada")
-    if chosen is None:
-        return None
-
-    def on_message(msg):
-        # En modo calibración, TODO el MIDI se desvía a calib_queue (con
-        # valor/velocidad) y no dispara botones/pots/engine. Ver _calib_view.
-        if engine_ref.get("calib_mode"):
-            cq = engine_ref.get("calib_queue")
-            if cq is not None:
-                num = getattr(msg, "note", getattr(msg, "control", 0))
-                val = getattr(msg, "value", getattr(msg, "velocity", 0))
-                cq.put((msg.type, getattr(msg, "channel", 0), num, val))
-            return
-        rq = engine_ref.get("raw_queue")
-        if rq is not None:
-            num = getattr(msg, "note", getattr(msg, "control", 0))
-            rq.put((msg.type, getattr(msg, "channel", 0), num))
-        if engine_ref.get("capture_mode"):
-            return                          # CONFIG capturando: no disparar
-        # Los botones mapeados tienen prioridad sobre pots y CC
-        action = match_button(buttons, msg)
-        if action is not None:
-            if action.startswith("sample"):
-                # pads sampler: disparan WAVs del banco (sample1 -> pad 1,
-                # ver wavs_dir/pads.json). Pero en la lista (sin canción
-                # cargada) no hay samples, así que cualquiera de esos pads
-                # abre la calibración de motores.
-                engine = engine_ref.get("engine")
-                if engine is None:
-                    ui_queue.put("calib")
-                else:
-                    try:
-                        idx = int(action[6:]) - 1
-                    except ValueError:
-                        idx = 0
-                    engine.push_event("trigger", idx)
-            else:
-                ui_queue.put(action)
-            return
-        # Pots de red globales: fijos para todas las canciones y también en la
-        # lista (sin canción cargada). Van ANTES del early-return de engine
-        # None y se reenvían por `event_out` directo (que ya resuelve el
-        # timestamp con o sin engine, ver EventMidiOut._ts): así estos knobs
-        # modulan siempre la voz del vocoder, se esté donde se esté.
-        if pots_red_global and event_out is not None:
-            control = match_pot_red(pots_red_global, msg)
-            if control is not None:
-                event_out.cc(NETCC_CHANNEL, control, msg.value)
-                return
-        engine = engine_ref.get("engine")
-        if engine is None:
-            return
-        # pots: la lista se rellena por canción; se evalúa EN CADA mensaje
-        handled = False
-        if pots:
-            hit = match_pot(pots, msg)
-            if hit is not None:
-                chans, tparam, idx, scale = hit
-                value = int(round(msg.value * scale))
-                for tch in chans:
-                    engine.push_event("param", tch, tparam, value)
-                handled = True
-        if pots_red:
-            control = match_pot_red(pots_red, msg)
-            if control is not None:
-                engine.push_event("netcc", control, msg.value)
-                handled = True
-        if not handled and not pots and msg.type == "control_change":
-            engine.push_event("cc", msg.channel % 8, msg.control, msg.value)
-
-    port = mido.open_input(chosen, callback=on_message)
-    print(f"[midi] entrada: '{chosen}'")
-    return port
 
 
 def open_midi_output(port_name: str | None) -> MidoMidiOut | None:
@@ -769,124 +542,23 @@ class Player:
     def _apply_song_config(self, project_dir: Path, engine: Engine):
         """Config por canción (robotraca.json en la carpeta del proyecto):
         mute de canales y targets de los knobs (canal:efecto).
-        Sin JSON: sin mute y sin efectos."""
-        import json
-        cfg_file = project_dir / "robotraca.json"
-        song_cfg = {}
-        if cfg_file.is_file():
-            try:
-                song_cfg = json.loads(cfg_file.read_text())
-            except (OSError, json.JSONDecodeError) as exc:
-                print(f"[config] {cfg_file.name}: {exc}")
-        engine.muted = set(song_cfg.get("mute", []))
+        Sin JSON: sin mute y sin efectos. (La lógica está en
+        midi_control.py, compartida con robotracker2; aquí solo se añade el
+        mute_override del TOML y se rellenan las listas que open_midi_input
+        evalúa en cada mensaje.)"""
+        cfg = load_song_cfg(project_dir)
+        apply_song_config(engine, cfg, float(self.args.pad_volume),
+                          song_dir=project_dir,
+                          pads_dir=getattr(self.args, "pads_dir", None))
         if getattr(self.args, "mute_override", None) is not None:
             engine.muted = set(self.args.mute_override)
-        # Compensación de presencia al final de la cadena de FX (ver
-        # Engine.render/Channel.fx_presence): opt-in por canal, solo para
-        # la pista en la que se esté trabajando, no global.
-        presence_channels = set(song_cfg.get("presence", []))
-        for ch in engine.channels:
-            ch.fx_presence = ch.idx in presence_channels
-        # Pistas cuyo acorde (param1/param2, ver Engine._chord_tones) se
-        # manda al vocoder por el evento ACRD además de/en vez de sonar
-        # localmente (ver Channel.vocoder_out).
-        vocoder_channels = set(song_cfg.get("vocoder", []))
-        for ch in engine.channels:
-            ch.vocoder_out = ch.idx in vocoder_channels
-        # Cantidad de cada efecto por canal (0-100), persistida por el mixer:
-        # {"fx": {"2": {"acid": 80, "delay": 40}}}. Son los mismos nombres de
-        # EFFECT_PRESETS que usan los targets de los pots.
-        fx_cfg = song_cfg.get("fx", {})
-        if isinstance(fx_cfg, dict):
-            for ch_str, amounts in fx_cfg.items():
-                try:
-                    ci = int(ch_str)
-                except (TypeError, ValueError):
-                    continue
-                if not 0 <= ci < len(engine.channels) \
-                        or not isinstance(amounts, dict):
-                    continue
-                for name, val in amounts.items():
-                    if name in EFFECT_PRESETS:
-                        try:
-                            engine.channels[ci].fx_amounts[name] = \
-                                float(val) / 100.0
-                        except (TypeError, ValueError):
-                            pass
-        # Mezcla dry/wet de cada efecto por canal (0-100), persistida por el
-        # mixer: {"fx_mix": {"2": {"acid": 50}}}. Ausencia = 100 (100% wet,
-        # igual que sin esto).
-        fx_mix_cfg = song_cfg.get("fx_mix", {})
-        if isinstance(fx_mix_cfg, dict):
-            for ch_str, amounts in fx_mix_cfg.items():
-                try:
-                    ci = int(ch_str)
-                except (TypeError, ValueError):
-                    continue
-                if not 0 <= ci < len(engine.channels) \
-                        or not isinstance(amounts, dict):
-                    continue
-                for name, val in amounts.items():
-                    if name in EFFECT_PRESETS:
-                        try:
-                            engine.channels[ci].fx_mix[name] = \
-                                float(val) / 100.0
-                        except (TypeError, ValueError):
-                            pass
-        # Volumen general de la canción (0-200, 100 = el del proyecto LGPT).
-        # Sirve para igualar la sonoridad entre canciones sin tocar el
-        # lgptsav.dat: unas están mezcladas más fuerte que otras.
-        master = song_cfg.get("master")
-        if master is not None:
-            try:
-                engine.master = engine.base_master * float(master) / 100.0
-            except (TypeError, ValueError):
-                print(f"[config] master inválido: {master!r}")
-        # volumen de pads: número (todos) o dict por pad {"2": 40}
-        pv = song_cfg.get("pad_volume", self.args.pad_volume)
-        if isinstance(pv, dict):
-            engine.pad_volume_map = {
-                int(k) - 1: float(v) / 100 for k, v in pv.items()}
-            # los pads que el dict no menciona siguen el volumen global,
-            # no el que trae el engine de fábrica
-            engine.pad_volume_default = float(self.args.pad_volume) / 100
-        else:
-            engine.pad_volume_map = {}
-            engine.pad_volume_default = float(pv) / 100
-        # targets por canción sobre el mapeo físico global de knobs
-        song_pots = song_cfg.get("pots", {})
+        pots, pots_red = build_song_pots(self.args.hw_pots, cfg)
+        # open_midi_input capturó estas listas por referencia al abrir el
+        # puerto: se mutan en sitio, nunca se reasignan.
         self.args.pots.clear()
-        for key, entry in self.args.hw_pots.items():
-            if not isinstance(entry, dict):
-                continue
-            spec = parse_button_spec(entry.get("cc", ""))
-            target = parse_pot_target(song_pots.get(key, ""))
-            if spec is None or target is None:
-                continue
-            try:
-                idx = int(key[3:]) - 1     # "pot3" -> 2
-            except ValueError:
-                continue
-            if not 0 <= idx < 8:
-                continue
-            self.args.pots.append((spec, target, idx))
-        # pots que solo se reenvían por red (ver NETCC_CHANNEL en el engine):
-        # una lista de nombres de pot, no un dict target -> el control de red
-        # es el propio número de pot ("pot3" -> reenvía como control 3).
-        song_pots_red = set(song_cfg.get("pots_red", []))
+        self.args.pots.extend(pots)
         self.args.pots_red.clear()
-        for key in song_pots_red:
-            entry = self.args.hw_pots.get(key)
-            if not isinstance(entry, dict):
-                continue
-            spec = parse_button_spec(entry.get("cc", ""))
-            if spec is None:
-                continue
-            try:
-                control = int(key[3:])     # "pot3" -> 3
-            except ValueError:
-                continue
-            self.args.pots_red.append((spec, control))
+        self.args.pots_red.extend(pots_red)
 
     def _build_global_pots_red(self):
         """Pots de red FIJOS para todas las canciones: los del TOML marcados
@@ -2004,6 +1676,19 @@ def main():
             wp = CONFIG_PATH.parent / wp
         wd = str(wp)
     args.wavs_dir = wd
+    # Biblioteca de samples de los pads (clave "pads" del robotraca.json):
+    # los pads NO tienen configuración global, solo por canción. Con
+    # biblioteca configurada el engine no carga el banco global del mixer
+    # (wavs_dir/pads.json) al crearse; cada canción trae los suyos.
+    pd = audio_cfg.get("pads_dir") or None
+    if pd:
+        pp = Path(pd)
+        if not pp.is_absolute():
+            pp = CONFIG_PATH.parent / pp
+        pd = str(pp)
+    args.pads_dir = pd
+    if pd:
+        args.wavs_dir = None
     args.master_fx = cfg.get("master", {})   # EQ + limitador de la mezcla
     args.events = cfg.get("events", {})      # servidor TCP para los clientes
     args.pad_volume = audio_cfg.get("pad_volume", 60)

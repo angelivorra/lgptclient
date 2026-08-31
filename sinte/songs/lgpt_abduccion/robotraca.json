@@ -2,10 +2,11 @@
   "fx": {},
   "fx_mix": {
     "2": {
+      "acid": 51,
       "valve": 45
     },
     "5": {
-      "bode": 47,
+      "bode": 57,
       "metal": 62
     }
   },
@@ -19,8 +20,14 @@
   "pad_volume": {
     "1": 27,
     "2": 14,
-    "3": 42,
-    "4": 55
+    "3": 27,
+    "4": 50
+  },
+  "pads": {
+    "1": "FX_Quarkulator.wav",
+    "2": "cubik.wav",
+    "3": "Distorted metal/Phase Hat.wav",
+    "4": "Crash 1.wav"
   },
   "pots": {
     "pot1": "2:acid",

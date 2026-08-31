@@ -1,6 +1,11 @@
 #!/bin/bash
-# keylog_test.sh — depura el mando en la Odin: para robotracker2, lanza
-# gptokeyb con el mapeo real y un keylogger que registra TODO lo que llega.
+# keylog_test.sh — depura el mando en la Odin: lanza un keylogger que registra
+# TODO lo que llega (teclado, botones/hat/ejes del joystick nativo) más la
+# lectura cruda evdev del mando AYN (si está grabado), del DualSense virtual
+# de InputPlumber (ejes L2/R2) y de los teclados virtuales, y además gptokeyb
+# con el mapeo real, para comparar vías. (La app ya no usa gptokeyb: lee los
+# gatillos por evdev del DualSense virtual — evdev_triggers.py — y el resto
+# llega por el teclado virtual de InputPlumber.)
 #
 #   keylog_test.sh
 #

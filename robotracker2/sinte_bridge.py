@@ -16,8 +16,18 @@ if str(SINTE_DIR) not in sys.path:
     sys.path.insert(0, str(SINTE_DIR))
 
 from lgpt_parser import LGPTProject, note_byte_to_name  # noqa: E402
-from lgpt_engine import Engine  # noqa: E402
+from lgpt_engine import EFFECT_PRESETS, Engine  # noqa: E402
 from lgpt_writer import save_project  # noqa: E402
+# Control MIDI (botones + knobs) y aplicación de robotraca.json: la misma
+# maquinaria que usan sinte/lgpt_player y mixer (ver sinte/midi_control.py).
+from midi_control import _apply_pad_volume, apply_song_config, \
+    build_song_pots, load_song_cfg, match_button, match_pot, \
+    open_midi_input, parse_button_spec, parse_pot_target, \
+    save_song_cfg  # noqa: E402
 
-__all__ = ["LGPTProject", "Engine", "note_byte_to_name", "save_project",
-           "SINTE_DIR"]
+__all__ = ["LGPTProject", "EFFECT_PRESETS", "Engine",
+           "note_byte_to_name", "save_project",
+           "SINTE_DIR", "_apply_pad_volume", "apply_song_config",
+           "build_song_pots", "load_song_cfg", "match_button", "match_pot",
+           "open_midi_input", "parse_button_spec", "parse_pot_target",
+           "save_song_cfg"]

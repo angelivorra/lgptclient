@@ -9,14 +9,19 @@ GAMEDIR=/storage/robotracker2
 # Reutiliza el venv de robotracker (mismas dependencias: kivy/numpy/sound*).
 VENV=/storage/robotracker-venv
 
-# Mapeo del mando para SDL/gptokeyb: sin esto, el DualSense se ve como
-# joystick genérico y los gatillos L2/R2 (ejes analógicos) no se traducen.
-export SDL_GAMECONTROLLERCONFIG_FILE="$GAMEDIR/gamecontrollerdb.txt"
-
-# Gamepad -> teclas (mapeo en robotracker2.gptk)
-/usr/bin/gptokeyb -c "$GAMEDIR/robotracker2.gptk" &
-GPTK_PID=$!
-trap "kill $GPTK_PID 2>/dev/null" EXIT INT TERM
+# Entrada: en ROCKNIX, InputPlumber (gestor de entrada del sistema) agarra el
+# mando AYN integrado y lo oculta a SDL, así que el joystick nativo de Kivy
+# no ve nada. Toda la entrada (cruceta, sticks, botones, gatillos) llega
+# traducida en un DualSense VIRTUAL (uhid) que InputPlumber expone; con el
+# perfil por defecto su teclado virtual no emite nada.
+#
+# ROBOTRACKER2_EVDEV_GAMEPAD=1 hace que la app lea ese DualSense virtual por
+# evdev crudo (evdev_triggers.py: hat=cruceta, ejes=stick/gatillos,
+# BTN_*=botones) y desactive el joystick nativo (con el mando oculto no hay
+# nada que ver y, si algún día SDL viera el DualSense virtual, duplicaría la
+# entrada). Sin gptokeyb: con el mando oculto a SDL no reconocería ningún
+# gamecontroller (depende de la db de mapeos).
+export ROBOTRACKER2_EVDEV_GAMEPAD=1
 
 # Pantalla 1920x1080 de 7": densidad x2 (toda la UI usa dp).
 export KIVY_METRICS_DENSITY=2

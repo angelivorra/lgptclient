@@ -46,7 +46,10 @@ La configuración está fijada en `lttileplayer.toml` (incluida en el repo):
 
 - `songs_dir`: carpeta de canciones.
 - `[audio]`: salida (HAT), samplerate, blocksize, `delay` (retardo del
-  audio en segundos), `record` (WAV de salida, vacío = no grabar).
+  audio en segundos), `record` (WAV de salida, vacío = no grabar),
+  `pads_dir` (biblioteca de samples de los pads sampler, resuelve la clave
+  `"pads"` del robotraca.json de cada canción; los pads no tienen
+  configuración global, solo por canción).
 - `[midi]`: entrada del controlador (nombre parcial, sin el nº de cliente
   ALSA que cambia entre arranques) y salida de eventos LGPT.
 - `[buttons]`: 4 botones del controlador (up/down/play/stop) como

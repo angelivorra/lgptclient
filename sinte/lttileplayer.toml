@@ -18,6 +18,11 @@ blocksize = 2048
 delay = 1.0
 record = ""
 wavs_dir = "wavs"
+# Biblioteca de samples de los pads sampler (clave "pads" del robotraca.json
+# de cada canción): los pads NO tienen configuración global, solo por
+# canción. Con biblioteca configurada, el engine ya no carga el banco global
+# del mixer (wavs_dir/pads.json); "wavs" queda solo para el mixer.
+pads_dir = "../pads"
 pad_volume = 45
 
 [midi]
