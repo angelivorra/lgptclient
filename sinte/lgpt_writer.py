@@ -110,6 +110,18 @@ def project_to_xml(project: LGPTProject) -> str:
                 if name in data["params"]:
                     param.set("VALUE", str(data["params"][name]))
 
+    # quitar los INSTRUMENT cuyo ID ya no está en el banco: si no, sus
+    # nodos quedan con los valores viejos y el parser los resucita al
+    # guardar+recargar (p. ej. tras Compact Instruments).
+    if bank_node is not None:
+        for instr in list(bank_node.findall("INSTRUMENT")):
+            try:
+                iid = int(instr.get("ID"), 16)
+            except (TypeError, ValueError):
+                continue
+            if iid not in project.instrument_bank:
+                bank_node.remove(instr)
+
     ET.indent(root, space="    ")
     return ET.tostring(root, encoding="unicode")
 

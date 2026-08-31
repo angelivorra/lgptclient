@@ -233,7 +233,9 @@ class PotsGrid(Widget):
         self._text_center(px, py + (n + 1) * PICK_ROW_H, pw, "EFECTO",
                           COLOR_ACCENT, h=PICK_ROW_H)
         for i, nombre in enumerate(EFFECT_CYCLE):
-            y = py + PICK_ROW_H + i * PICK_ROW_H
+            # índice 0 arriba: la lista se lee de arriba a abajo y
+            # ARRIBA/ABAJO mueven el cursor en la dirección esperada
+            y = py + (n - i) * PICK_ROW_H
             if i == self.picker:
                 Color(*COLOR_ROW_CURSOR)
                 Rectangle(pos=(px + dp(10), y + dp(3)),

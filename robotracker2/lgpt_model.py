@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sinte_bridge import LGPTProject, note_byte_to_name
+from robots import ROBOT_INSTR
 
 EMPTY = 0xFF
 SONG_ROWS = 256
@@ -162,6 +163,78 @@ def used_chains(project: LGPTProject) -> list[int]:
 def used_phrases(project: LGPTProject) -> list[int]:
     """Phrases referenciadas en alguna chain, ordenadas."""
     return sorted({b for b in project.chains if b != EMPTY})
+
+
+def compact_sequencer(project: LGPTProject) -> tuple[int, int]:
+    """Compact Sequencer, fiel al `Project::Purge` del LGPT original:
+    borra in-place (SIN renumerar) las chains que la song no usa y las
+    phrases que ninguna chain usada referencia. No toca tables/grooves.
+    Devuelve (n_chains, n_phrases) — lo que tenía contenido y se vacía."""
+    used_c = set(used_chains(project))
+    used_p = {project.chains[c * CHAIN_LEN + s]
+              for c in used_c for s in range(CHAIN_LEN)
+              if project.chains[c * CHAIN_LEN + s] != EMPTY}
+
+    n_chains = 0
+    for c in range(MAX_CHAINS):
+        if c in used_c:
+            continue
+        i = c * CHAIN_LEN
+        if (project.chains[i:i + CHAIN_LEN] == bytes([EMPTY]) * CHAIN_LEN
+                and project.transposes[i:i + CHAIN_LEN] == bytes(CHAIN_LEN)):
+            continue
+        project.chains[i:i + CHAIN_LEN] = bytes([EMPTY]) * CHAIN_LEN
+        project.transposes[i:i + CHAIN_LEN] = bytes(CHAIN_LEN)
+        n_chains += 1
+
+    n_phrases = 0
+    for p in range(MAX_PHRASES):
+        if p in used_p:
+            continue
+        i = p * PHRASE_LEN
+        if not any(project.notes[i + s] != EMPTY
+                   or project.instruments[i + s] != EMPTY
+                   or project.cmd1[i + s] != FX_EMPTY
+                   or project.param1[i + s]
+                   or project.cmd2[i + s] != FX_EMPTY
+                   or project.param2[i + s]
+                   for s in range(PHRASE_LEN)):
+            continue
+        project.notes[i:i + PHRASE_LEN] = bytes([EMPTY]) * PHRASE_LEN
+        project.instruments[i:i + PHRASE_LEN] = bytes([EMPTY]) * PHRASE_LEN
+        for s in range(PHRASE_LEN):
+            project.cmd1[i + s] = FX_EMPTY
+            project.param1[i + s] = 0
+            project.cmd2[i + s] = FX_EMPTY
+            project.param2[i + s] = 0
+        n_phrases += 1
+
+    return n_chains, n_phrases
+
+
+def compact_instruments(project: LGPTProject) -> tuple[int, list[str]]:
+    """Compact Instruments, fiel al `Project::PurgeInstruments` original:
+    elimina del banco los instrumentos que NINGUNA phrase referencia (se
+    miran TODAS las frases, también las de chains no usadas). ROBOT_INSTR
+    (0x80, canal de robotas) nunca se elimina: robotracker2 no tiene UI de
+    creación de instrumentos y perderlo dejaría el canal mudo para siempre.
+    Devuelve (n_eliminados, wavs_sin_usar) — los .wav de <song>/samples/ que
+    ningún instrumento Sample restante referencia (para el borrado opcional
+    del disco)."""
+    used = {b for b in project.instruments if b != EMPTY}
+    n = 0
+    for iid in list(project.instrument_bank.keys()):
+        if iid == ROBOT_INSTR or iid in used:
+            continue
+        del project.instrument_bank[iid]
+        n += 1
+
+    referenced = {ins["params"].get("sample", "")
+                  for ins in project.instrument_bank.values()
+                  if ins["type"] == "Sample"}
+    samples_dir = project.dir / "samples"
+    wavs = sorted(p.name for p in samples_dir.glob("*.wav"))
+    return n, [name for name in wavs if name not in referenced]
 
 
 def _cycle(values: list[int], current: int | None, delta: int) -> int | None:

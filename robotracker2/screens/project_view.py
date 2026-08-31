@@ -4,7 +4,7 @@ Versión reducida de la pantalla Project de LGPT (sin Drive/Type/Transpose/
 Scale/MIDI/Render). Campos:
 
   Tempo / Master        -> valores editables (izq/dcha ±1, A+izq/dcha ±10)
-  Compact Sequencer / Compact Instruments  -> acciones (pendientes)
+  Compact Sequencer / Compact Instruments  -> acciones (Save Song As: pendiente)
   Load Song / Save Song / Save Song As     -> acciones
   Exit                                      -> salir
 

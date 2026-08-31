@@ -1,6 +1,7 @@
 """Round-trip del writer de lgptsav.dat: guardar y recargar produce los
 mismos arrays que el proyecto original."""
 
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -59,6 +60,31 @@ class TestWriterRoundTrip(unittest.TestCase):
             out.write_text("ORIGINAL")
             save_project(project, out, backup=True)
             self.assertEqual((tmp / "lgptsav.dat.bak").read_text(), "ORIGINAL")
+
+    def test_pop_instrument_no_resurreccion(self):
+        """Compact Instruments popea IDs del banco: al guardar+recargar no
+        deben resucitar (el writer quita del árbol los INSTRUMENT huérfanos;
+        si no, el parser los volvería a leer del XML)."""
+        song_dir = sorted(d for d in SONGS_DIR.iterdir()
+                          if (d / "lgptsav.dat").exists())[0]
+        project = _load(song_dir)
+        iid = min(project.instrument_bank)
+        resto = {k: v for k, v in project.instrument_bank.items() if k != iid}
+        del project.instrument_bank[iid]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = save_project(project, Path(tmp) / "lgptsav.dat",
+                               backup=False)
+            xml = (Path(tmp) / "lgptsav.dat").read_text()
+            ids = {int(m.group(1), 16)
+                   for m in re.finditer(r'<INSTRUMENT ID="([0-9A-Fa-f]+)"',
+                                        xml)}
+            self.assertNotIn(iid, ids)
+            self.assertEqual(ids, set(resto))
+            reloaded = _load(out.parent)
+
+        self.assertNotIn(iid, reloaded.instrument_bank)
+        self.assertEqual(reloaded.instrument_bank, resto)
 
     def test_xml_sin_comprimir_legible(self):
         song_dir = sorted(d for d in SONGS_DIR.iterdir()

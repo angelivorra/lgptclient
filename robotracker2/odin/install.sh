@@ -27,10 +27,13 @@ ssh "$HOST" '
            /storage/images /storage/ayuda_imagenes
 '
 
-# midi_control.py (control MIDI del reproductor, compartido con sinte): es
-# nuevo, va a /storage/sinte sin tocar nada de lo que robotracker usa.
-echo ">> Copiando sinte/midi_control.py a /storage/sinte ..."
+# midi_control.py (control MIDI del reproductor, compartido con sinte) y
+# lgpt_writer.py (fix de Compact Instruments: quita los INSTRUMENT huérfanos;
+# aditivo, compatible con el sinte antiguo) van a /storage/sinte sin tocar
+# nada más de lo que robotracker usa.
+echo ">> Copiando sinte/midi_control.py y lgpt_writer.py a /storage/sinte ..."
 scp "$REPO/sinte/midi_control.py" "$HOST:/storage/sinte/midi_control.py"
+scp "$REPO/sinte/lgpt_writer.py" "$HOST:/storage/sinte/lgpt_writer.py"
 
 # El control MIDI usa atributos del engine (fx_presence, pad_volume_map...,
 # los mismos que mixer/sinte): avisar si el sinte de la Odin es más antiguo.

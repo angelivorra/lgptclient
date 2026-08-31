@@ -43,6 +43,7 @@ from config import load_config, save_config
 from controls import (A, B, BACK, DOWN, DPAD, L2, LEFT, R2, RIGHT, SELECT,
                       START, UP, GAMEPAD_BUTTONS, hat_to_buttons, key_to_button,
                       trigger_axis_buttons)
+from lgpt_model import compact_instruments, compact_sequencer
 from midi_ctrl import POTS_KNOBS, MidiControl
 from midi_input import MidiNotesInput, midi_input_names
 from sinte_bridge import save_project
@@ -72,6 +73,8 @@ DEFAULT_AYUDA = DEFAULT_SONGS.parent.parent / "ayuda_imagenes"
 # Opciones del diálogo de cambios sin guardar.
 _CONFIRM_OPTS = [("save", "Guardar"), ("discard", "Descartar"),
                  ("cancel", "Cancelar")]
+# Opciones del diálogo Sí/No (p. ej. borrar samples del disco).
+_YES_NO_OPTS = [("yes", "Sí"), ("no", "No")]
 
 # Botón lógico del dpad -> desplazamiento en la rejilla de pantallas (L+dir).
 NAV_DELTA = {UP: (0, -1), DOWN: (0, 1), LEFT: (-1, 0), RIGHT: (1, 0)}
@@ -870,8 +873,10 @@ class Robotracker2App(App):
             self._request_exit()
         elif key == "save_as":
             ed.toast_msg("Save Song As: pendiente")
-        else:                                        # compact_seq / compact_instr
-            ed.toast_msg("Compact: pendiente")
+        elif key == "compact_seq":
+            self._compact_sequencer()
+        elif key == "compact_instr":
+            self._compact_instruments()
 
 
     def _save(self):
@@ -892,6 +897,63 @@ class Robotracker2App(App):
         ed.toast_msg(msg)
 
     # ------------------------------------------------------------------
+    # Compact (menú PROJECT)
+    # ------------------------------------------------------------------
+    def _compact_sequencer(self):
+        """Compact Sequencer: borra in-place las chains/phrases sin uso
+        (semántica del LGPT original, sin renumerar). Directo, sin diálogo."""
+        ed = self.editor_screen
+        project = ed.project
+        if project is None:
+            return
+        self._stop_play()        # no borrar chains/phrases en uso por el player
+        n_c, n_p = compact_sequencer(project)
+        self._mark_dirty()
+        if n_c or n_p:
+            ed.toast_msg(f"Compact: {n_c} chains, {n_p} phrases")
+        else:
+            ed.toast_msg("Compact: nada que purgar")
+
+    def _compact_instruments(self):
+        """Compact Instruments: elimina del banco los instrumentos sin
+        referencia (ROBOT_INSTR 0x80 nunca) y, si quedan wavs huérfanos en
+        samples/, pregunta si borrarlos del disco (Sí/No, "No" por defecto)."""
+        ed = self.editor_screen
+        project = ed.project
+        if project is None:
+            return
+        self._stop_play()
+        n, unused = compact_instruments(project)
+        self._mark_dirty()
+        ed.instrument_menu.set_project(project)   # re-cachea instr_ids
+        ed.refresh_header()
+        if n:
+            ed.toast_msg(f"Compact: {n} instrumentos")
+        else:
+            ed.toast_msg("Compact: nada que purgar")
+        if unused:
+            self._confirm(
+                f"Borrar del disco {len(unused)} samples sin usar?",
+                lambda key: self._purge_unused_samples(unused, key),
+                opts=_YES_NO_OPTS)
+
+    def _purge_unused_samples(self, names, key):
+        """Borra de <song>/samples/ los wavs sin usar (solo si el diálogo
+        respondió "Sí"). La lista sale del glob del propio directorio, así
+        que unlink no puede salirse de él."""
+        if key != "yes":
+            return
+        samples = self.editor_screen.project.dir / "samples"
+        removed = 0
+        for name in names:
+            try:
+                (samples / name).unlink()
+                removed += 1
+            except OSError:
+                continue
+        self.editor_screen.toast_msg(f"Samples borrados: {removed}")
+
+    # ------------------------------------------------------------------
     # Diálogo de cambios sin guardar
     # ------------------------------------------------------------------
     def _dispatch_dialog(self, button):
@@ -907,9 +969,11 @@ class Robotracker2App(App):
             self._close_dialog()
         return True
 
-    def _confirm(self, message, on_proceed):
-        self.dialog = ConfirmDialog(message, _CONFIRM_OPTS, on_proceed,
-                                    selected=len(_CONFIRM_OPTS) - 1)  # Cancelar
+    def _confirm(self, message, on_proceed, opts=None):
+        if opts is None:
+            opts = _CONFIRM_OPTS
+        self.dialog = ConfirmDialog(message, opts, on_proceed,
+                                    selected=len(opts) - 1)  # última (segura)
         self.root_layout.add_widget(self.dialog)
 
     def _close_dialog(self):
@@ -926,7 +990,8 @@ class Robotracker2App(App):
             proceed()
         elif key == "discard":
             proceed()
-        # "cancel": no hace nada
+        elif key != "cancel":
+            proceed(key)          # diálogos con opciones propias (Sí/No)
 
     def _request_exit(self):
         if self.dirty or self._pads_dirty or self._pots_dirty:

@@ -132,9 +132,19 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
    (writer extendido para INSTRUMENTBANK).
 9. **PROJECT** (`screens/project_view.py`): menú reducido — **Tempo** y
    **Master** editables (izq/dcha ±1, A+izq/dcha ±10), **Load Song**,
-   **Save Song** (persiste el `.dat`), **Exit**; *Compact Sequencer/Instruments*
-   y *Save Song As* quedan como pendientes (toast). Arriba/abajo navegan, **A**
-   activa.
+   **Save Song** (persiste el `.dat`), **Exit** y las dos acciones Compact:
+   **Compact Sequencer** borra in-place (sin renumerar, como el LGPT
+   original) las chains que la song no usa y las phrases que ninguna chain
+   usada referencia — directo, sin diálogo, toast con contadores;
+   **Compact Instruments** elimina del banco los instrumentos que ninguna
+   phrase referencia (se miran todas las frases, también las de chains no
+   usadas — por eso el orden recomendado es primero Sequencer y luego
+   Instruments) y, si quedan `.wav` huérfanos en `samples/` de la canción,
+   pregunta (**Sí/No**, "No" por defecto) si borrarlos del disco. El
+   instrumento del canal de robotas (**0x80**) nunca se elimina: no hay UI
+   de creación de instrumentos y perderlo dejaría el canal mudo para
+   siempre. *Save Song As* queda pendiente (toast). Arriba/abajo navegan,
+   **A** activa.
 10. **CONFIG** (`screens/config_view.py`): selección de las **interfaces MIDI
     de entrada** (debajo de SONG en la rejilla). Dos campos editables
     (izq/dcha ciclan entre los puertos MIDI de entrada disponibles, A+izq/dcha
@@ -174,8 +184,7 @@ Si hay **cambios sin guardar**, al **salir** o **cargar otra canción** (o cerra
 la ventana) aparece un diálogo modal (`screens/confirm.py`) con **Guardar /
 Descartar / Cancelar** (izq/dcha eligen, A confirma, B/Esc cancela).
 
-Pendiente: CHAIN/PHRASE/INSTRUMENT/TABLE/GROOVE, el transporte de audio
-(Player) y las acciones Compact/Save As.
+Pendiente: Save Song As.
 
 ## Controles (parametrizables)
 
