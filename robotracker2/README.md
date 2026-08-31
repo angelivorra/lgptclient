@@ -61,6 +61,18 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
    corta/pega, **Esc** cancela) con su **propio portapapeles de bloque**
    (independiente del de SONG/CHAIN y del portapapeles por campo).
 
+   **Pintado MIDI en vivo**: si hay una interfaz **MIDI Notas** configurada en
+   CONFIG (y disponible), **R2+START** activa el modo de pintar notas del
+   controlador en la phrase **mientras suena** (indicador **●** rojo en la
+   cabecera; se apaga con R2+START). Con play activo en PHRASE, cada nota que
+   se pulse en el controlador se escribe en el **step del playhead** de la
+   phrase que se está editando: nota + velocidad como comando **VOL** en el
+   primer hueco de FX libre (o actualizando el VOL existente, sin pisar otros
+   efectos). Escala velocidad MIDI 0-127 → volumen LGPT 0-254 (`VOL 00FF` =
+   máximo). Solo pinta si la phrase que suena es la que se ve en pantalla.
+   R2+START **no** toca play/stop: mientras está activo, Start sigue
+   arrancando/parando la reproducción normalmente.
+
    **Canal de robotas** (canal 8, `robots.py`): en vez de las 6 columnas
    genéricas se muestran solo 2, con datos reales (migrado del control MIDI
 
@@ -175,7 +187,8 @@ pantalla, B = borrar, START = play, BACK = volver) es fija.
 - **PC (teclado)**: flechas = dpad, `A` = A, `S` = B, **`Ctrl` izquierdo = L2**
   (navegar entre pantallas con dpad; mute con S), **`Ctrl` derecho = R2**
   (selección: cut/paste, ciclar selección), `Espacio` = START, `Esc` = BACK,
-  `Supr/Retroceso` = B.
+  `Supr/Retroceso` = B. **R2+START** (Ctrl derecho + Espacio) alterna el
+  **pintado MIDI en vivo** en PHRASE (ver arriba).
 - **Odin 2 Portal (gamepad)**: gptokeyb (`odin/robotracker2.gptk`) — X=A, B=B,
   **L2 = Ctrl izquierdo (navegar)**, **R2 = Ctrl derecho (selección)**,
   Start = play, Back = Esc. La app también lee joystick nativo (`controls.py`).
@@ -200,8 +213,10 @@ En **PC arranca en ventana** (1280×720). Con `--fullscreen` (o
 
 Se instala como *port* de EmulationStation. En la Odin el mando se traduce a
 teclado con **gptokeyb** (`odin/robotracker2.gptk`): **X → A**, **B → B**,
-**R2 → Ctrl** (hombro/navegación), **dpad → cursor**, **A → play**,
-**Back → Esc**. El launcher `odin/Robotracker2.sh` fuerza fullscreen (Sway),
+**L2 → Ctrl izq (navegar pantallas con dpad)**, **R2 → Ctrl dcha
+(selección)**, **dpad → cursor**, **A → play**, **Back → Esc**. En el mando,
+**R2+Start** es el pintado MIDI en vivo.
+El launcher `odin/Robotracker2.sh` fuerza fullscreen (Sway),
 fija densidad ×2 y reutiliza el venv y el `sinte` de robotracker
 (`/storage/robotracker-venv`, `/storage/sinte`).
 
@@ -218,6 +233,7 @@ robotracker2/odin/install.sh [usuario@]IP_de_la_odin
 | `robotracker2.py` | App + `ScreenManager` + input de teclado global |
 | `theme.py` | Colores y fuente de iconos (portados de robotracker) |
 | `config.py` | Configuración global persistente (interfaces MIDI) en `config.json` |
+| `midi_input.py` | Entrada MIDI de notas (hilo daemon → cola) para el pintado en vivo |
 | `songs.py` | `find_songs` / `display_name` / `load_project` |
 | `navmap.py` | Rejilla de pantallas LGPT + `neighbor()` (navegación) |
 | `controls.py` | Botones lógicos + perfiles teclado (PC) / gamepad (Odin) |

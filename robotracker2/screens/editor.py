@@ -31,7 +31,7 @@ from screens.project_view import ProjectMenu
 from screens.song_view import SongGrid
 from screens.table_view import TableGrid
 from theme import (COLOR_ACCENT, COLOR_BAR_BG, COLOR_BG, COLOR_BORDER,
-                   COLOR_OK)
+                   COLOR_ERROR, COLOR_OK)
 
 
 BAR_H = dp(52)
@@ -102,6 +102,18 @@ class EditorScreen(Screen):
                             font_size=dp(22), halign="left", valign="middle")
         self.header.bind(size=lambda w, *_: setattr(w, "text_size", w.size))
         bar.add_widget(self.header)
+
+        # indicador de pintado MIDI en vivo (R2+START); invisible al apagarlo
+        self.live_ind = Label(text="", bold=True, font_name="Icons",
+                              font_size=dp(22),
+                              color=(0, 0, 0, 0), size_hint_x=None,
+                              width=dp(52), halign="center", valign="middle")
+        self.live_ind.bind(size=lambda w, *_: setattr(w, "text_size", w.size))
+        with self.live_ind.canvas.before:
+            self._live_chip_color = Color(0.95, 0.45, 0.40, 0.16)
+            self._live_chip = RoundedRectangle(radius=[dp(6)])
+        self.live_ind.bind(pos=self._sync_live_chip, size=self._sync_live_chip)
+        bar.add_widget(self.live_ind)
 
         # indicador de reproducción (▶ + temporizador); invisible al parar
         self.play_ind = Label(text="", bold=True, font_name="Icons",
@@ -195,6 +207,23 @@ class EditorScreen(Screen):
                                self.play_ind.y + dp(6))
         self._play_chip.size = (self.play_ind.width - dp(4),
                                 self.play_ind.height - dp(12))
+
+    def _sync_live_chip(self, *_):
+        self._live_chip.pos = (self.live_ind.x + dp(2),
+                               self.live_ind.y + dp(6))
+        self._live_chip.size = (self.live_ind.width - dp(4),
+                                self.live_ind.height - dp(12))
+
+    def set_midi_live(self, on):
+        """Muestra el indicador '●' (pintado MIDI en vivo) en la cabecera."""
+        if on:
+            self.live_ind.text = "●"
+            self.live_ind.color = COLOR_ERROR
+            self._live_chip_color.rgba = (0.95, 0.45, 0.40, 0.16)
+        else:
+            self.live_ind.text = ""
+            self.live_ind.color = (0, 0, 0, 0)
+            self._live_chip_color.rgba = (0, 0, 0, 0)
 
     def set_play_indicator(self, playing, elapsed=0.0):
         """Muestra \"▶ m:ss\" en la cabecera mientras suena (vacío al parar)."""

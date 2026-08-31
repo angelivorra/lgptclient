@@ -311,6 +311,35 @@ class PhraseGrid(Widget):
         self.pv.set_note(step, self.track, note)
         self.pv.set_instr(step, self.track, ROBOT_INSTR)
 
+    def live_note(self, step, note, velocity):
+        """Pinta una nota del controlador MIDI en el step del playhead.
+
+        Estilo live-step de LGPT: escribe la nota (con el instrumento por
+        defecto si el step no tiene ninguno; el instrumento fijo del canal de
+        robotas si es ese canal) y guarda la velocidad como comando **VOLM**
+        en el primer hueco de FX libre — o actualiza el VOLM existente — sin
+        pisar otros efectos. Escala: velocity MIDI 0-127 -> volumen LGPT
+        0-254 (vel*2, la misma escala que usa el engine: VOLM 00FF = máximo).
+        """
+        if self.track == ROBOT_TRACK:
+            self._set_hit(step, note & 0x7F)
+        else:
+            self.pv.set_note(step, self.track, note & 0x7F)
+            if self._instr(step) is None:
+                self.pv.set_instr(step, self.track, 0)
+        param = min(velocity * 2, 0xFF)
+        for which in (1, 2):            # actualizar el VOLM que ya haya
+            if self.pv.fx_cmd_at(step, self.track, which) == "VOLM":
+                self.pv.set_fx_param(step, self.track, which, param)
+                break
+        else:
+            for which in (1, 2):        # o usar el primer hueco de FX libre
+                if self.pv.fx_cmd_at(step, self.track, which) == FX_EMPTY:
+                    self.pv.set_fx_cmd(step, self.track, which, "VOLM")
+                    self.pv.set_fx_param(step, self.track, which, param)
+                    break
+        self._changed()
+
     def set_screen(self, step, cc, value):
         """Escribe el MDCC (cc,value) elegido en el navegador en FX1."""
         self.pv.set_fx_cmd(step, self.track, 1, "MDCC")

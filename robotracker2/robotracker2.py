@@ -42,6 +42,7 @@ from kivy.uix.screenmanager import ScreenManager, NoTransition
 from config import load_config, save_config
 from controls import (A, B, BACK, DOWN, DPAD, L2, LEFT, R2, RIGHT, START, UP,
                       GAMEPAD_BUTTONS, hat_to_buttons, key_to_button)
+from midi_input import MidiNotesInput, midi_input_names
 from sinte_bridge import save_project
 from songs import DEFAULT_SONGS, display_name, find_songs, load_project
 from player import Player
@@ -91,6 +92,8 @@ class Robotracker2App(App):
         self.player = None         # reproductor de la canción cargada
         self._play_start = None    # monotonic() al arrancar (temporizador)
         self._fresh_press = False  # el botón actual no estaba ya en self.held
+        self.midi_live = False     # pintado MIDI en vivo en PHRASE (R2+START)
+        self._midi_notes = MidiNotesInput()
 
     def build(self):
         setup_window(self.fullscreen)
@@ -248,7 +251,10 @@ class Robotracker2App(App):
             ed.navigate(*NAV_DELTA[button])
             return True
         if button == START:                 # play/stop (global en el editor)
-            self._toggle_play()
+            if R2 in active:                # R2+START: pintado MIDI en vivo
+                self._toggle_midi_live()    # (no toca play/stop)
+            else:
+                self._toggle_play()
             return True
         if ed.current == "song":
             return self._dispatch_song(button, active)
@@ -567,6 +573,8 @@ class Robotracker2App(App):
 
     def _config_changed(self):
         """Persiste la configuración global (interfaces MIDI) al cambiar."""
+        if self.midi_live:        # la interfaz puede haber cambiado: apaga
+            self._set_midi_live(False)   # el modo (el usuario lo re-arma)
         save_config(self.config)
 
     def _project_action(self, key):
@@ -696,7 +704,72 @@ class Robotracker2App(App):
         no hace falta más lógica al soltar ninguna de las dos teclas."""
         self._set_mute(track, track not in self.player.engine.muted)
 
+    # ------------------------------------------------------------------
+    # Pintado MIDI en vivo en PHRASE (R2+START)
+    # ------------------------------------------------------------------
+    def _toggle_midi_live(self):
+        """Alterna el modo de pintar notas MIDI en la phrase mientras suena.
+
+        Requiere una interfaz 'MIDI Notas' configurada (CONFIG) y disponible.
+        Con el modo activo, las notas del controlador se pintan en el step
+        del playhead de la phrase en edición (nota + velocidad vía VOLM) —
+        ver PhraseGrid.live_note. R2+START no toca play/stop.
+        """
+        if not self._fresh_press:       # repetición del SO: no re-alternar
+            return
+        ed = self.editor_screen
+        if self.midi_live:
+            self._set_midi_live(False)
+            ed.toast_msg("MIDI live: OFF")
+            return
+        port = self.config.get("midi_notes")
+        if not port:
+            ed.toast_msg("Configura 'MIDI Notas' en CONFIG")
+            return
+        if port not in midi_input_names():
+            ed.toast_msg("Interfaz MIDI Notas no disponible")
+            return
+        if not self._midi_notes.open_port(port):
+            ed.toast_msg(f"Error MIDI: {self._midi_notes.error}")
+            return
+        self._set_midi_live(True)
+        ed.toast_msg("MIDI live: ON (pinta en PHRASE al sonar)")
+
+    def _set_midi_live(self, on):
+        self.midi_live = on
+        self.editor_screen.set_midi_live(on)
+        if not on:
+            self._midi_notes.close()
+
+    def _paint_midi_notes(self):
+        """Pinta en la phrase del playhead las notas MIDI pendientes.
+
+        Solo cuando: modo vivo activo, hay play, se está en PHRASE, y la
+        phrase que suena es la que se está editando (si se navegó a otra
+        phrase distinta de la que toca el canal, no se pinta nada)."""
+        notes = self._midi_notes.poll()
+        if not notes:
+            return
+        if self.player is None or not self.player.playing:
+            return
+        ed = self.editor_screen
+        if ed.current != "phrase":
+            return
+        g = ed.phrase_grid
+        if g.pv is None:
+            return
+        t = g.track
+        c = self.player.engine.channels[t]
+        ph = g.pv.phrase_of(t)
+        if not (c.playing and c.phrase == ph):
+            return          # la phrase que suena no es la que se edita
+        step = c.phrase_pos
+        for note, vel in notes:
+            g.live_note(step, note, vel)
+
     def _tick(self, _dt):
+        if self.midi_live:
+            self._paint_midi_notes()
         ed = self.editor_screen
         p = self.player
         if p is not None and ed.current == "song":
@@ -743,6 +816,10 @@ class Robotracker2App(App):
         self.editor_screen.enter_song(project, display_name(song_dir.name))
         self.dirty = False
         self.sm.current = "editor"
+
+    def on_stop(self):
+        """Al salir, cierra la interfaz MIDI abierta (si la hay)."""
+        self._midi_notes.close()
 
 
 def main():
