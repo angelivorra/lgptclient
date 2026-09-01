@@ -737,11 +737,11 @@ class Robotracker2App(App):
     def _dispatch_instrument(self, button, active):
         m = self.editor_screen.instrument_menu
         if button in DPAD:
-            if A in active and button in (LEFT, RIGHT):
-                m.edit(button)                   # A+izq/dcha: paso grande
+            if A in active:
+                m.edit(button)     # A+arr/abj paso grande, A+izq/dcha fino
                 self._a_consumed = True
             else:
-                m.move(button)                   # arr/abj campo, izq/dcha valor
+                m.move(button)     # arr/abj fila, izq/dcha pareja (solo foco)
             return True
         if button == A:
             if m.field_key() == "sample":        # abrir navegador de samples

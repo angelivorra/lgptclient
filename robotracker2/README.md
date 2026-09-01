@@ -126,16 +126,22 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
    usados en songs: VOLM/PTCH/RTRG/HOP/KILL/ARPG/CRSH/filtros/PAN…; param ±),
    **A** copia/pega/def por campo, **B** borra. Se guarda (writer extendido para
    TABLES). Las dos posiciones TABLE de la rejilla abren esta vista.
-8. **INSTRUMENT** (`screens/instrument_view.py`): menú moderno con scroll y los
-   params útiles del instrumento (nº en cabecera): Instrument (selector), Sample,
-   Volume, Pan, Fine tune, Root note, Filter cut/res/type/mode, Crush, Downsample,
-   Loop, **Print FX** y **FX amount** (el efecto), Feedback mix, Table. Arr/abj
-   navega, izq/dcha edita (A+izq/dcha paso grande); los enums ciclan valores y
-   **se conservan** los params no editados. Al entrar **desde PHRASE va al
-   instrumento del step**. En **Sample**, **A abre el navegador de samples**
-   (`screens/sample_browser.py`): navega la biblioteca, **previsualiza** al pasar
-   por cada .wav y **A carga** (copia el wav a la canción y lo asigna). Se guarda
-   (writer extendido para INSTRUMENTBANK).
+8. **INSTRUMENT** (`screens/instrument_view.py`): parámetros del instrumento
+   (nº en cabecera) organizados **por secciones estilo LGPT** — selector de
+   Instrument, SAMPLE, AMP (Volume, Pan), TUNE (Root note, Fine tune), CRUSH
+   (**Crush + Drive** en pareja, Downsample), FILTER (**Cut + Res** en pareja,
+   Type, Mode, Attenuate), LOOP (Loop mode, Start, End en hex) y TABLE. Los
+   instrumentos **MIDI (0x80-0x8F)** muestran sus campos propios: Channel,
+   Note length, Volume, Table. El **dpad solo mueve el foco** (arr/abj fila,
+   izq/dcha entre parejas) y los valores se editan **manteniendo A**: A+arr/abj
+   = paso grande, A+izq/dcha = paso fino (estilo LGPT); los enums ciclan. Solo
+   se muestran los params que el engine implementa — el resto (Print FX, FX
+   amount, Feedback mix, interpol, slices…) **se conserva en el XML** al
+   guardar. Al entrar **desde PHRASE va al instrumento del step**. En **Sample**,
+   **A abre el navegador de samples** (`screens/sample_browser.py`): navega la
+   biblioteca, **previsualiza** al pasar por cada .wav y **A carga** (copia el
+   wav a la canción y lo asigna). Se guarda (writer extendido para
+   INSTRUMENTBANK).
 9. **PROJECT** (`screens/project_view.py`): menú reducido — **Tempo** y
    **Master** editables (izq/dcha ±1, A+izq/dcha ±10), **Load Song**,
    **Save Song** (persiste el `.dat`), **Exit** y las dos acciones Compact:
