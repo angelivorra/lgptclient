@@ -1260,9 +1260,16 @@ class Engine:
 
     # -- transporte ---------------------------------------------------------
 
-    def start(self, from_row: int = 0):
-        """(Re)inicia la canción. Con `from_row` arranca en esa fila de la
-        song (play desde el cursor, estilo Piggy); 0 = desde el principio.
+    def start(self, from_row: int | None = None):
+        """(Re)inicia la canción.
+
+        Sin `from_row` (player/mixer) arranca desde el principio con el
+        escaneo clásico: cada canal entra en su primer contenido.
+
+        Con `from_row` (play desde el cursor en robotracker2) solo arrancan
+        los canales que tienen algo EN ESA fila: un canal sin contenido ahí
+        no suena en toda la reproducción (si la fila entera está vacía, no
+        suena nada).
 
         Si `loop_scope` está activo (play desde CHAIN/PHRASE en robotracker2)
         solo se arranca ese canal, en la chain/phrase indicada, en bucle."""
@@ -1283,13 +1290,25 @@ class Engine:
             ch.g_ticks = self._groove_len(0, 0)
         if self.loop_scope is not None:
             self._start_loop()
-        else:
+        elif from_row is None:
+            # Arranque clásico desde el principio: cada canal entra en su
+            # primer contenido de la song.
             for ch in self.channels:
-                for pos in range(max(0, min(from_row, 255)), 256):
+                for pos in range(256):
                     if self._is_playable(pos, ch.idx):
                         ch.playing = True
                         self._set_song_pos(ch, pos, 0, -1)
                         break
+        else:
+            # Play desde el cursor: solo los canales con algo en esa fila
+            # suenan. Sin escaneo hacia delante, un canal que no tiene nada
+            # en `from_row` se queda en silencio toda la reproducción (y si
+            # la fila está vacía del todo, no suena nada).
+            pos = max(0, min(from_row, 255))
+            for ch in self.channels:
+                if self._is_playable(pos, ch.idx):
+                    ch.playing = True
+                    self._set_song_pos(ch, pos, 0, -1)
         self.tick_count = 0
         self.tick_phase = 0.0
         self.finished = False

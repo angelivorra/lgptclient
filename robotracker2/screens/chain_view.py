@@ -8,7 +8,7 @@ falta (estilo Piggy), reutilizando `ChainView` del modelo.
 """
 
 from kivy.core.text import Label as CoreLabel
-from kivy.graphics import Color, Rectangle, RoundedRectangle
+from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
@@ -24,6 +24,9 @@ LM = dp(48)
 STEP_W = dp(64)
 COL_W = dp(96)
 FONT = dp(17)
+FONT_SMALL = dp(15)
+HINT_H = dp(32)                         # franja inferior del hint de selección
+COLOR_HINT_BG = (0.10, 0.11, 0.14, 0.96)
 
 COLOR_CELL = (0.87, 0.89, 0.92, 1)
 COLOR_TRSP = (0.72, 0.74, 0.80, 1)
@@ -239,19 +242,27 @@ class ChainGrid(Widget):
             return (s0, 0, s1, 1)
         return (0, 0, CHAIN_LEN - 1, 1)         # todo
 
+    def _selection_hint(self):
+        """Operaciones disponibles con la selección activa (None sin ella)."""
+        if self.sel_stage == 0:
+            return None
+        return ("SELECCIÓN: B copiar · R2+A duplicar phrase · "
+                "R2+B ciclar · BACK cancelar")
+
     def _changed(self):
         if self.on_change:
             self.on_change()
         self._redraw()
 
     # -- dibujo ---------------------------------------------------------
-    def _texture(self, text):
-        tex = self._tex.get(text)
+    def _texture(self, text, font_size=FONT):
+        key = (text, font_size)
+        tex = self._tex.get(key)
         if tex is None:
-            lbl = CoreLabel(text=text, font_size=FONT, bold=True)
+            lbl = CoreLabel(text=text, font_size=font_size, bold=True)
             lbl.refresh()
             tex = lbl.texture
-            self._tex[text] = tex
+            self._tex[key] = tex
         return tex
 
     def _text(self, x, y, w, text, color):
@@ -260,6 +271,12 @@ class ChainGrid(Widget):
         Color(*color)
         Rectangle(texture=tex, size=(tw, th),
                   pos=(x + (w - tw) / 2, y + (ROW_H - th) / 2))
+
+    def _text_left(self, x, y, w, text, color, h=ROW_H, font_size=FONT):
+        tex = self._texture(text, font_size)
+        tw, th = tex.size
+        Color(*color)
+        Rectangle(texture=tex, size=(tw, th), pos=(x, y + (h - th) / 2))
 
     def _redraw(self, *_):
         self.canvas.clear()
@@ -310,3 +327,14 @@ class ChainGrid(Widget):
                         Rectangle(pos=(cx + dp(1), y + dp(1)),
                                   size=(cw - dp(2), ROW_H - dp(2)))
                     self._text(cx, y, cw, text, base_c)
+            # hint de operaciones con la selección activa (franja inferior)
+            hint = self._selection_hint()
+            if hint:
+                Color(*COLOR_HINT_BG)
+                Rectangle(pos=(self.x, self.y), size=(self.width, HINT_H))
+                Color(*COLOR_ACCENT)
+                Line(points=[self.x, self.y + HINT_H,
+                             self.x + self.width, self.y + HINT_H], width=1)
+                self._text_left(self.x + dp(12), self.y, self.width - dp(24),
+                                hint, COLOR_ACCENT, h=HINT_H,
+                                font_size=FONT_SMALL)

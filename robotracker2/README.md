@@ -38,6 +38,8 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
    primera chain libre con índice mayor (si no hay ninguna por encima, da la
    vuelta y usa la primera libre desde 00; copia sus 16 steps + transposes y
    apunta la celda a la copia) o pega (sin selección); **Esc** cancela.
+   Con selección activa sale un **hint inferior** con las operaciones
+   (B copiar · R2+A duplicar chain · R2+B ciclar · BACK cancelar).
 4. **CHAIN** (`screens/chain_view.py`): la chain de la celda de SONG donde
    está el cursor (nº en la cabecera). 16 steps × 2 columnas: **phrase** y
    **transpose**. Dpad mueve (arr/abj step, izq/dcha columna), **A+dir** edita,
@@ -47,7 +49,9 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
    phrase** del step del cursor (columna PHRASE) a la primera phrase libre con
    índice mayor (o la primera libre desde 00 si no hay por encima), o pega sin
    selección) con su **propio portapapeles**
-   (independiente del de SONG).
+   (independiente del de SONG). Con selección activa sale un **hint inferior**
+   con las operaciones (B copiar · R2+A duplicar phrase · R2+B ciclar ·
+   BACK cancelar).
 
 5. **PHRASE** (`screens/phrase_view.py`): la phrase del step de CHAIN (nº en la
    cabecera). 16 steps × campos **nota · instr · FX1(cmd+param) · FX2(cmd+param)**.
@@ -59,7 +63,9 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
    DLAY, LEGA, TABL, STOP, MDCC, MDPG, PTCH, RTRG). Selección multicelda igual que
    SONG/CHAIN (**Ctrl+S** cicla libre→columnas→todo, **S** copia, **Ctrl+A**
    corta/pega, **Esc** cancela) con su **propio portapapeles de bloque**
-   (independiente del de SONG/CHAIN y del portapapeles por campo).
+   (independiente del de SONG/CHAIN y del portapapeles por campo). Con
+   selección activa sale un **hint inferior** con las operaciones
+   (B copiar · R2+A cortar · R2+B ciclar · BACK cancelar).
 
    **Pintado MIDI en vivo**: si hay una interfaz **MIDI Notas** configurada en
    CONFIG (y disponible), **R2+START** activa el modo de pintar notas del
@@ -161,7 +167,9 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
 pulsarse para parar. El **playhead** se resalta en verde: en SONG por canal
 (cada canal en su fila), en CHAIN el step activo del canal de esa chain, en
 PHRASE el step activo de esa phrase. El alcance depende de la pantalla:
-- En **SONG** arranca desde la fila del cursor (canción completa, como LGPT).
+- En **SONG** arranca desde la fila del cursor y **solo arrancan los canales
+  que tienen algo en esa fila**: un canal sin nada ahí no suena en toda la
+  reproducción, y si la fila entera está vacía, no suena nada.
 - En **CHAIN** reproduce **solo esa chain en bucle** (el canal de esa chain,
   ignorando el resto de la canción).
 - En **PHRASE** reproduce **solo esa phrase en bucle** (el canal de esa phrase,

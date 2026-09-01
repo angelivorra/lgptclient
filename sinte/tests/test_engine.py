@@ -449,6 +449,44 @@ class TestMidiOut(unittest.TestCase):
         self.assertEqual(engine.midi_out.events, [])
 
 
+class TestPlayFromRow(unittest.TestCase):
+    """Play desde una fila de SONG: solo arrancan los canales que tienen
+    algo en esa fila (sin escaneo hacia delante)."""
+
+    def make_two_channel_engine(self):
+        p = make_project()
+        p.song[2 * 8 + 1] = 1            # canal 1, fila 2 -> chain 1
+        p.chains[1 * 16] = 0             # chain 1 paso 0 -> phrase 0
+        return Engine(p)
+
+    def test_solo_canales_con_contenido_en_la_fila(self):
+        engine = self.make_two_channel_engine()
+        engine.start(2)
+        self.assertTrue(engine.channels[1].playing)   # tiene algo en la fila 2
+        self.assertFalse(engine.channels[0].playing)  # fila 2 vacía: no suena
+        self.assertTrue(engine.playing)
+
+    def test_contenido_mas_adelante_no_arranca(self):
+        engine = self.make_two_channel_engine()
+        engine.start(0)
+        self.assertTrue(engine.channels[0].playing)   # tiene algo en la fila 0
+        self.assertFalse(engine.channels[1].playing)  # su contenido es la fila 2
+
+    def test_fila_vacia_no_suena_nada(self):
+        engine = self.make_two_channel_engine()
+        engine.start(3)                  # fila 3 vacía en todos los canales
+        self.assertTrue(engine.playing)
+        self.assertFalse(any(c.playing for c in engine.channels))
+
+    def test_sin_fila_escanea_hacia_delante(self):
+        # Arranque clásico (player/mixer): cada canal entra en su primer
+        # contenido, aunque no esté en la fila 0.
+        engine = self.make_two_channel_engine()
+        engine.start()
+        self.assertTrue(engine.channels[0].playing)   # fila 0
+        self.assertTrue(engine.channels[1].playing)   # fila 2
+
+
 class TestAudioDelay(unittest.TestCase):
     def test_audio_delayed_but_midi_immediate(self):
         engine = make_engine()

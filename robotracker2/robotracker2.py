@@ -1035,7 +1035,8 @@ class Robotracker2App(App):
                 return
             ok = self.player.play_loop("phrase", ed.phrase_grid.track, pi)
         else:
-            # arranca desde la fila del cursor de SONG (como LGPT)
+            # arranca desde la fila del cursor de SONG: el engine solo
+            # arranca los canales que tienen algo en esa fila
             ok = self.player.play_from(ed.song_grid.cursor_row)
         if ok:
             self._play_start = time.monotonic()
