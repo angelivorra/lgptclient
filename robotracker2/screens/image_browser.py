@@ -4,12 +4,10 @@ Dos niveles: elegir la carpeta "control" (imágenes estáticas, animación o
 texto sincronizado) y luego el valor dentro de ella. La vista previa usa la
 miniatura YA renderizada en `ayuda_imagenes/` (mismo fondo+icono/glow/frame
 que ve el dispositivo real; ver `robots.ayuda_preview_path`) y se actualiza
-sola al moverse — a diferencia del navegador de samples, aquí no hace falta
-un gesto para "escuchar": **A** entra en la carpeta o **elige** el valor
-resaltado (inmediato, sin doble-tap), **B/Cancelar** vuelve atrás o cierra.
-Misma interfaz que `SampleBrowser` (move/activate/back/cleanup). Sobre y
-bajo la lista hay dos indicadores de poco alto (triángulos) que se
-encienden si se puede navegar hacia arriba/abajo en esa dirección.
+al moverse. **A** entra en la carpeta o elige el valor; **B** vuelve o
+cierra. Misma interfaz que `SampleBrowser` (move/activate/back/cleanup).
+Sobre y bajo la lista, dos triángulos se encienden si hay más lista
+arriba/abajo.
 """
 
 from pathlib import Path

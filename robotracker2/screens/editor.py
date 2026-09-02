@@ -1,17 +1,15 @@
 """Editor de canción: contenedor de las pantallas estilo LGPT.
 
 Navegación entre pantallas con L+dpad (Ctrl+flechas en PC) según `navmap`.
-La cabecera muestra a la izquierda el nombre de la pantalla + la canción y a
-la derecha la tira fija S C P I con la columna activa resaltada; el color indica
-la altura: oro = fila media, cian = fila de arriba (PROJECT/GROOVE), magenta =
-fila de abajo (TABLE), mostrando en esa celda su letra (P/G/T). Alrededor de
-la celda activa, cuatro flechas de poco alto indican por dónde se puede
-navegar desde la pantalla actual: encendidas si hay pantalla adyacente en esa
-dirección, atenuadas si no.
-
-SONG ya está implementada (rejilla 256×8). El resto son placeholders que se
-irán rellenando una a una. Los botones del cursor/edición se delegan a la vista
-activa.
+La cabecera muestra a la izquierda el nombre de la pantalla + la canción
+(` *` si hay cambios sin guardar: lgptsav.dat, pads o knobs) y a la derecha
+la tira fija D S C P I: D = PADS, S = SONG, C = CHAIN (CONFIG pinta su C
+magenta en la columna S), P = PHRASE, I = INSTRUMENT. El color indica la
+altura: oro = fila media, cian = fila de arriba (PROJECT/GROOVE/EFECTOS),
+magenta = fila de abajo (TABLE/CONFIG), mostrando en esa celda su letra
+(P/G/T/C/E). Alrededor de la celda activa, cuatro flechas de poco alto
+indican por dónde se puede navegar: encendidas si hay pantalla adyacente
+en esa dirección, atenuadas si no.
 """
 
 from kivy.clock import Clock
@@ -132,6 +130,7 @@ class EditorScreen(Screen):
         self.project = None
         self.config = {}          # configuración global (interfaces MIDI)
         self._config_cb = None    # callback al cambiar la config
+        self.unsaved = False      # lgptsav.dat, pads o knobs sin guardar
 
 
         outer = FloatLayout()
@@ -226,11 +225,6 @@ class EditorScreen(Screen):
                                       on_toast=self.toast_msg,
                                       size_hint=(1, 1),
                                       pos_hint={"x": 0, "y": 0})
-        self.placeholder = Label(text="", halign="center", valign="middle",
-                                 font_size=dp(40), bold=True,
-                                 color=(*COLOR_BORDER[:3], 1),
-                                 pos_hint={"center_x": 0.5, "center_y": 0.5})
-
 
         outer.add_widget(root)
         # toast de feedback (guardado, acciones pendientes...)
@@ -256,6 +250,14 @@ class EditorScreen(Screen):
         self.goto("song")
 
     def refresh_header(self, *_):
+        self.header.text = self._header_text()
+
+    def set_unsaved(self, unsaved):
+        """Asterisco en el nombre de la canción si hay cambios sin guardar."""
+        unsaved = bool(unsaved)
+        if unsaved == self.unsaved:
+            return
+        self.unsaved = unsaved
         self.header.text = self._header_text()
 
     def _sync_play_chip(self, *_):
@@ -394,60 +396,49 @@ class EditorScreen(Screen):
                         & 0x7F
         return min(self.project.tables) if self.project.tables else 0
 
+    def _song_title(self):
+        return f"{self.song_name} *" if self.unsaved else self.song_name
+
     def _header_text(self):
         label = SCREENS[self.current][1]
+        name = self._song_title()
         if self.current == "chain":
-            return f"CHAIN {self.chain_grid.chain_label()}    {self.song_name}"
+            return f"CHAIN {self.chain_grid.chain_label()}    {name}"
         if self.current == "phrase":
             tag = "PHRASE (ROBOT)" if self.phrase_grid.track == ROBOT_TRACK \
                 else "PHRASE"
-            base = f"{tag} {self.phrase_grid.phrase_label()}    {self.song_name}"
+            base = f"{tag} {self.phrase_grid.phrase_label()}    {name}"
             sample = self.phrase_grid.current_sample_name()
             return f"{base}    {sample}" if sample else base
         if self.current == "groove":
-            return f"GROOVE {self.groove_grid.groove_label()}    {self.song_name}"
+            return f"GROOVE {self.groove_grid.groove_label()}    {name}"
         if self.current in ("phrase_table", "instrument_table"):
-            return f"TABLE {self.table_grid.table_label()}    {self.song_name}"
+            return f"TABLE {self.table_grid.table_label()}    {name}"
         if self.current == "instrument":
             return (f"INSTRUMENT {self.instrument_menu.instr_label()}"
-                    f"    {self.song_name}")
-        return f"{label}    {self.song_name}"
+                    f"    {name}")
+        return f"{label}    {name}"
 
     def _show_content(self, key):
         self.content.clear_widgets()
-        if key == "song":
-            self.content.add_widget(self.song_grid)
-            self.song_grid._redraw()
-        elif key == "pots":
-            self.content.add_widget(self.pots_grid)
-            self.pots_grid._redraw()
-        elif key == "pads":
-            self.content.add_widget(self.pads_grid)
-            self.pads_grid._redraw()
-        elif key == "chain":
-            self.content.add_widget(self.chain_grid)
-            self.chain_grid._redraw()
-        elif key == "phrase":
-            self.content.add_widget(self.phrase_grid)
-            self.phrase_grid._redraw()
-        elif key == "groove":
-            self.content.add_widget(self.groove_grid)
-            self.groove_grid._redraw()
-        elif key in ("phrase_table", "instrument_table"):
-            self.content.add_widget(self.table_grid)
-            self.table_grid._redraw()
-        elif key == "instrument":
-            self.content.add_widget(self.instrument_menu)
-            self.instrument_menu._redraw()
-        elif key == "project":
-            self.content.add_widget(self.project_menu)
-            self.project_menu._redraw()
-        elif key == "config":
-            self.content.add_widget(self.config_menu)
-            self.config_menu._redraw()
-        else:
-            self.placeholder.text = f"{SCREENS[key][1]}\n(vacía)"
-            self.content.add_widget(self.placeholder)
+        views = {
+            "song": self.song_grid,
+            "pots": self.pots_grid,
+            "pads": self.pads_grid,
+            "chain": self.chain_grid,
+            "phrase": self.phrase_grid,
+            "groove": self.groove_grid,
+            "phrase_table": self.table_grid,
+            "instrument_table": self.table_grid,
+            "instrument": self.instrument_menu,
+            "project": self.project_menu,
+            "config": self.config_menu,
+        }
+        w = views.get(key)
+        if w is None:
+            return
+        self.content.add_widget(w)
+        w._redraw()
 
 
     def _nav_dirs(self):
