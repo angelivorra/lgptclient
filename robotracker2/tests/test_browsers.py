@@ -1,5 +1,6 @@
-"""Tests de los navegadores: historial de carpetas del de samples e
-indicadores de scroll del de screens.
+"""Tests de los navegadores: historial de carpetas del de samples,
+indicadores de scroll del de screens y flechas direccionales de la
+cabecera del editor (navmap).
 
 Sin app para el historial (SampleBrowser es autónomo): entrar por A en
 dos carpetas y volver/avanzar con las flechas debe recordar el camino y
@@ -133,6 +134,62 @@ def _indicadores_screens():
         print("  los dos triángulos se dibujan OK")
 
 
+def _flechas_nav():
+    """Flechas direccionales de la cabecera del editor: encendidas si hay
+    pantalla adyacente en esa dirección (según navmap), atenuadas si no, e
+    invisibles en las celdas inactivas."""
+    from screens.editor import COLOR_ARROW_DIM, EditorScreen
+    from theme import COLOR_ACCENT
+
+    es = EditorScreen()
+    es.current = "song"
+    es._update_nav(1, 1, "S")
+    cell = es.nav_cells[1]
+    assert cell.text == "S", cell.text
+    # SONG (1,1): vecinos en las cuatro direcciones
+    for name in ("up", "down", "left", "right"):
+        assert tuple(cell._dir_colors[name].rgba) == COLOR_ACCENT, \
+            (name, cell._dir_colors[name].rgba)
+    print("  SONG: las cuatro flechas encendidas OK")
+
+    # las celdas inactivas no llevan flechas
+    for other in es.nav_cells[:1] + es.nav_cells[2:]:
+        assert all(tuple(c.rgba)[3] == 0 for c in other._dir_colors.values())
+    print("  celdas inactivas sin flechas OK")
+
+    # PROJECT (1,0): sin pantalla arriba ni a la derecha
+    es.current = "project"
+    es._update_nav(1, 0, "P")
+    cell = es.nav_cells[1]
+    assert cell.text == "P", cell.text
+    assert tuple(cell._dir_colors["up"].rgba) == COLOR_ARROW_DIM
+    assert tuple(cell._dir_colors["right"].rgba) == COLOR_ARROW_DIM
+    assert tuple(cell._dir_colors["down"].rgba) == COLOR_ACCENT   # SONG
+    assert tuple(cell._dir_colors["left"].rgba) == COLOR_ACCENT   # EFECTOS
+    print("  PROJECT: arriba/dcha apagadas, abajo/izq encendidas OK")
+
+    # GROOVE (3,0): solo PHRASE debajo
+    es.current = "groove"
+    es._update_nav(3, 0, "G")
+    cell = es.nav_cells[3]
+    assert cell.text == "G", cell.text
+    assert tuple(cell._dir_colors["down"].rgba) == COLOR_ACCENT
+    for name in ("up", "left", "right"):
+        assert tuple(cell._dir_colors[name].rgba) == COLOR_ARROW_DIM, name
+    print("  GROOVE: solo abajo encendida OK")
+
+    # INSTRUMENT (4,1): sin pantalla a la derecha ni arriba
+    es.current = "instrument"
+    es._update_nav(4, 1, "I")
+    cell = es.nav_cells[4]
+    assert cell.text == "I", cell.text
+    assert tuple(cell._dir_colors["right"].rgba) == COLOR_ARROW_DIM
+    assert tuple(cell._dir_colors["up"].rgba) == COLOR_ARROW_DIM
+    assert tuple(cell._dir_colors["left"].rgba) == COLOR_ACCENT   # PHRASE
+    assert tuple(cell._dir_colors["down"].rgba) == COLOR_ACCENT   # TABLE
+    print("  INSTRUMENT: dcha/arriba apagadas OK")
+
+
 def _dispatch_flechas(app):
     """El dispatch izq/dcha: SampleBrowser usa historial, ImageBrowser no
     se rompe (getattr sin go_back/go_forward)."""
@@ -198,6 +255,7 @@ def main():
 
         _browser_sueltos()
         _indicadores_screens()
+        _flechas_nav()
         _dispatch_flechas(app)
         print("TODOS LOS TESTS OK")
 

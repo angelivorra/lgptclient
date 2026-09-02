@@ -4,7 +4,10 @@ Navegación entre pantallas con L+dpad (Ctrl+flechas en PC) según `navmap`.
 La cabecera muestra a la izquierda el nombre de la pantalla + la canción y a
 la derecha la tira fija S C P I con la columna activa resaltada; el color indica
 la altura: oro = fila media, cian = fila de arriba (PROJECT/GROOVE), magenta =
-fila de abajo (TABLE), mostrando en esa celda su letra (P/G/T).
+fila de abajo (TABLE), mostrando en esa celda su letra (P/G/T). Alrededor de
+la celda activa, cuatro flechas de poco alto indican por dónde se puede
+navegar desde la pantalla actual: encendidas si hay pantalla adyacente en esa
+dirección, atenuadas si no.
 
 SONG ya está implementada (rejilla 256×8). El resto son placeholders que se
 irán rellenando una a una. Los botones del cursor/edición se delegan a la vista
@@ -12,7 +15,7 @@ activa.
 """
 
 from kivy.clock import Clock
-from kivy.graphics import Color, Rectangle, RoundedRectangle
+from kivy.graphics import Color, Rectangle, RoundedRectangle, Triangle
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
@@ -37,7 +40,8 @@ from theme import (COLOR_ACCENT, COLOR_BAR_BG, COLOR_BG, COLOR_BORDER,
 
 
 BAR_H = dp(52)
-NAV_CELL_W = dp(38)
+NAV_CELL_W = dp(44)
+NAV_INSET_X = dp(8)              # bandas a los lados del chip para las flechas
 
 NAV_COLUMNS = ["D", "S", "C", "P", "I"]
 
@@ -47,6 +51,12 @@ ROW_COLORS = {
     2: (0.82, 0.55, 0.88, 1),   # fila de abajo (TABLE) -> magenta
 }
 
+# flechas direccionales de la celda activa (encendidas si hay pantalla
+# adyacente en esa dirección, atenuadas si no)
+DIR_NAMES = ("up", "down", "left", "right")
+_DIR_DELTAS = ((0, -1), (0, 1), (-1, 0), (1, 0))
+COLOR_ARROW_DIM = (0.30, 0.31, 0.38, 1)
+
 
 class _NavCell(Label):
     def __init__(self, **kw):
@@ -54,14 +64,42 @@ class _NavCell(Label):
                          valign="middle", size_hint_x=None, width=NAV_CELL_W,
                          **kw)
         with self.canvas.before:
+            # flechas direccionales alrededor del chip (dibujadas antes que
+            # él, por si alguna píxel se solapa el chip la tapa). Cada Color
+            # intercalado con su Triangle: el último Color del canvas manda
+            # en todos los triángulos que le siguen.
+            self._dir_colors = {}
+            self._dir_tris = {}
+            for name in DIR_NAMES:
+                self._dir_colors[name] = Color(0, 0, 0, 0)
+                self._dir_tris[name] = Triangle(points=[0, 0, 0, 0, 0, 0])
             self._c = Color(0, 0, 0, 0)
             self._r = RoundedRectangle(radius=[dp(6)])
         self.bind(pos=self._sync, size=self._sync)
 
     def _sync(self, *_):
         self.text_size = self.size
-        self._r.pos = (self.x + dp(2), self.y + dp(6))
-        self._r.size = (self.width - dp(4), self.height - dp(12))
+        self._r.pos = (self.x + NAV_INSET_X, self.y + dp(6))
+        self._r.size = (self.width - 2 * NAV_INSET_X, self.height - dp(12))
+        cx, cy = self.center_x, self.center_y
+        x, y, w, h = self.x, self.y, self.width, self.height
+        # flechas de poco alto en las bandas que deja el chip
+        self._dir_tris["up"].points = [
+            cx - dp(5), y + h - dp(6),
+            cx + dp(5), y + h - dp(6),
+            cx, y + h - dp(1)]
+        self._dir_tris["down"].points = [
+            cx - dp(5), y + dp(6),
+            cx + dp(5), y + dp(6),
+            cx, y + dp(1)]
+        self._dir_tris["left"].points = [
+            x + dp(1), cy,
+            x + dp(7), cy - dp(3),
+            x + dp(7), cy + dp(3)]
+        self._dir_tris["right"].points = [
+            x + w - dp(1), cy,
+            x + w - dp(7), cy - dp(3),
+            x + w - dp(7), cy + dp(3)]
 
     def set(self, letter, bg):
         self.text = letter
@@ -71,6 +109,18 @@ class _NavCell(Label):
         else:
             self._c.rgba = (0, 0, 0, 0)
             self.color = COLOR_BORDER
+
+    def set_dirs(self, dirs):
+        """Flechas de la celda: encendidas en las direcciones por las que se
+        puede navegar desde la pantalla actual, atenuadas donde no hay
+        pantalla, invisibles en celdas inactivas (`dirs=None`)."""
+        for name in DIR_NAMES:
+            if dirs is None:
+                self._dir_colors[name].rgba = (0, 0, 0, 0)
+            elif name in dirs:
+                self._dir_colors[name].rgba = COLOR_ACCENT
+            else:
+                self._dir_colors[name].rgba = COLOR_ARROW_DIM
 
 
 class EditorScreen(Screen):
@@ -391,9 +441,18 @@ class EditorScreen(Screen):
             self.content.add_widget(self.placeholder)
 
 
+    def _nav_dirs(self):
+        """Direcciones por las que se puede navegar desde la pantalla
+        actual (según `navmap`): encienden las flechas de la celda activa."""
+        return {name for (dx, dy), name in zip(_DIR_DELTAS, DIR_NAMES)
+                if neighbor(self.current, dx, dy)}
+
     def _update_nav(self, cur_col, cur_row, cur_letter):
+        dirs = self._nav_dirs()
         for i, cell in enumerate(self.nav_cells):
             if i == cur_col:
                 cell.set(cur_letter, ROW_COLORS[cur_row])
+                cell.set_dirs(dirs)
             else:
                 cell.set(NAV_COLUMNS[i], None)
+                cell.set_dirs(None)

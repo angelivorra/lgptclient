@@ -25,6 +25,9 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
    **S C P I** (las 4 columnas) con la columna activa resaltada; el color indica
    la altura: **oro** = fila media, **cian** = fila de arriba (PROJECT/GROOVE),
    **magenta** = fila de abajo (TABLE), mostrando en esa celda su letra (P/G/T).
+   Alrededor de la celda activa, cuatro flechas de poco alto indican por dónde
+   se puede navegar desde la pantalla actual: **encendidas** (oro) si hay
+   pantalla adyacente en esa dirección, **atenuadas** si no.
    **Esc** vuelve a la lista de canciones.
 
 3. **SONG** (`screens/song_view.py`): parrilla 256×8 de índices de chain
