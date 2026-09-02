@@ -1,4 +1,4 @@
-"""Pantalla de cargar canción: lista vertical, cursor oro, flechas + A.
+"""Pantalla de cargar canción: lista vertical, cursor de acento, flechas + A.
 
 El input lo centraliza la App (robotracker2.py); esta pantalla solo mantiene la
 selección (self.index) y se redibuja. Con pocas canciones la lista se centra;
@@ -19,7 +19,7 @@ TITLE_H = dp(60)
 
 
 class SongRow(Label):
-    """Fila de la lista: fondo oro cuando está seleccionada."""
+    """Fila de la lista: fondo de acento cuando está seleccionada."""
 
     def __init__(self, **kw):
         super().__init__(bold=True, font_size=dp(22), halign="center",

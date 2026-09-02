@@ -37,7 +37,10 @@ from lgpt_model import EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView, note_name_to_byt
 from robots import (HIT_NOTES, ROBOT_INSTR, ROBOT_TRACK, ayuda_preview_path,
                     hit_label, mdcc_unpack, screen_label)
 from sinte_bridge import note_byte_to_name
-from theme import COLOR_ACCENT, COLOR_BG, COLOR_BORDER
+from theme import (COLOR_ACCENT, COLOR_BEAT, COLOR_BG, COLOR_BORDER, COLOR_EMPTY,
+                   COLOR_FX1, COLOR_FX2, COLOR_HINT_BG, COLOR_HIT, COLOR_INSTR,
+                   COLOR_LINENUM, COLOR_LINENUM_CUR, COLOR_NOTE, COLOR_PLAY,
+                   COLOR_ROW_CURSOR, COLOR_SCREEN, COLOR_SEL)
 
 ROW_H = dp(30)
 TOP_PAD = dp(20)
@@ -46,7 +49,6 @@ STEP_W = dp(52)
 FONT = dp(17)
 FONT_SMALL = dp(15)
 HINT_H = dp(32)                         # franja inferior del hint de selección
-COLOR_HINT_BG = (0.10, 0.11, 0.14, 0.96)
 MAX_NOTE = 131                     # (9+2)*12 - 1
 
 # Comandos FX que se pueden ciclar: solo los que se usan en las canciones de
@@ -61,21 +63,6 @@ COLS = [("note", dp(70)), ("instr", dp(52)),
 ROBOT_COLS = [("hit", dp(110)), ("screen", dp(150))]
 
 _HIT_NOTE_LIST = [note for _label, note in HIT_NOTES]
-
-COLOR_NOTE = (0.87, 0.89, 0.92, 1)
-COLOR_INSTR = (0.55, 0.82, 0.55, 1)
-COLOR_FX1 = (0.85, 0.58, 0.75, 1)
-COLOR_FX2 = (0.65, 0.55, 0.85, 1)
-COLOR_HIT = (0.95, 0.55, 0.35, 1)
-COLOR_SCREEN = (0.55, 0.75, 0.95, 1)
-COLOR_EMPTY = (0.30, 0.31, 0.36, 1)
-COLOR_LINENUM = (0.45, 0.46, 0.52, 1)
-COLOR_LINENUM_CUR = (1.0, 0.85, 0.40, 1)
-COLOR_BEAT = (0.13, 0.14, 0.18, 1)
-COLOR_ROW_CURSOR = (0.19, 0.21, 0.27, 1)
-COLOR_PLAY = (0.16, 0.42, 0.24, 1)
-COLOR_SEL = (0.95, 0.75, 0.20, 0.30)   # selección (oro translúcido)
-
 
 _COL_COLOR = {"note": COLOR_NOTE, "instr": COLOR_INSTR,
               "fx1cmd": COLOR_FX1, "fx1prm": COLOR_FX1,

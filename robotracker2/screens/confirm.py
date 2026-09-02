@@ -12,7 +12,8 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
 
-from theme import COLOR_ACCENT, COLOR_BAR_BG, COLOR_BG, COLOR_BTN
+from theme import (COLOR_ACCENT, COLOR_BAR_BG, COLOR_BG, COLOR_BTN, COLOR_CELL,
+                   COLOR_SCRIM)
 
 PANEL_W = dp(600)
 PANEL_H = dp(220)
@@ -34,7 +35,7 @@ class _Btn(Label):
 
     def set_selected(self, sel):
         self._c.rgba = COLOR_ACCENT if sel else COLOR_BTN
-        self.color = COLOR_BG if sel else (0.87, 0.89, 0.92, 1)
+        self.color = COLOR_BG if sel else COLOR_CELL
 
 
 class ConfirmDialog(FloatLayout):
@@ -45,7 +46,7 @@ class ConfirmDialog(FloatLayout):
         self.index = selected
 
         with self.canvas.before:
-            Color(0, 0, 0, 0.6)           # velo
+            Color(*COLOR_SCRIM)
             self._scrim = Rectangle()
         self.bind(pos=self._sync_scrim, size=self._sync_scrim)
 

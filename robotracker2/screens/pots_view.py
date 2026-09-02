@@ -37,7 +37,8 @@ from kivy.uix.widget import Widget
 
 from controls import DOWN, UP
 from sinte_bridge import EFFECT_PRESETS
-from theme import COLOR_ACCENT, COLOR_BG, COLOR_BORDER, COLOR_OK
+from theme import (COLOR_ACCENT, COLOR_BG, COLOR_BORDER, COLOR_EMPTY, COLOR_HINT,
+                   COLOR_NAME, COLOR_OK, COLOR_ROW_CURSOR, COLOR_VOL)
 
 POT_NOS = [1, 2, 5, 6]              # knobs configurables del controlador
 EFFECT_CYCLE = ["off", *EFFECT_PRESETS]     # lista del picker de efectos
@@ -47,12 +48,6 @@ COL_W = (dp(120), dp(240), dp(110))  # canal / efecto / %
 FONT = dp(20)
 FONT_SMALL = dp(16)
 PICK_ROW_H = dp(48)                 # fila de la lista de efectos (overlay)
-
-COLOR_ROW_CURSOR = (0.19, 0.21, 0.27, 1)
-COLOR_NAME = (0.87, 0.89, 0.92, 1)
-COLOR_EMPTY = (0.30, 0.31, 0.36, 1)
-COLOR_HINT = (0.50, 0.52, 0.60, 1)
-COLOR_VOL = COLOR_OK
 
 
 class PotsGrid(Widget):
@@ -154,8 +149,8 @@ class PotsGrid(Widget):
                 y = top - (i + 2) * ROW_H
                 sel = i == self.cursor
                 if sel:
-                    # Fila seleccionada: relleno oscuro con BORDE oro (no
-                    # relleno oro), para que el texto se lea sobre el fondo.
+                    # Fila seleccionada: relleno oscuro con borde de acento
+                    # (no relleno), para que el texto se lea sobre el fondo.
                     Color(*COLOR_ROW_CURSOR)
                     Rectangle(pos=(x0, y), size=(w, ROW_H - dp(8)))
                     Color(*COLOR_ACCENT)
@@ -172,8 +167,7 @@ class PotsGrid(Widget):
                                 COLOR_ACCENT if sel else COLOR_BORDER,
                                 font_size=FONT_SMALL)
                 canal, efecto, pct = self.pots[i]
-                # columnas: la seleccionada (solo en la fila del cursor)
-                # en oro; el % en verde; las vacías apagadas
+                # columnas: la seleccionada en acento; el % en verde
                 col = [f"C {canal}" if canal else "—",
                        efecto if efecto else "—",
                        f"{pct}%" if efecto else "—"]
@@ -221,7 +215,7 @@ class PotsGrid(Widget):
         # oscurece el fondo
         Color(0, 0, 0, 0.55)
         Rectangle(pos=self.pos, size=self.size)
-        # panel con borde oro
+        # panel con borde de acento
         Color(*COLOR_ROW_CURSOR)
         Rectangle(pos=(px, py), size=(pw, ph))
         Color(*COLOR_ACCENT)

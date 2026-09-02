@@ -5,7 +5,7 @@ La cabecera muestra a la izquierda el nombre de la pantalla + la canción
 (` *` si hay cambios sin guardar: lgptsav.dat, pads o knobs) y a la derecha
 la tira fija D S C P I: D = PADS, S = SONG, C = CHAIN (CONFIG pinta su C
 magenta en la columna S), P = PHRASE, I = INSTRUMENT. El color indica la
-altura: oro = fila media, cian = fila de arriba (PROJECT/GROOVE/EFECTOS),
+altura: azul = fila media, cian = fila de arriba (PROJECT/GROOVE/EFECTOS),
 magenta = fila de abajo (TABLE/CONFIG), mostrando en esa celda su letra
 (P/G/T/C/E). Alrededor de la celda activa, cuatro flechas de poco alto
 indican por dónde se puede navegar: encendidas si hay pantalla adyacente
@@ -33,8 +33,8 @@ from screens.pots_view import PotsGrid
 from screens.project_view import ProjectMenu
 from screens.song_view import SongGrid
 from screens.table_view import TableGrid
-from theme import (COLOR_ACCENT, COLOR_BAR_BG, COLOR_BG, COLOR_BORDER,
-                   COLOR_ERROR, COLOR_OK)
+from theme import (COLOR_ACCENT, COLOR_ARROW_DIM, COLOR_BAR_BG, COLOR_BG,
+                   COLOR_BORDER, COLOR_ERROR, COLOR_OK, ROW_COLORS)
 
 
 BAR_H = dp(52)
@@ -43,17 +43,8 @@ NAV_INSET_X = dp(8)              # bandas a los lados del chip para las flechas
 
 NAV_COLUMNS = ["D", "S", "C", "P", "I"]
 
-ROW_COLORS = {
-    1: COLOR_ACCENT,            # fila media (S C P I)
-    0: (0.35, 0.75, 0.85, 1),   # fila de arriba (PROJECT, GROOVE) -> cian
-    2: (0.82, 0.55, 0.88, 1),   # fila de abajo (TABLE) -> magenta
-}
-
-# flechas direccionales de la celda activa (encendidas si hay pantalla
-# adyacente en esa dirección, atenuadas si no)
 DIR_NAMES = ("up", "down", "left", "right")
 _DIR_DELTAS = ((0, -1), (0, 1), (-1, 0), (1, 0))
-COLOR_ARROW_DIM = (0.30, 0.31, 0.38, 1)
 
 
 class _NavCell(Label):

@@ -17,15 +17,12 @@ from kivy.graphics import Color, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
-from theme import COLOR_ACCENT, COLOR_BG
+from theme import COLOR_ACCENT, COLOR_BG, COLOR_ITEM, COLOR_VALUE
 
 FONT = dp(24)
 ITEM_H = dp(42)
 GAP = dp(22)
 PAD_TOP = dp(48)
-
-COLOR_ITEM = (0.87, 0.89, 0.92, 1)
-COLOR_VALUE = (0.95, 0.75, 0.20, 1)
 
 # (clave, tipo, etiqueta); tipo: "value" | "action" | "gap"
 ITEMS = [

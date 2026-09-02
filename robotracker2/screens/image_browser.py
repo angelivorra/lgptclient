@@ -20,20 +20,15 @@ from kivy.uix.widget import Widget
 
 from controls import DOWN, UP
 from robots import CC_LABELS, ayuda_preview_path, classify_folder, lyric_lines
-from theme import COLOR_ACCENT, COLOR_BG, COLOR_BTN
+from theme import (COLOR_ACCENT, COLOR_ACTION, COLOR_BG, COLOR_BTN, COLOR_HEADER,
+                   COLOR_ITEM, COLOR_PREVIEW_BG, COLOR_PREVIEW_BORDER,
+                   COLOR_SCRIM)
 
 ROW_H = dp(30)
 TOP_PAD = dp(70)
 BOTTOM_H = dp(76)
 FONT = dp(18)
 LIST_FRAC = 0.42                # fracción de ancho para la lista (resto: preview)
-
-COLOR_ITEM = (0.87, 0.89, 0.92, 1)
-COLOR_HEADER = (0.95, 0.75, 0.20, 1)
-COLOR_SCRIM = (0.03, 0.03, 0.05, 0.97)
-COLOR_ACTION = (0.75, 0.77, 0.82, 1)
-COLOR_PREVIEW_BG = (0.10, 0.10, 0.13, 1)
-COLOR_PREVIEW_BORDER = (0.36, 0.38, 0.46, 1)
 
 _KIND_TXT = {"images": "Imágenes", "anim": "Animaciones", "lyric": "Texto"}
 

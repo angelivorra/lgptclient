@@ -17,17 +17,13 @@ from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
 from sinte_bridge import note_byte_to_name
-from theme import COLOR_ACCENT, COLOR_BG
+from theme import COLOR_ACCENT, COLOR_BG, COLOR_HDR, COLOR_LABEL, COLOR_VALUE
 
 FONT = dp(22)
 FONT_HDR = dp(15)
 ITEM_H = dp(38)
 HDR_H = dp(26)
 PAD_TOP = dp(30)
-
-COLOR_LABEL = (0.87, 0.89, 0.92, 1)
-COLOR_VALUE = (0.55, 0.82, 0.55, 1)
-COLOR_HDR = (0.45, 0.46, 0.52, 1)
 
 # Valores de los campos enum (se conserva el actual si no está en la lista).
 ENUMS = {

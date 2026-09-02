@@ -16,7 +16,9 @@ from controls import DOWN, LEFT, RIGHT, UP
 from lgpt_model import (CHAIN_LEN, EMPTY, NUM_TRACKS, ChainView, SongView,
                         duplicate_phrase)
 
-from theme import COLOR_ACCENT, COLOR_BG
+from theme import (COLOR_ACCENT, COLOR_BEAT, COLOR_BG, COLOR_CELL, COLOR_EMPTY,
+                   COLOR_HINT_BG, COLOR_LINENUM, COLOR_LINENUM_CUR, COLOR_PLAY,
+                   COLOR_ROW_CURSOR, COLOR_SEL, COLOR_TRSP)
 
 ROW_H = dp(30)
 TOP_PAD = dp(20)
@@ -26,17 +28,6 @@ COL_W = dp(96)
 FONT = dp(17)
 FONT_SMALL = dp(15)
 HINT_H = dp(32)                         # franja inferior del hint de selección
-COLOR_HINT_BG = (0.10, 0.11, 0.14, 0.96)
-
-COLOR_CELL = (0.87, 0.89, 0.92, 1)
-COLOR_TRSP = (0.72, 0.74, 0.80, 1)
-COLOR_EMPTY = (0.30, 0.31, 0.36, 1)
-COLOR_LINENUM = (0.45, 0.46, 0.52, 1)
-COLOR_LINENUM_CUR = (1.0, 0.85, 0.40, 1)
-COLOR_BEAT = (0.13, 0.14, 0.18, 1)
-COLOR_ROW_CURSOR = (0.19, 0.21, 0.27, 1)
-COLOR_PLAY = (0.16, 0.42, 0.24, 1)
-COLOR_SEL = (0.95, 0.75, 0.20, 0.30)
 
 _EDIT = {RIGHT: 1, LEFT: -1, UP: 0x10, DOWN: -0x10}
 
