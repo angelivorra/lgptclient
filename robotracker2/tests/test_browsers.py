@@ -94,6 +94,16 @@ def _browser_sueltos():
         assert b2.cwd == root, b2.cwd
         print("  flechas sin historial no hacen nada OK")
 
+        loaded = []
+        wavs = root / "wavs"
+        wavs.mkdir()
+        (wavs / "hit.wav").write_bytes(b"x")
+        b3 = SampleBrowser(wavs, on_load=lambda p: loaded.append(p.name),
+                           on_close=None)
+        b3.activate()
+        assert loaded == ["hit.wav"], loaded
+        print("  A sobre un wav carga (sin doble-tap) OK")
+
 
 def _indicadores_screens():
     """Flags de scroll del navegador de screens (encienden los triángulos)."""
@@ -188,6 +198,14 @@ def _flechas_nav():
     assert tuple(cell._dir_colors["left"].rgba) == COLOR_ACCENT   # PHRASE
     assert tuple(cell._dir_colors["down"].rgba) == COLOR_ACCENT   # TABLE
     print("  INSTRUMENT: dcha/arriba apagadas OK")
+
+    es.song_name = "demo"
+    es.current = "song"
+    es.unsaved = False
+    assert es._header_text() == "SONG    demo", es._header_text()
+    es.set_unsaved(True)
+    assert es._header_text() == "SONG    demo *", es._header_text()
+    print("  cabecera: asterisco de cambios sin guardar OK")
 
 
 def _dispatch_flechas(app):

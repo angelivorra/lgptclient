@@ -8,26 +8,30 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
 ## Estado
 
 1. **Cargar canción** (`screens/load_song.py`): lista vertical de las canciones
-   encontradas en `../sinte/songs/`. Flechas ↑/↓ mueven la selección (con wrap),
-   **A** carga la canción.
+   encontradas en `../sinte/songs/`. Flechas ↑/↓ mueven la selección (con wrap).
+   Si la lista no cabe (muchas canciones o densidad ×2 en Odin), una ventana
+   de scroll sigue al cursor; con pocas se centra. **A** carga la canción.
 2. **Editor** (`screens/editor.py`): al cargar entra en la pantalla SONG. Las
    pantallas estilo LGPT están dispuestas en rejilla (`navmap.py`):
 
    ```
-           PROJECT   GROOVE
-   SONG    CHAIN     PHRASE    INSTRUMENT
-   CONFIG            TABLE     TABLE
+   EFECTOS  PROJECT           GROOVE
+   PADS     SONG    CHAIN     PHRASE    INSTRUMENT
+            CONFIG            TABLE     TABLE
    ```
 
 
    Se navega con **Ctrl+flechas** hacia la pantalla adyacente. La cabecera
-   muestra el nombre de la pantalla + la canción, y a la derecha una tira fija
-   **S C P I** (las 4 columnas) con la columna activa resaltada; el color indica
-   la altura: **oro** = fila media, **cian** = fila de arriba (PROJECT/GROOVE),
-   **magenta** = fila de abajo (TABLE), mostrando en esa celda su letra (P/G/T).
-   Alrededor de la celda activa, cuatro flechas de poco alto indican por dónde
-   se puede navegar desde la pantalla actual: **encendidas** (oro) si hay
-   pantalla adyacente en esa dirección, **atenuadas** si no.
+   muestra el nombre de la pantalla + la canción (` *` si hay cambios sin
+   guardar: lgptsav.dat, pads o knobs) y a la derecha una tira fija
+   **D S C P I**: **D** = PADS, **S** = SONG, **C** = CHAIN (CONFIG pinta su
+   **C** magenta en la columna S; no es la misma C), **P** = PHRASE,
+   **I** = INSTRUMENT. El color indica la altura: **oro** = fila media,
+   **cian** = fila de arriba (PROJECT/GROOVE/EFECTOS), **magenta** = fila de
+   abajo (TABLE/CONFIG), mostrando en esa celda su letra (P/G/T/C/E).
+   Alrededor de la celda activa, cuatro flechas de poco alto indican por
+   dónde se puede navegar desde la pantalla actual: **encendidas** (oro) si
+   hay pantalla adyacente en esa dirección, **atenuadas** si no.
    **Esc** vuelve a la lista de canciones.
 
 3. **SONG** (`screens/song_view.py`): parrilla 256×8 de índices de chain
@@ -151,7 +155,9 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
    guardar. Al entrar **desde PHRASE va al instrumento del step**. En **Sample**,
    **A abre el navegador de samples** (`screens/sample_browser.py`): navega la
    biblioteca, **previsualiza** al pasar por cada .wav y **A carga** (copia el
-   wav a la canción y lo asigna). Las flechas **izq/dcha van atrás/adelante
+   wav a la canción y lo asigna; un solo A, como el navegador de imágenes).
+   Si la preview falla, un toast lo dice. **B** vuelve atrás o cierra. Las
+   flechas **izq/dcha van atrás/adelante
    por el historial de carpetas** con memoria (dos niveles y los que haya),
    recordando la posición del cursor en cada una. Se guarda (writer
    extendido para INSTRUMENTBANK).
@@ -385,14 +391,14 @@ robotracker2/odin/install.sh [usuario@]IP_de_la_odin
 | `sinte_bridge.py` | Puente a `../sinte` (parser + engine) |
 | `robots.py` | Constantes canal de robotas: golpes reales, MDCC↔`images/` |
 | `screens/load_song.py` | Pantalla de cargar canción |
-| `screens/editor.py` | Editor: cabecera S C P I + contenido por pantalla + toast |
+| `screens/editor.py` | Editor: cabecera D S C P I + contenido por pantalla + toast |
 | `screens/song_view.py` | Rejilla SONG 256×8 (canvas) |
 | `screens/chain_view.py` | Chain: 16 steps × phrase/transpose (canvas) |
 | `screens/phrase_view.py` | Phrase: 16 steps × nota/instr/fx1/fx2 (canal 8: HIT/SCREEN) |
 | `screens/groove_view.py` | Groove: 16 steps de ticks, 32 grooves (canvas) |
 | `screens/table_view.py` | Table: 16 filas × 3 FX (canvas) |
 | `screens/instrument_view.py` | Instrument: menú de parámetros (canvas) |
-| `screens/sample_browser.py` | Navegador de samples (escuchar/importar) |
+| `screens/sample_browser.py` | Navegador de samples (preview al mover, A carga) |
 | `screens/image_browser.py` | Navegador visual de `images/` (evento de pantalla) |
 | `screens/project_view.py` | Menú PROJECT (tempo/master/load/save/exit) |
 | `screens/config_view.py` | Menú CONFIG (interfaces MIDI de entrada) |

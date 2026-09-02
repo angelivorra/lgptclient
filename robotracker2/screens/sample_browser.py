@@ -1,19 +1,16 @@
 """Navegador de samples estilo LGPT: navegar la carpeta, escuchar e importar.
 
-Todo centrado. Abajo, tres acciones como en LGPT: Escuchar / Import / Cancelar.
-Arr/abj mueve; **A** (`activate()`) escucha el sample seleccionado (o entra en
-la carpeta); **doble A** importa el sample (lo copia a la canción y lo asigna
-al instrumento); **B/Cancelar** sube de carpeta (o cierra en la raíz). Las
-flechas izq/dcha van **atrás/adelante por el historial de carpetas** con
-memoria (hasta dos niveles y los que haya), recordando además la posición del
-cursor en cada carpeta. El doble-tap se gestiona dentro del propio widget
-(ver `activate()`), así la app solo necesita mover/activar/volver/avanzar:
-`ImageBrowser` no tiene historial (izq/dcha no hacen nada allí).
+Todo centrado. Abajo, dos acciones como en ImageBrowser: Elegir / Cancelar.
+Arr/abj mueve; al pasar por un .wav se **previsualiza**; **A** (`activate()`)
+entra en la carpeta o **carga** el sample (copia a la canción y lo asigna);
+**B/Cancelar** sube de carpeta (o cierra en la raíz). Las flechas izq/dcha
+van **atrás/adelante por el historial de carpetas** con memoria, recordando
+la posición del cursor en cada carpeta. Si falla la preview, `on_toast`
+muestra el error (la app pasa el toast del editor).
 """
 
 from pathlib import Path
 
-from kivy.clock import Clock
 from kivy.core.text import Label as CoreLabel
 from kivy.graphics import Color, Rectangle, RoundedRectangle
 from kivy.metrics import dp
@@ -33,22 +30,22 @@ COLOR_HEADER = (0.95, 0.75, 0.20, 1)
 COLOR_SCRIM = (0.03, 0.03, 0.05, 0.97)
 COLOR_ACTION = (0.75, 0.77, 0.82, 1)
 
-ACTIONS = [("A", "Escuchar"), ("AA", "Import"), ("B", "Cancelar")]
+ACTIONS = [("A", "Elegir"), ("B", "Cancelar")]
 
 
 class SampleBrowser(Widget):
-    def __init__(self, root, on_load=None, on_close=None, **kw):
+    def __init__(self, root, on_load=None, on_close=None, on_toast=None, **kw):
         super().__init__(**kw)
         self.root = Path(root)
         self.cwd = self.root
         self.on_load = on_load
         self.on_close = on_close
+        self.on_toast = on_toast
         self.entries = []
         self.index = 0
         self.top_idx = 0
         self._back = []     # historial hacia atrás: (cwd, index, top_idx)
         self._fwd = []      # historial hacia delante (para la flecha dcha)
-        self._a_pending = False        # para el doble-tap (escuchar / importar)
         self._tex = {}
         self.bind(pos=self._redraw, size=self._redraw)
         self._scan()
@@ -67,6 +64,7 @@ class SampleBrowser(Widget):
         self.entries = dirs + wavs
         self.index = 0
         self.top_idx = 0
+        self._preview_selection()
         self._redraw()
 
     def selected(self):
@@ -83,6 +81,7 @@ class SampleBrowser(Widget):
         self.index = min(index, max(0, len(self.entries) - 1))
         self.top_idx = max(0, min(top_idx, max(0, len(self.entries) - 1)))
         self._ensure_visible()
+        self._preview_selection()
         self._redraw()
 
     def go_back(self):
@@ -108,10 +107,11 @@ class SampleBrowser(Widget):
         elif button == DOWN:
             self.index = min(len(self.entries) - 1, self.index + 1)
         self._ensure_visible()
+        self._preview_selection()
         self._redraw()
 
     def activate(self):
-        """A: entra en carpeta, o escucha el sample (doble-tap = importar)."""
+        """A: entra en carpeta, o carga el sample (la preview es al moverse)."""
         sel = self.selected()
         if sel is None:
             return
@@ -121,23 +121,18 @@ class SampleBrowser(Widget):
             self.cwd = sel
             self._scan()
             return
-        if self._a_pending:
-            self._a_pending = False
-            Clock.unschedule(self._clear_pending)
-            self.import_current()
-        else:
-            self.preview_current()
-            self._a_pending = True
-            Clock.schedule_once(self._clear_pending, 0.5)
-
-    def _clear_pending(self, *_):
-        self._a_pending = False
+        self.import_current()
 
     def cleanup(self):
-        """Al cerrar el navegador: parar audio y cancelar el doble-tap pendiente."""
+        """Al cerrar el navegador: parar audio de la preview."""
         self.stop_preview()
-        Clock.unschedule(self._clear_pending)
-        self._a_pending = False
+
+    def _preview_selection(self):
+        sel = self.selected()
+        if sel is None or sel.is_dir():
+            self.stop_preview()
+            return
+        self.preview_current()
 
     def preview_current(self):
         sel = self.selected()
@@ -149,8 +144,9 @@ class SampleBrowser(Widget):
             data, sr = sf.read(str(sel), dtype="float32")
             sd.stop()
             sd.play(data, sr)
-        except Exception:                       # noqa: BLE001
-            pass
+        except Exception as exc:                    # noqa: BLE001
+            if self.on_toast:
+                self.on_toast(f"Preview: {exc}")
 
     def import_current(self):
         sel = self.selected()
@@ -229,7 +225,6 @@ class SampleBrowser(Widget):
                 else:
                     color = COLOR_DIR if p.is_dir() else COLOR_WAV
                 self._text_centered(cx, y, name, color)
-            # barra de acciones (Escuchar / Import / Cancelar) centrada
             self._draw_actions(cx)
 
     def _draw_actions(self, cx):

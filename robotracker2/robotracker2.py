@@ -1,15 +1,14 @@
 """ROBOTRACKER2 — clon de la interfaz de lgptclient, pantalla por pantalla.
 
-App Kivy nueva (misma estética que robotracker) sobre el motor de ../sinte.
-Estado actual: cargar canción (lista) → editor con navegación 2D de pantallas
-estilo LGPT (SONG implementada, resto vacías).
+App Kivy (misma estética que robotracker) sobre el motor de ../sinte.
+Cargar canción → editor con navegación 2D de pantallas estilo LGPT.
 
 Todos los controles pasan por `controls` (botones lógicos): en PC el teclado,
 en la Odin 2 Portal el gamepad. La semántica LGPT (dpad = mover cursor, A+dir =
 editar, L+dir = cambiar de pantalla, B = borrar, START = play, BACK = volver)
 se resuelve aquí sobre botones lógicos.
 
-Ejecutar:  robotracker/.venv/bin/python robotracker2/robotracker2.py [--songs RUTA]
+Ejecutar:  robotracker2/.venv/bin/python robotracker2/robotracker2.py [--songs RUTA]
 """
 
 import os
@@ -257,7 +256,7 @@ class Robotracker2App(App):
 
     def _on_request_close(self, *_a, **_k):
         # Botón de cerrar la ventana: avisa si hay cambios sin guardar.
-        if (self.dirty or self._pads_dirty or self._pots_dirty) \
+        if self._session_dirty() \
                 and self.dialog is None \
                 and self.editor_screen.project is not None:
             self._confirm_exit()
@@ -393,6 +392,7 @@ class Robotracker2App(App):
                     g.set_state(self._midi_ctrl.pots_state())
                     g.close_picker()
                     self._pots_dirty = True
+                    self._sync_unsaved()
                 return True
             if button == B:
                 if L2 not in active and R2 not in active:
@@ -444,6 +444,7 @@ class Robotracker2App(App):
                 self.editor_screen.pots_grid.set_state(
                     self._midi_ctrl.pots_state())
                 self._pots_dirty = True
+                self._sync_unsaved()
         elif col == 1:
             self.editor_screen.pots_grid.open_picker()
         else:
@@ -452,6 +453,7 @@ class Robotracker2App(App):
             self.editor_screen.pots_grid.set_state(
                 self._midi_ctrl.pots_state())
             self._pots_dirty = True
+            self._sync_unsaved()
         return True
 
     def _pots_save(self):
@@ -461,6 +463,7 @@ class Robotracker2App(App):
         canción (_save)."""
         self._midi_ctrl.save()
         self._pots_dirty = False
+        self._sync_unsaved()
         self.editor_screen.toast_msg("Efectos guardados")
 
     # ------------------------------------------------------------------
@@ -508,12 +511,14 @@ class Robotracker2App(App):
         self._midi_ctrl.set_pad_volume(pad, max(0, min(100, pct)))
         self.editor_screen.pads_grid.set_state(self._midi_ctrl.pads_state())
         self._pads_dirty = True
+        self._sync_unsaved()
 
     def _pads_clear(self, pad):
         self._midi_ctrl.assign_pad(pad, None)
         self.editor_screen.pads_grid.set_state(self._midi_ctrl.pads_state())
         self.editor_screen.toast_msg(f"PAD {pad}: sin sample")
         self._pads_dirty = True
+        self._sync_unsaved()
 
     def _ensure_pad_audio(self):
         """Los pads suenan aunque la canción no esté reproduciéndose: su
@@ -530,6 +535,7 @@ class Robotracker2App(App):
         canción (_save)."""
         self._midi_ctrl.save()
         self._pads_dirty = False
+        self._sync_unsaved()
         self.editor_screen.toast_msg("Pads guardados")
 
     def _open_pads_browser(self, pad):
@@ -541,7 +547,8 @@ class Robotracker2App(App):
             else self.editor_screen.project.dir / "samples"
         self._open_browser(SampleBrowser(
             root, on_load=self._pads_sample_loaded,
-            on_close=self._close_browser))
+            on_close=self._close_browser,
+            on_toast=self.editor_screen.toast_msg))
 
     def _pads_sample_loaded(self, path):
         # El WAV ya está en la biblioteca de pads: se referencia por su
@@ -557,6 +564,7 @@ class Robotracker2App(App):
         # sin self.dirty (el robotraca.json no es el lgptsav.dat): la
         # asignación queda en memoria hasta guardar (fila GUARDAR o Guardar)
         self._pads_dirty = True
+        self._sync_unsaved()
         self.editor_screen.toast_msg(f"PAD {self._pads_pad}: {name}")
         self._close_browser()
 
@@ -772,7 +780,8 @@ class Robotracker2App(App):
         root = self.samples_dir if self.samples_dir.is_dir() \
             else self.editor_screen.project.dir / "samples"
         self._open_browser(SampleBrowser(root, on_load=self._load_sample,
-                                         on_close=self._close_browser))
+                                         on_close=self._close_browser,
+                                         on_toast=self.editor_screen.toast_msg))
 
     def _dispatch_browser(self, button):
         b = self.browser
@@ -811,7 +820,7 @@ class Robotracker2App(App):
             return
         name = dest.name
         self.editor_screen.instrument_menu.set_sample(name)
-        self.dirty = True
+        self._mark_dirty()
         self.editor_screen.toast_msg(notice or f"Sample: {name}")
         self._close_browser()
 
@@ -823,7 +832,7 @@ class Robotracker2App(App):
 
     def _load_screen(self, cc, value):
         self.editor_screen.phrase_grid.set_screen(self._screen_step, cc, value)
-        self.dirty = True
+        self._mark_dirty()
         self.editor_screen.toast_msg(f"Screen: {screen_label(cc, value)}")
         self._close_browser()
 
@@ -904,6 +913,7 @@ class Robotracker2App(App):
             self._pads_dirty = False
             self._pots_dirty = False
             msg += " + pads/knobs"
+        self._sync_unsaved()
         ed.toast_msg(msg)
 
     # ------------------------------------------------------------------
@@ -1004,7 +1014,7 @@ class Robotracker2App(App):
             proceed(key)          # diálogos con opciones propias (Sí/No)
 
     def _request_exit(self):
-        if self.dirty or self._pads_dirty or self._pots_dirty:
+        if self._session_dirty():
             self._confirm_exit()
         else:
             self.stop()
@@ -1014,7 +1024,7 @@ class Robotracker2App(App):
                       on_proceed=self.stop)
 
     def _request_load(self, song_dir):
-        if (self.dirty or self._pads_dirty or self._pots_dirty) \
+        if self._session_dirty() \
                 and self.editor_screen.project is not None:
             self._confirm("Cambios sin guardar.\n¿Cargar otra canción?",
                           on_proceed=lambda: self.load_song(song_dir))
@@ -1204,8 +1214,16 @@ class Robotracker2App(App):
                 c.phrase_pos if (c.playing and c.phrase == ph) else None)
 
     # ------------------------------------------------------------------
+    def _session_dirty(self):
+        return self.dirty or self._pads_dirty or self._pots_dirty
+
+    def _sync_unsaved(self):
+        """Asterisco en cabecera si hay cambios de canción, pads o knobs."""
+        self.editor_screen.set_unsaved(self._session_dirty())
+
     def _mark_dirty(self):
         self.dirty = True
+        self._sync_unsaved()
 
     def load_song(self, song_dir):
         project = load_project(song_dir)
@@ -1221,15 +1239,16 @@ class Robotracker2App(App):
         self._midi_ctrl.set_song(self.player.engine, song_dir)
         self._song_dir = song_dir
         self._play_start = None
+        self.dirty = False
+        self._pads_dirty = False
+        self._pots_dirty = False
         self.editor_screen.set_play_indicator(False)
         self.editor_screen.enter_song(project, display_name(song_dir.name))
         # PADS/POTS: estado de esta canción (robotraca.json "pads" y
         # "pots"/"fx_mix"; sin la clave, vacíos — no hay banco global)
         self.editor_screen.pads_grid.set_state(self._midi_ctrl.pads_state())
         self.editor_screen.pots_grid.set_state(self._midi_ctrl.pots_state())
-        self.dirty = False
-        self._pads_dirty = False
-        self._pots_dirty = False
+        self._sync_unsaved()
         self.sm.current = "editor"
 
     def on_stop(self):
