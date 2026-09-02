@@ -29,8 +29,9 @@ from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, UP
-from theme import COLOR_ACCENT, COLOR_BAR_BG, COLOR_BG, COLOR_BORDER, \
-    COLOR_OK
+from theme import (COLOR_ACCENT, COLOR_BAR_BG, COLOR_BG, COLOR_BORDER,
+                   COLOR_EMPTY, COLOR_HINT, COLOR_NAME, COLOR_OK,
+                   COLOR_ROW_CURSOR, COLOR_VOL)
 
 PADS = 4                            # pads sampler de la canción (engine 0-3)
 SAVE_ROW = PADS                     # fila extra de abajo: GUARDAR
@@ -41,12 +42,6 @@ VOL_W = dp(110)
 FONT = dp(20)
 FONT_SMALL = dp(16)
 NAME_MAX = 40                       # caracteres máximos del nombre en pantalla
-
-COLOR_ROW_CURSOR = (0.19, 0.21, 0.27, 1)
-COLOR_NAME = (0.87, 0.89, 0.92, 1)
-COLOR_EMPTY = (0.30, 0.31, 0.36, 1)
-COLOR_HINT = (0.50, 0.52, 0.60, 1)
-COLOR_VOL = COLOR_OK
 
 
 class PadsGrid(Widget):
@@ -115,8 +110,8 @@ class PadsGrid(Widget):
             for i in range(PADS):
                 y = top - (i + 2) * ROW_H
                 if i == self.cursor:
-                    # Fila seleccionada: relleno oscuro con BORDE oro (no
-                    # relleno oro), para que el texto de la fila (nombre,
+                    # Fila seleccionada: relleno oscuro con borde de acento
+                    # (no relleno), para que el texto de la fila (nombre,
                     # %, que son claros/dorados) se lea sobre el fondo.
                     Color(*COLOR_ROW_CURSOR)
                     Rectangle(pos=(x0, y), size=(w, ROW_H - dp(8)))

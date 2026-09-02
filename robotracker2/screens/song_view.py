@@ -1,7 +1,6 @@
 """Pantalla SONG: la parrilla 256 filas × 8 canales de índices de chain.
 
-Clon de la pantalla Song de LGPT con estética moderna (bandas por compás/beat,
-cursor redondeado dorado, adaptado a pantalla ancha tipo Odin 2). Trabaja con
+Clon de la pantalla Song de LGPT. Trabaja con
 botones lógicos (`controls`); la app resuelve los acordes y llama a estos
 métodos:
 
@@ -23,7 +22,11 @@ from controls import DOWN, LEFT, RIGHT, UP
 from lgpt_model import (EMPTY, NUM_TRACKS, SongView, clip_region,
                         duplicate_chain, paste_region, read_cell)
 
-from theme import COLOR_ACCENT, COLOR_BG
+from theme import (COLOR_ACCENT, COLOR_BAR, COLOR_BEAT, COLOR_BG, COLOR_CELL,
+                   COLOR_EMPTY, COLOR_HEADER_BG, COLOR_HEADER_TXT,
+                   COLOR_HINT_BG, COLOR_ICON, COLOR_LINENUM, COLOR_LINENUM_CUR,
+                   COLOR_MUTE_OVERLAY, COLOR_MUTED, COLOR_PLAY, COLOR_ROW_CURSOR,
+                   COLOR_SEL)
 
 ROW_H = dp(30)
 HEADER_H = dp(34)                       # cabecera con el nº de canal
@@ -31,27 +34,10 @@ GUTTER_W = dp(54)
 FONT = dp(17)
 FONT_SMALL = dp(15)
 HINT_H = dp(32)                         # franja inferior del hint de selección
-COLOR_HINT_BG = (0.10, 0.11, 0.14, 0.96)
 
 # Canales especiales (0-index): 6 = voz (canal 7), 7 = robot (canal 8)
 VOICE_TRACK = 6
 ROBOT_TRACK = 7
-
-# Colores de la parrilla
-COLOR_CELL = (0.87, 0.89, 0.92, 1)     # valor de chain
-COLOR_EMPTY = (0.30, 0.31, 0.36, 1)    # celda vacía "--"
-COLOR_LINENUM = (0.45, 0.46, 0.52, 1)
-COLOR_LINENUM_CUR = (1.0, 0.85, 0.40, 1)
-COLOR_BAR = (0.16, 0.18, 0.23, 1)      # cada 16 filas (compás)
-COLOR_BEAT = (0.13, 0.14, 0.18, 1)     # cada 4 filas (beat)
-COLOR_ROW_CURSOR = (0.19, 0.21, 0.27, 1)
-COLOR_SEL = (0.95, 0.75, 0.20, 0.30)   # selección (oro translúcido)
-COLOR_PLAY = (0.16, 0.42, 0.24, 1)     # celda en el playhead (verde)
-COLOR_HEADER_BG = (0.09, 0.10, 0.13, 1)
-COLOR_HEADER_TXT = (0.60, 0.62, 0.70, 1)
-COLOR_ICON = COLOR_ACCENT              # voz/robot resaltados en oro
-COLOR_MUTED = (0.85, 0.35, 0.35, 1)   # cabecera de pista muteada (rojo)
-COLOR_MUTE_OVERLAY = (0, 0, 0, 0.5)   # atenúa la columna muteada
 
 _MOVE = {UP: (-1, 0), DOWN: (1, 0), LEFT: (0, -1), RIGHT: (0, 1)}
 _EDIT = {RIGHT: 1, LEFT: -1, UP: 0x10, DOWN: -0x10}

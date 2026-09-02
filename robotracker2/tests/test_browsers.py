@@ -148,8 +148,8 @@ def _flechas_nav():
     """Flechas direccionales de la cabecera del editor: encendidas si hay
     pantalla adyacente en esa dirección (según navmap), atenuadas si no, e
     invisibles en las celdas inactivas."""
-    from screens.editor import COLOR_ARROW_DIM, EditorScreen
-    from theme import COLOR_ACCENT
+    from screens.editor import EditorScreen
+    from theme import COLOR_ACCENT, COLOR_ARROW_DIM
 
     es = EditorScreen()
     es.current = "song"

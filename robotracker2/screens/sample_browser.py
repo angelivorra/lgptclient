@@ -17,18 +17,13 @@ from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
-from theme import COLOR_ACCENT, COLOR_BG, COLOR_BTN
+from theme import (COLOR_ACCENT, COLOR_ACTION, COLOR_BG, COLOR_BTN, COLOR_DIR,
+                   COLOR_HEADER, COLOR_SCRIM, COLOR_WAV)
 
 ROW_H = dp(30)
 TOP_PAD = dp(70)
 BOTTOM_H = dp(76)
 FONT = dp(18)
-
-COLOR_DIR = (0.55, 0.75, 0.95, 1)
-COLOR_WAV = (0.87, 0.89, 0.92, 1)
-COLOR_HEADER = (0.95, 0.75, 0.20, 1)
-COLOR_SCRIM = (0.03, 0.03, 0.05, 0.97)
-COLOR_ACTION = (0.75, 0.77, 0.82, 1)
 
 ACTIONS = [("A", "Elegir"), ("B", "Cancelar")]
 

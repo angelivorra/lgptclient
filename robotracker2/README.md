@@ -1,9 +1,9 @@
 # robotracker2
 
-Clon de la interfaz de **lgptclient**, construido pantalla por pantalla, con la
-misma estética que [`robotracker`](../robotracker) (Kivy, fondo oscuro, acento
-oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
-`sinte_bridge.py`).
+Clon de la interfaz de **lgptclient**, construido pantalla por pantalla, con
+skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
+[`theme.py`](theme.py)) y sobre el mismo motor de audio/parser de
+[`../sinte`](../sinte) (vía `sinte_bridge.py`).
 
 ## Estado
 
@@ -26,11 +26,11 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
    guardar: lgptsav.dat, pads o knobs) y a la derecha una tira fija
    **D S C P I**: **D** = PADS, **S** = SONG, **C** = CHAIN (CONFIG pinta su
    **C** magenta en la columna S; no es la misma C), **P** = PHRASE,
-   **I** = INSTRUMENT. El color indica la altura: **oro** = fila media,
+   **I** = INSTRUMENT. El color indica la altura: **azul** = fila media,
    **cian** = fila de arriba (PROJECT/GROOVE/EFECTOS), **magenta** = fila de
    abajo (TABLE/CONFIG), mostrando en esa celda su letra (P/G/T/C/E).
    Alrededor de la celda activa, cuatro flechas de poco alto indican por
-   dónde se puede navegar desde la pantalla actual: **encendidas** (oro) si
+   dónde se puede navegar desde la pantalla actual: **encendidas** (azul) si
    hay pantalla adyacente en esa dirección, **atenuadas** si no.
    **Esc** vuelve a la lista de canciones.
 

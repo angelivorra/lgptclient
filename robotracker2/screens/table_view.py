@@ -14,7 +14,9 @@ from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
 from lgpt_model import FX_EMPTY
-from theme import COLOR_ACCENT, COLOR_BG
+from theme import (COLOR_ACCENT, COLOR_BEAT, COLOR_BG, COLOR_EMPTY, COLOR_FX1,
+                   COLOR_FX2, COLOR_FX3, COLOR_LINENUM, COLOR_LINENUM_CUR,
+                   COLOR_ROW_CURSOR)
 
 TABLE_LEN = 16
 ROW_H = dp(30)
@@ -31,15 +33,6 @@ TABLE_FX = ["VOLM", "PTCH", "RTRG", "HOP ", "KILL", "ARPG", "CRSH", "FCUT",
 COLS = [("cmd1", dp(74)), ("prm1", dp(74)),
         ("cmd2", dp(74)), ("prm2", dp(74)),
         ("cmd3", dp(74)), ("prm3", dp(74))]
-
-COLOR_FX1 = (0.85, 0.58, 0.75, 1)
-COLOR_FX2 = (0.65, 0.55, 0.85, 1)
-COLOR_FX3 = (0.55, 0.75, 0.85, 1)
-COLOR_EMPTY = (0.30, 0.31, 0.36, 1)
-COLOR_LINENUM = (0.45, 0.46, 0.52, 1)
-COLOR_LINENUM_CUR = (1.0, 0.85, 0.40, 1)
-COLOR_BEAT = (0.13, 0.14, 0.18, 1)
-COLOR_ROW_CURSOR = (0.19, 0.21, 0.27, 1)
 
 _COL_COLOR = {"cmd1": COLOR_FX1, "prm1": COLOR_FX1, "cmd2": COLOR_FX2,
               "prm2": COLOR_FX2, "cmd3": COLOR_FX3, "prm3": COLOR_FX3}
