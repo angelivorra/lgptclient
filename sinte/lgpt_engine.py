@@ -57,15 +57,11 @@ DECLICK_SECONDS = 0.004
 # que interesa que se note sin desmadrarse: +12% son 180->202 BPM.
 TEMPO_BOOST_MAX = 0.12
 
-# Compensación de presencia al final de la cadena de efectos de un canal
-# (ver Engine.render y Channel.fx_presence): en vez de afinar una constante
-# de ganancia por cada Fx nuevo (frágil si se combinan varios a la vez, como
-# pasó con `bode`), se compara el RMS antes/después de la cadena entera y se
-# corrige. Es opt-in por canal (Channel.fx_presence, activado desde
-# robotraca.json con "presence": [canal, ...] en lgpt_player.py) y no
-# global: cada pista que ya suena bien tal cual no tiene por qué pasar por
-# esto. Tope de corrección acotado para no disparar silencios ni compensar
-# de más.
+# Compensación de presencia tras los FX de tono (no los `after_presence`
+# como trance_gate): se compara el RMS antes/después de esos FX y se
+# corrige. El gate rítmico va después para que presence no suba los
+# valles. Opt-in por canal (Channel.fx_presence / "presence" en
+# robotraca.json). Tope acotado para no disparar silencios.
 PRESENCE_GAIN_MIN = 0.5
 PRESENCE_GAIN_MAX = 3.0
 PRESENCE_ATTACK = 0.15      # sube rápido la compensación (efecto recién activado)
@@ -961,12 +957,104 @@ class BodeFx:
         buf *= self.GAIN_COMP
 
 
+class BassDriveFx:
+    """Saturación de bajo que conserva el cuerpo (numpy, sin LADSPA).
+
+    Distinto de `valve` (bitcrush Decimator, que llena agudos y convierte
+    el bajo en "guitarra"): aquí es tanh + lowpass. `amount` 0 = bypass;
+    al subir, más drive y el LPF cierra hacia ~2.8 kHz para tirar el fizz.
+    El `fx_mix` del canal sigue mezclando dry/wet.
+
+    Stateful (el polo del LPF): un bloque continúa donde acabó el
+    anterior, sin clic entre callbacks."""
+
+    DRIVE_MAX = 8.0
+    LPF_OPEN = 12000.0
+    LPF_CLOSED = 2800.0
+
+    def __init__(self, sr: int):
+        self.sr = sr
+        self._z = np.zeros(2, dtype=np.float64)
+
+    def apply(self, buf: np.ndarray, amount: float):
+        if amount <= 0.001:
+            return
+        drive = 1.0 + (self.DRIVE_MAX - 1.0) * amount
+        x = np.tanh(drive * buf.astype(np.float64)) / math.tanh(drive)
+        cutoff = self.LPF_OPEN * (self.LPF_CLOSED / self.LPF_OPEN) ** amount
+        a = math.exp(-2.0 * math.pi * cutoff / self.sr)
+        g = 1.0 - a
+        out = np.empty_like(x)
+        z = self._z
+        for c in range(x.shape[1]):
+            acc = z[c]
+            col = x[:, c]
+            y = np.empty_like(col)
+            for i in range(col.shape[0]):
+                acc = a * acc + g * col[i]
+                y[i] = acc
+            z[c] = acc
+            out[:, c] = y
+        buf[:] = out.astype(np.float32)
+
+
+class TranceGateFx:
+    """Puerta rítmica sincronizada al tempo (el "trance gate" clásico):
+    corta el nivel del canal en semicorcheas del BPM efectivo
+    (`Engine.tempo`, ya con el knob de tempo aplicado). A diferencia de
+    `AcidLfoFx` (el pot controla la VELOCIDAD del barrido), aquí el pot
+    controla la PROFUNDIDAD del corte: la velocidad la fija el tempo, no
+    el pot, para que el gate siempre caiga en el compás pase lo que pase
+    con el knob de tempo. `amount=0` dry (convención de bypass de toda la
+    cadena); `amount=1` silencio total en el valle de cada semicorchea.
+
+    Envolvente = ((1+cos(fase))/2)**SHAPE: una elevación a potencia de un
+    coseno, no un cuadrado con rampas a mano, así no hay ningún borde
+    discontinuo que pueda chasquear — SHAPE bajo (~3) deja picos anchos
+    (puerta audible); alto era un trémolo apenas perceptible.
+
+    Va **después** del presence (`after_presence`): el presence compara
+    RMS seco/mojado de los FX de tono y, si el gate fuera antes, subiría
+    el gain en los valles y anularía el ritmo.
+
+    Sin alternativa LADSPA a propósito: no hay ningún plugin del catálogo
+    de la Pi que sincronice al tempo de la canción, así que esto es
+    puramente numpy."""
+
+    after_presence = True
+    SUBDIVS_PER_BEAT = 4.0   # semicorchea (4 golpes de gate por negra)
+    SHAPE = 3                # picos anchos; 6 era demasiado "trémolo"
+    DEFAULT_FREQ = 125.0 / 60.0 * 4.0
+
+    def __init__(self, sr: int):
+        self.sr = sr
+        self._phase = 0.0
+        self._freq = self.DEFAULT_FREQ
+
+    def set_tempo(self, tempo: float):
+        self._freq = max(tempo, 1.0) / 60.0 * self.SUBDIVS_PER_BEAT
+
+    def apply(self, buf: np.ndarray, amount: float):
+        if amount <= 0.001:
+            return
+        n = len(buf)
+        inc = 2.0 * np.pi * self._freq / self.sr
+        phases = self._phase + inc * np.arange(n)
+        env = ((1.0 + np.cos(phases)) * 0.5) ** self.SHAPE
+        floor = 1.0 - amount
+        gain = floor + (1.0 - floor) * env
+        buf *= gain[:, None]
+        self._phase = (self._phase + inc * n) % (2.0 * np.pi)
+
+
 # Presets disponibles para los pots (target = "canal:nombre"). El orden de
-# este dict es el orden de la cadena de efectos: drive (valve) -> filtro
-# (acid / acid_lfo) -> delay -> metal -> bode, para que el desplazamiento
-# de frecuencia procese la señal ya distorsionada/filtrada/resonante.
+# este dict es el orden de la cadena de efectos: drive (valve / bass_drive)
+# -> filtro (acid / acid_lfo) -> delay -> metal -> bode, para que el
+# desplazamiento de frecuencia procese la señal ya distorsionada; los
+# marcados `after_presence` (trance_gate) van después de compensar RMS.
 EFFECT_PRESETS = {
     "valve": ValveFx,
+    "bass_drive": BassDriveFx,
     "acid": AcidFx,
     "acid_lfo": AcidLfoFx,
     "delay": DelayFx,
@@ -974,6 +1062,7 @@ EFFECT_PRESETS = {
     "bode": BodeFx,
     "overdrive": OverdriveFx,
     "crossover": CrossoverFx,
+    "trance_gate": TranceGateFx,
 }
 
 
@@ -1471,34 +1560,8 @@ class Engine:
         out = np.zeros((frames, 2), dtype=np.float32)
         for ch in self.channels:
             block = self._delay_channel(ch, self._stage[ch.idx][:frames])
-            dry_ref = None
-            for name, cls in EFFECT_PRESETS.items():
-                amount = ch.fx_amounts.get(name, 0.0)
-                if amount > 0.001:
-                    if ch.fx_presence and dry_ref is None:
-                        dry_ref = block.copy()
-                    fx = ch.fx_objs.get(name)
-                    if fx is None:
-                        try:
-                            fx = cls(self.sr)
-                        except Exception as exc:
-                            # Plugin LADSPA no disponible (p.ej. la app mixer
-                            # en un PC sin swh-plugins): el canal suena en
-                            # seco en vez de morir el callback de audio. Se
-                            # guarda el fallo para no reintentar cada bloque.
-                            fx = False
-                            print(f"[engine] fx {name} canal {ch.idx} "
-                                  f"desactivado: {exc}")
-                        ch.fx_objs[name] = fx
-                    if fx:
-                        set_tempo = getattr(fx, "set_tempo", None)
-                        if set_tempo is not None:
-                            set_tempo(self.tempo)
-                        mix = ch.fx_mix.get(name, 1.0)
-                        pre = block.copy() if mix < 0.999 else None
-                        fx.apply(block, amount)
-                        if pre is not None:
-                            block[:] = pre * (1.0 - mix) + block * mix
+            block, dry_ref = self._apply_fx_pass(
+                ch, block, after_presence=False, capture_dry=ch.fx_presence)
             if dry_ref is not None:
                 dry_rms = float(np.sqrt((dry_ref ** 2).mean())) + 1e-6
                 wet_rms = float(np.sqrt((block ** 2).mean())) + 1e-6
@@ -1522,6 +1585,8 @@ class Engine:
                 block *= safe_gain
             else:
                 ch.fx_gain = 1.0
+            block, _ = self._apply_fx_pass(
+                ch, block, after_presence=True, capture_dry=False)
             if ch.cc_vol != 1.0:
                 block *= ch.cc_vol
             if ch.cc_pan is not None:
@@ -1604,6 +1669,45 @@ class Engine:
             frac = self.tick_phase
             self._process_tick()
             self.tick_phase = self.samples_per_tick + frac
+
+    def _apply_fx_pass(self, ch: Channel, block: np.ndarray, after_presence,
+                       capture_dry):
+        """Aplica los presets de EFFECT_PRESETS en una pasada.
+
+        `after_presence` elige tono (False) vs gate rítmico (True).
+        Si `capture_dry`, la primera vez que un FX de esta pasada está
+        activo se copia el bloque (referencia del presence)."""
+        dry_ref = None
+        for name, cls in EFFECT_PRESETS.items():
+            if bool(getattr(cls, "after_presence", False)) != after_presence:
+                continue
+            amount = ch.fx_amounts.get(name, 0.0)
+            if amount <= 0.001:
+                continue
+            if capture_dry and dry_ref is None:
+                dry_ref = block.copy()
+            fx = ch.fx_objs.get(name)
+            if fx is None:
+                try:
+                    fx = cls(self.sr)
+                except Exception as exc:
+                    # Plugin LADSPA no disponible (p.ej. mixer en un PC
+                    # sin swh-plugins): el canal suena en seco.
+                    fx = False
+                    print(f"[engine] fx {name} canal {ch.idx} "
+                          f"desactivado: {exc}")
+                ch.fx_objs[name] = fx
+            if not fx:
+                continue
+            set_tempo = getattr(fx, "set_tempo", None)
+            if set_tempo is not None:
+                set_tempo(self.tempo)
+            mix = ch.fx_mix.get(name, 1.0)
+            pre = block.copy() if mix < 0.999 else None
+            fx.apply(block, amount)
+            if pre is not None:
+                block[:] = pre * (1.0 - mix) + block * mix
+        return block, dry_ref
 
     def _delay_channel(self, ch: Channel, block: np.ndarray) -> np.ndarray:
         """Línea de retardo circular del canal; devuelve el bloque

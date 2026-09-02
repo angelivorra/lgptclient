@@ -412,8 +412,8 @@ class Robotracker2App(App):
                     self._pots_save()
             return True
         pot = POTS_KNOBS[g.cursor]
-        # A + dpad: edición estilo tracker según la columna (el tap de A ya
-        # queda consumido en _dispatch por el acorde).
+        # A + dpad: edita la celda (CANAL / EFECTO / % según la columna).
+        # El tap de A ya queda consumido en _dispatch por el acorde.
         if button in DPAD and A in active:
             return self._pots_combo(pot, g.col, button)
         if button in DPAD:
@@ -435,25 +435,23 @@ class Robotracker2App(App):
         return False
 
     def _pots_combo(self, pot, col, dpad):
-        """A+dpad sobre la fila, estilo tracker: en CANAL arr/abj cicla
-        (1-8); en EFECTO abre la lista; en % izq/dcha fino (±1) y arr/abj
-        de 10 en 10. En memoria + en vivo."""
+        """A+dpad sobre la celda (la columna activa): CANAL y EFECTO
+        ciclan con cualquier dirección; % usa izq/dcha fino y arr/abj
+        de 10 en 10. En memoria + en vivo. La lista de efectos se abre
+        con A (tap), no con A+dir."""
+        g = self.editor_screen.pots_grid
         if col == 0:
-            if dpad in (UP, DOWN):
-                self._midi_ctrl.set_pot_canal(pot, 1 if dpad == UP else -1)
-                self.editor_screen.pots_grid.set_state(
-                    self._midi_ctrl.pots_state())
-                self._pots_dirty = True
-                self._sync_unsaved()
+            delta = 1 if dpad in (UP, RIGHT) else -1
+            self._midi_ctrl.set_pot_canal(pot, delta)
         elif col == 1:
-            self.editor_screen.pots_grid.open_picker()
+            delta = 1 if dpad in (UP, RIGHT) else -1
+            self._midi_ctrl.set_pot_efecto(pot, delta)
         else:
             delta = {LEFT: -1, RIGHT: 1, UP: 10, DOWN: -10}[dpad]
             self._midi_ctrl.set_pot_mix(pot, delta)
-            self.editor_screen.pots_grid.set_state(
-                self._midi_ctrl.pots_state())
-            self._pots_dirty = True
-            self._sync_unsaved()
+        g.set_state(self._midi_ctrl.pots_state())
+        self._pots_dirty = True
+        self._sync_unsaved()
         return True
 
     def _pots_save(self):

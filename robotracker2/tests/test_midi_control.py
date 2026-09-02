@@ -307,7 +307,37 @@ def test_pots_state_y_edicion():
         ctrl.set_pot_efecto_nombre(6, "off")
         assert "pot6" not in ctrl._cfg["pots"], ctrl._cfg["pots"]
         assert ctrl.pots == [], ctrl.pots
-    print("  pots_state y set_pot_* OK")
+        print("  pots_state y set_pot_* OK")
+
+
+def test_pot5_canal_persiste_al_recargar():
+    """Regresión: pot5 en canal 5 (JSON 4), pasar a canal 3 (JSON 2),
+    guardar y recargar la canción no debe volver al 5."""
+    engine = StubEngine()
+    with tempfile.TemporaryDirectory() as tmp:
+        pads_dir = Path(tmp) / "pads"
+        pads_dir.mkdir()
+        ctrl = MidiControl(buttons={}, hw_pots=HW_POTS, pad_volume=45,
+                           pads_dir=pads_dir)
+        song_dir = Path(tmp) / "song"
+        song_dir.mkdir()
+        cfg_file = song_dir / "robotraca.json"
+        cfg_file.write_text(json.dumps({
+            "pots": {"pot5": "4:bass_drive"},
+            "fx_mix": {"2": {"bass_drive": 45}},
+        }))
+        ctrl.set_song(engine, song_dir)
+        assert ctrl.pots_state()[2] == (5, "bass_drive", 100), ctrl.pots_state()
+        ctrl.set_pot_canal(5, -1)
+        ctrl.set_pot_canal(5, -1)
+        assert ctrl.pots_state()[2][0] == 3, ctrl.pots_state()
+        assert ctrl._cfg["pots"]["pot5"] == "2:bass_drive"
+        ctrl.save()
+        assert json.loads(cfg_file.read_text())["pots"]["pot5"] == "2:bass_drive"
+        ctrl.set_song(engine, song_dir)
+        assert ctrl.pots_state()[2] == (3, "bass_drive", 45), ctrl.pots_state()
+        assert ctrl._cfg["pots"]["pot5"] == "2:bass_drive"
+    print("  pot5 canal 3 persiste al recargar OK")
 
 
 def test_on_trigger_hook():
@@ -419,6 +449,7 @@ def main():
     test_midictrl_open_sin_auto()
     test_on_trigger_hook()
     test_pots_state_y_edicion()
+    test_pot5_canal_persiste_al_recargar()
 
     app = Robotracker2App(songs_dir=DEFAULT_SONGS)
 

@@ -282,11 +282,12 @@ canal y, al editarlo, queda como un solo canal.) Sin entrada en
 `"fx_mix"`, el % es 100 (100% wet, como en el mixer).
 
 Controles, estilo tracker: **arr/abj** elige knob (y baja a la fila
-**GUARDAR** de abajo del todo) · **izq/dcha** cambia de columna (canal /
-efecto / %) · en **CANAL**, **A+arr/abj** cicla (1-8) · en **EFECTO**, **A**
-abre la **lista** de efectos (off + los del engine; arr/abj mueve, **A**
-elige, **B** cierra) · en **%**, **A+izq/dcha** fino (±1) y **A+arr/abj**
-de 10 en 10 · **A sobre GUARDAR** guarda. Los cambios quedan **en
+**GUARDAR**) · **izq/dcha** elige la columna (**CANAL** / **EFECTO** / **%**;
+la celda y la cabecera indican cuál edita **A+dir**) · en **CANAL**,
+**A+dir** cicla 1-8 · en **EFECTO**, **A+dir** cicla el preset y **A** abre
+la **lista** (arr/abj mueve, **A** elige, **B** cierra) · en **%**,
+**A+izq/dcha** ±1 y **A+arr/abj** ±10 · **A sobre GUARDAR** guarda. Los
+cambios quedan **en
 memoria** (los targets del MIDI y el fx_mix se aplican en vivo al engine) y
 solo se persisten al guardar, igual que PADS: con A sobre la fila GUARDAR o
 al **Guardar la canción**. Con knobs sin guardar, cambiar de canción o

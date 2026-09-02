@@ -2,8 +2,7 @@
   "fx": {},
   "fx_mix": {
     "2": {
-      "acid": 51,
-      "valve": 45
+      "acid": 50
     },
     "5": {
       "bode": 57,
@@ -31,8 +30,8 @@
   },
   "pots": {
     "pot1": "2:acid",
-    "pot2": "5:bode",
-    "pot5": "2:valve",
+    "pot2": "2:trance_gate",
+    "pot5": "2:bass_drive",
     "pot6": "5:metal",
     "pot8": "0:tempo"
   },

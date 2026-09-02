@@ -6,8 +6,9 @@ corchetes, el CC físico). Por cada knob, tres columnas editables:
 - CANAL: canal al que afecta (1-8; en el robotraca.json se guarda 0-7).
   Si el JSON trae varios ("1,2:acid"), se muestra el primero y al editar
   queda en uno solo.
-- EFECTO: "off" + los de EFFECT_PRESETS (valve/acid/acid_lfo/delay/metal/
-  bode/overdrive/crossover). "off" deja el knob sin target.
+- EFECTO: "off" + los de EFFECT_PRESETS (valve/bass_drive/acid/acid_lfo/
+  delay/metal/bode/overdrive/crossover/trance_gate). "off" deja el knob
+  sin target.
 - %: mezcla dry/wet del efecto en ese canal (clave "fx_mix" del
   robotraca.json, como el slider mix del mixer; 100 = sin fx_mix).
 
@@ -22,12 +23,12 @@ Solo dibuja: el estado y la persistencia viven en MidiControl
 (set_state/pots_state/set_pot_canal/set_pot_efecto_nombre/set_pot_mix/
 save). Controles (los resuelve la app en _dispatch_pots), estilo tracker:
 
-- arr/abj: cambiar de knob (y bajar a la fila GUARDAR)
-- izq/dcha: elegir columna (canal / efecto / %)
-- A+arr/abj en CANAL: cicla el canal (1-8)
-- A en EFECTO: abre la LISTA de efectos (arr/abj mueve, A elige, B cierra)
-- A+izq/dcha en %: fino (±1) · A+arr/abj en %: de 10 en 10
-- A sobre la fila GUARDAR: guarda; select no hace nada aquí
+- arr/abj: knob (y bajar a GUARDAR); izq/dcha: columna CANAL / EFECTO / %
+- la celda y la cabecera de columna dicen qué cambia A+dirección
+- CANAL: A+dir cicla 1-8
+- EFECTO: A+dir cicla el preset; A abre la LISTA (arr/abj, A elige, B cierra)
+- %: A+izq/dcha ±1 · A+arr/abj ±10
+- A sobre GUARDAR: guarda; select no hace nada aquí
 """
 
 from kivy.core.text import Label as CoreLabel
@@ -37,17 +38,25 @@ from kivy.uix.widget import Widget
 
 from controls import DOWN, UP
 from sinte_bridge import EFFECT_PRESETS
-from theme import (COLOR_ACCENT, COLOR_BG, COLOR_BORDER, COLOR_EMPTY, COLOR_HINT,
-                   COLOR_NAME, COLOR_OK, COLOR_ROW_CURSOR, COLOR_VOL)
+from theme import (COLOR_ACCENT, COLOR_BG, COLOR_BORDER, COLOR_EMPTY,
+                   COLOR_HEADER_TXT, COLOR_HINT, COLOR_HINT_BG, COLOR_NAME,
+                   COLOR_OK, COLOR_ROW_CURSOR, COLOR_VOL)
 
 POT_NOS = [1, 2, 5, 6]              # knobs configurables del controlador
 EFFECT_CYCLE = ["off", *EFFECT_PRESETS]     # lista del picker de efectos
+COL_HEADERS = ("CANAL", "EFECTO", "%")
+COL_HINTS = (
+    "A+dir: cambia CANAL (1–8)",
+    "A+dir: cambia EFECTO · A: lista",
+    "A+izq/dcha: % ±1 · A+arr/abj: % ±10",
+)
 ROW_H = dp(76)
 GUTTER = dp(170)                    # columna "POT n"
 COL_W = (dp(120), dp(240), dp(110))  # canal / efecto / %
 FONT = dp(20)
 FONT_SMALL = dp(16)
 PICK_ROW_H = dp(48)                 # fila de la lista de efectos (overlay)
+HINT_H = dp(36)
 
 
 class PotsGrid(Widget):
@@ -138,42 +147,46 @@ class PotsGrid(Widget):
             w = min(self.width - dp(60), dp(640))
             x0 = self.x + (self.width - w) / 2
             top = self.y + self.height - dp(30)
-            # título + controles
+            # título + cabeceras de columna (qué campo edita A+dir)
             self._text_left(x0, top - ROW_H / 2, w, "EFECTOS",
                             COLOR_ACCENT, h=ROW_H)
-            hint = ("arr/abj: knob · izq/dcha: col · A+arr/abj: canal / % ±10 "
-                    "· A+izq/dcha: % ±1 · A en efecto: lista")
-            self._text_left(x0, self.y + dp(28), w, hint, COLOR_HINT,
-                            h=ROW_H, font_size=FONT_SMALL)
+            y_hdr = top - ROW_H - dp(4)
+            for c, header in enumerate(COL_HEADERS):
+                x = x0 + GUTTER + sum(COL_W[:c])
+                hdr_on = (self.cursor != self.SAVE_ROW and c == self.col
+                          and self.picker is None)
+                self._text_left(x + dp(8), y_hdr, COL_W[c], header,
+                                COLOR_ACCENT if hdr_on else COLOR_HEADER_TXT,
+                                h=dp(28), font_size=FONT_SMALL)
             for i in range(4):
                 y = top - (i + 2) * ROW_H
                 sel = i == self.cursor
                 if sel:
-                    # Fila seleccionada: relleno oscuro con borde de acento
-                    # (no relleno), para que el texto se lea sobre el fondo.
                     Color(*COLOR_ROW_CURSOR)
                     Rectangle(pos=(x0, y), size=(w, ROW_H - dp(8)))
-                    Color(*COLOR_ACCENT)
-                    RoundedRectangle(pos=(x0 + dp(3), y + dp(3)),
-                                     size=(w - dp(6), ROW_H - dp(14)),
-                                     radius=[dp(6)])
-                    Color(*COLOR_ROW_CURSOR)
-                    RoundedRectangle(pos=(x0 + dp(7), y + dp(7)),
-                                     size=(w - dp(14), ROW_H - dp(22)),
-                                     radius=[dp(4)])
-                # etiqueta del knob (POT 1, 2, 5, 6)
                 self._text_left(x0 + dp(16), y, GUTTER,
                                 f"POT {POT_NOS[i]}",
                                 COLOR_ACCENT if sel else COLOR_BORDER,
                                 font_size=FONT_SMALL)
                 canal, efecto, pct = self.pots[i]
-                # columnas: la seleccionada en acento; el % en verde
                 col = [f"C {canal}" if canal else "—",
                        efecto if efecto else "—",
                        f"{pct}%" if efecto else "—"]
                 for c in range(3):
                     x = x0 + GUTTER + sum(COL_W[:c])
-                    if sel and c == self.col:
+                    cell = sel and c == self.col
+                    if cell:
+                        Color(*COLOR_ACCENT)
+                        RoundedRectangle(pos=(x + dp(2), y + dp(6)),
+                                         size=(COL_W[c] - dp(6),
+                                               ROW_H - dp(20)),
+                                         radius=[dp(4)])
+                        Color(*COLOR_ROW_CURSOR)
+                        RoundedRectangle(pos=(x + dp(6), y + dp(10)),
+                                         size=(COL_W[c] - dp(14),
+                                               ROW_H - dp(28)),
+                                         radius=[dp(3)])
+                    if cell:
                         color = COLOR_ACCENT
                     elif col[c] == "—":
                         color = COLOR_EMPTY
@@ -199,10 +212,24 @@ class PotsGrid(Widget):
                 self._text_center(x0, y, w, "GUARDAR", COLOR_OK, h=ROW_H)
             else:
                 self._text_center(x0, y, w, "GUARDAR", COLOR_HINT, h=ROW_H)
-            # lista de efectos (overlay, abierta con A sobre la columna
-            # EFECTO): arr/abj mueve, A elige y B cierra (la app resuelve)
+            self._draw_hint(x0, w)
             if self.picker is not None:
                 self._draw_picker()
+
+    def _draw_hint(self, x0, w):
+        """Franja inferior: cruceta mueve; A+dir edita el campo de la celda."""
+        y = self.y + dp(8)
+        Color(*COLOR_HINT_BG)
+        Rectangle(pos=(x0, y), size=(w, HINT_H))
+        if self.picker is not None:
+            hint = "lista EFECTO · arr/abj mueve · A elige · B cierra"
+        elif self.cursor == self.SAVE_ROW:
+            hint = "A: guardar en la canción"
+        else:
+            hint = ("cruceta: knob / columna · "
+                    + COL_HINTS[self.col])
+        self._text_left(x0 + dp(12), y, w - dp(24), hint, COLOR_ACCENT,
+                        h=HINT_H, font_size=FONT_SMALL)
 
     def _draw_picker(self):
         """Overlay centrado con EFFECT_CYCLE (off + presets); el cursor es

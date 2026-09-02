@@ -85,18 +85,25 @@ def _run(app, song_a, song_b):
         "sin guardar, el robotraca.json no cambia"
     print("  canal con A+arr/abj, en memoria OK")
 
-    # --- columna efecto: A abre la LISTA, arr/abj mueve, A elige, B cierra
+    # --- columna efecto: A+dir cicla; A abre la LISTA -------------------
     app._dispatch(RIGHT, {RIGHT})       # columna efecto
     assert g.col == 1
+    app._dispatch(UP, {UP, A})          # acid -> acid_lfo (sin abrir lista)
+    assert g.picker is None
+    assert g.pots[0][1] == "acid_lfo", g.pots
+    app._dispatch(DOWN, {DOWN, A})      # vuelve a acid
+    assert g.pots[0][1] == "acid", g.pots
     app._dispatch(A, {A})
-    assert g.picker == 2, g.picker      # "acid" en la lista (off, valve...)
+    from sinte_bridge import EFFECT_PRESETS
+    acid_idx = ["off", *EFFECT_PRESETS].index("acid")
+    assert g.picker == acid_idx, g.picker
     app._dispatch(B, {B})               # B cierra sin cambiar nada
     assert g.picker is None
     assert g.pots[0] == (4, "acid", 100)
     app._dispatch(A, {A})               # reabre en el efecto actual
-    assert g.picker == 2
+    assert g.picker == acid_idx
     app._dispatch(DOWN, {DOWN})         # acid -> acid_lfo
-    assert g.picker == 3
+    assert g.picker == acid_idx + 1
     app._dispatch(A, {A})               # elegir
     assert g.picker is None
     assert g.pots[0][1] == "acid_lfo", g.pots

@@ -194,6 +194,7 @@ class MixerApp(App):
         self._cola: queue.Queue = queue.Queue()
         self._fin = threading.Event()
         self._syncing = False
+        self._sync_gen = 0
         self._ultima_cfg: dict = {}
         self._canciones: list = []
         self._song_idx = 0          # última canción viva según state()
@@ -445,7 +446,11 @@ class MixerApp(App):
         self._enviar_spec(n, kw)
 
     def on_knob_canal(self, n, canal, on):
-        """(Des)marca un canal del knob: a qué canales afecta."""
+        """(Des)marca un canal del knob: a qué canales afecta.
+
+        Solo debe llegar desde on_release del ToggleButton (clic del
+        usuario). on_state se dispara también al recargar la canción y
+        volvía a marcar el canal que había antes de guardar."""
         if not self._listo():
             return
         kw = self._knob_widget(n)
@@ -608,6 +613,8 @@ class MixerApp(App):
         if not isinstance(cfg, dict):
             return
         self._ultima_cfg = cfg
+        self._sync_gen += 1
+        gen = self._sync_gen
         self._syncing = True
         try:
             mute = set(cfg.get("mute", []))
@@ -659,6 +666,12 @@ class MixerApp(App):
                 except (TypeError, ValueError):
                     pw.vol = 60
         finally:
+            # Un frame más: los ToggleButton disparan on_state al aplicar
+            # el kv, y si _syncing ya bajó reescribían pots/mute viejos.
+            Clock.schedule_once(lambda dt, g=gen: self._end_sync(g), 0)
+
+    def _end_sync(self, gen):
+        if gen == self._sync_gen:
             self._syncing = False
 
     def _aplicar_state(self, e):
