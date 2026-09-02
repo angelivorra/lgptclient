@@ -338,6 +338,7 @@ class EditorScreen(Screen):
             # PHRASE a la misma chain se conserva la posición del cursor (y la
             # selección/portapapeles) en vez de resetearla a 0.
             if (self.chain_grid.cv is None
+                    or self.chain_grid.project is not self.project
                     or self.chain_grid.song_row != self.song_grid.cursor_row
                     or self.chain_grid.track != self.song_grid.cursor_track):
                 self.chain_grid.set_context(self.project,
@@ -346,14 +347,22 @@ class EditorScreen(Screen):
 
         elif key == "phrase":
             # la phrase es la del step de CHAIN (o del cursor de SONG si no
-            # se pasó por CHAIN)
+            # se pasó por CHAIN). Solo se re-crea el contexto si cambió
+            # canción/celda/step: al volver de INSTRUMENT o TABLE se
+            # conserva cursor, selección y portapapeles.
             if self.chain_grid.cv is not None:
                 sr, tr, cs = (self.chain_grid.song_row, self.chain_grid.track,
                               self.chain_grid.cursor_step)
             else:
                 sr, tr, cs = (self.song_grid.cursor_row,
                               self.song_grid.cursor_track, 0)
-            self.phrase_grid.set_context(self.project, sr, tr, cs)
+            g = self.phrase_grid
+            if (g.pv is None
+                    or g.project is not self.project
+                    or g.pv.song_row != sr
+                    or g.track != tr
+                    or g.pv.chain_step != cs):
+                g.set_context(self.project, sr, tr, cs)
         elif key in ("phrase_table", "instrument_table"):
             self.table_grid.set_context(self.project, self._table_id(key))
         elif key == "instrument":

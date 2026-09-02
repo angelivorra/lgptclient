@@ -23,6 +23,7 @@ import os
 os.environ.setdefault("KIVY_NO_ARGS", "1")
 
 import argparse
+import filecmp
 import shutil
 import time
 from pathlib import Path
@@ -799,19 +800,19 @@ class Robotracker2App(App):
 
     def _load_sample(self, path):
         project = self.editor_screen.project
-        name = path.name
-        dest = project.dir / "samples" / name
+        dest, notice = resolve_sample_import(path, project.dir / "samples")
         try:
             dest.parent.mkdir(exist_ok=True)
-            if not dest.exists():
+            if dest.resolve() != Path(path).resolve():
                 shutil.copy2(path, dest)
         except OSError as exc:                   # noqa: BLE001
             self.editor_screen.toast_msg(f"Error: {exc}")
             self._close_browser()
             return
+        name = dest.name
         self.editor_screen.instrument_menu.set_sample(name)
         self.dirty = True
-        self.editor_screen.toast_msg(f"Sample: {name}")
+        self.editor_screen.toast_msg(notice or f"Sample: {name}")
         self._close_browser()
 
     def _open_screen_browser(self, step):
@@ -1232,12 +1233,48 @@ class Robotracker2App(App):
         self.sm.current = "editor"
 
     def on_stop(self):
-        """Al salir, cierra las interfaces MIDI abiertas (si las hay)."""
+        """Al salir, cierra audio, MIDI y evdev (si hay algo abierto)."""
+        if self.player is not None:
+            self.player.close()
+            self.player = None
         if self._ev_pad is not None:
             self._ev_pad.stop()
         self._midi_notes.close()
         if self._midi_ctrl is not None:
             self._midi_ctrl.close()
+
+
+def resolve_sample_import(src, dest_dir):
+    """Destino en `dest_dir` para importar el WAV `src`.
+
+    Devuelve `(ruta_destino, aviso_o_None)`. El caller copia si origen y
+    destino no son el mismo fichero. Si ya hay un WAV con el mismo nombre
+    y contenido distinto, usa `stem_2.wav`, `stem_3.wav`… y un aviso: no
+    asigna en silencio el sample que ya estaba en la canción.
+    """
+    src = Path(src)
+    dest_dir = Path(dest_dir)
+    dest = dest_dir / src.name
+    if not dest.exists():
+        return dest, None
+    try:
+        if dest.resolve() == src.resolve():
+            return dest, None
+    except OSError:
+        pass
+    try:
+        if filecmp.cmp(src, dest, shallow=False):
+            return dest, None
+    except OSError:
+        pass
+    stem, suffix = dest.stem, dest.suffix
+    n = 2
+    while True:
+        candidate = dest_dir / f"{stem}_{n}{suffix}"
+        if not candidate.exists():
+            return candidate, (
+                f"Ya existía {src.name}; importado como {candidate.name}")
+        n += 1
 
 
 def main():
