@@ -3,9 +3,12 @@
 Todo centrado. Abajo, tres acciones como en LGPT: Escuchar / Import / Cancelar.
 Arr/abj mueve; **A** (`activate()`) escucha el sample seleccionado (o entra en
 la carpeta); **doble A** importa el sample (lo copia a la canción y lo asigna
-al instrumento); **B/Cancelar** sube de carpeta (o cierra en la raíz). El
-doble-tap se gestiona dentro del propio widget (ver `activate()`), así la app
-solo necesita mover/activar/volver: la misma interfaz que `ImageBrowser`.
+al instrumento); **B/Cancelar** sube de carpeta (o cierra en la raíz). Las
+flechas izq/dcha van **atrás/adelante por el historial de carpetas** con
+memoria (hasta dos niveles y los que haya), recordando además la posición del
+cursor en cada carpeta. El doble-tap se gestiona dentro del propio widget
+(ver `activate()`), así la app solo necesita mover/activar/volver/avanzar:
+`ImageBrowser` no tiene historial (izq/dcha no hacen nada allí).
 """
 
 from pathlib import Path
@@ -16,7 +19,7 @@ from kivy.graphics import Color, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
-from controls import DOWN, UP
+from controls import DOWN, LEFT, RIGHT, UP
 from theme import COLOR_ACCENT, COLOR_BG, COLOR_BTN
 
 ROW_H = dp(30)
@@ -43,6 +46,8 @@ class SampleBrowser(Widget):
         self.entries = []
         self.index = 0
         self.top_idx = 0
+        self._back = []     # historial hacia atrás: (cwd, index, top_idx)
+        self._fwd = []      # historial hacia delante (para la flecha dcha)
         self._a_pending = False        # para el doble-tap (escuchar / importar)
         self._tex = {}
         self.bind(pos=self._redraw, size=self._redraw)
@@ -67,6 +72,34 @@ class SampleBrowser(Widget):
     def selected(self):
         return self.entries[self.index] if self.entries else None
 
+    # -- historial de carpetas (flechas izq/dcha) ----------------------
+    def _remember(self, stack):
+        stack.append((self.cwd, self.index, self.top_idx))
+
+    def _restore(self, entry):
+        path, index, top_idx = entry
+        self.cwd = path
+        self._scan()
+        self.index = min(index, max(0, len(self.entries) - 1))
+        self.top_idx = max(0, min(top_idx, max(0, len(self.entries) - 1)))
+        self._ensure_visible()
+        self._redraw()
+
+    def go_back(self):
+        """Flecha atrás: vuelve por el historial de carpetas recordando la
+        posición del cursor en cada una (dos niveles y los que haya)."""
+        if not self._back:
+            return
+        self._remember(self._fwd)
+        self._restore(self._back.pop())
+
+    def go_forward(self):
+        """Flecha adelante: rehace el historial de carpetas."""
+        if not self._fwd:
+            return
+        self._remember(self._back)
+        self._restore(self._fwd.pop())
+
     def move(self, button):
         if not self.entries:
             return
@@ -83,6 +116,8 @@ class SampleBrowser(Widget):
         if sel is None:
             return
         if sel.is_dir():
+            self._remember(self._back)
+            self._fwd.clear()          # rama nueva: el historial muere aquí
             self.cwd = sel
             self._scan()
             return
@@ -124,6 +159,7 @@ class SampleBrowser(Widget):
 
     def back(self):
         if self.cwd != self.root and self.root in self.cwd.parents:
+            self._remember(self._fwd)  # la flecha dcha puede volver a bajar
             self.cwd = self.cwd.parent
             self._scan()
         elif self.on_close:

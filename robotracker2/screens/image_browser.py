@@ -7,14 +7,16 @@ que ve el dispositivo real; ver `robots.ayuda_preview_path`) y se actualiza
 sola al moverse — a diferencia del navegador de samples, aquí no hace falta
 un gesto para "escuchar": **A** entra en la carpeta o **elige** el valor
 resaltado (inmediato, sin doble-tap), **B/Cancelar** vuelve atrás o cierra.
-Misma interfaz que `SampleBrowser` (move/activate/back/cleanup).
+Misma interfaz que `SampleBrowser` (move/activate/back/cleanup). Sobre y
+bajo la lista hay dos indicadores de poco alto (triángulos) que se
+encienden si se puede navegar hacia arriba/abajo en esa dirección.
 """
 
 from pathlib import Path
 
 from kivy.core.image import Image as CoreImage
 from kivy.core.text import Label as CoreLabel
-from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
+from kivy.graphics import Color, Line, Rectangle, RoundedRectangle, Triangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
@@ -169,6 +171,12 @@ class ImageBrowser(Widget):
         elif self.index >= self.top_idx + n:
             self.top_idx = self.index - n + 1
 
+    def _scroll_flags(self):
+        """(hay más arriba, hay más abajo) de la ventana visible de la
+        lista: encienden/apagan los indicadores de scroll."""
+        n = self._visible()
+        return self.top_idx > 0, self.top_idx + n < len(self.entries)
+
     def _texture(self, text):
         tex = self._tex.get(text)
         if tex is None:
@@ -213,9 +221,31 @@ class ImageBrowser(Widget):
                 else:
                     color = COLOR_ITEM
                 self._text_left(lx, y, e["label"], color)
+            # indicadores de scroll: encendidos si hay más lista en esa
+            # dirección, atenuados si no se puede navegar hacia allí
+            cx_list = lx + list_w / 2
+            can_up, can_down = self._scroll_flags()
+            self._draw_scroll_indicator(
+                cx_list, self.y + self.height - TOP_PAD + dp(4),
+                up=True, on=can_up)
+            self._draw_scroll_indicator(
+                cx_list,
+                self.y + self.height - TOP_PAD - n * ROW_H - dp(10),
+                up=False, on=can_down)
             # preview (derecha)
             self._draw_preview(lx + list_w + dp(24), n)
             self._draw_actions(self.center_x)
+
+    def _draw_scroll_indicator(self, cx, y, up, on):
+        """Triángulo pequeño (poco alto) que indica si hay contenido
+        arriba/abajo de la ventana visible de la lista."""
+        w, h = dp(9), dp(6)
+        if up:
+            pts = [cx - w, y, cx + w, y, cx, y + h]
+        else:
+            pts = [cx - w, y + h, cx + w, y + h, cx, y]
+        Color(*(COLOR_ACCENT if on else (0.30, 0.31, 0.38, 1)))
+        Triangle(points=pts)
 
     def _draw_preview(self, px, n):
         pw = self.width - px - dp(24)

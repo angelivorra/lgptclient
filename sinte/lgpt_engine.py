@@ -8,8 +8,13 @@ Réplica en Python/numpy del comportamiento del reproductor original
   - Secuenciador song -> chain -> phrase, ticks sample-accurate y
     grooves por canal (patrones de longitud de step en ticks, GROV).
   - Voces de sample: pitch por nota (root note + fine tune), volumen con
-    rampas (VOLM), pan con la panlaw original, loop oneshot/forward,
-    recorte por 'end', crush/downsample, filtro del upstream.
+    rampas (VOLM; el volumen del instrumento es el MÁXIMO y VOLM vv escala
+    relativo: FF = todo el volumen del instrumento, 80 = la mitad), pan
+    con la panlaw original, loop oneshot/forward, recorte por 'end',
+    crush/downsample, filtro del upstream. El volumen del instrumento se
+    re-lee en cada trigger y en cada bloque de render, así la edición en
+    el editor (robotracker2/mixer) se oye al instante, también en la nota
+    que está sonando.
   - Comandos: VOLM, KILL, DLAY, LEGA, TABL, STOP, HOP.
   - Tablas (1 fila por tick, 3 columnas de comandos).
   - Instrumentos MIDI (0x80-0x8F) y comandos MDCC/MDPG/MVEL: se emiten a
@@ -259,13 +264,13 @@ class Voice:
     """
 
     __slots__ = (
-        "data", "n_channels", "note", "pos", "end", "loop",
+        "data", "n_channels", "note", "iid", "pos", "end", "loop",
         "loop_start", "loop_end", "loop_len",
         "base_speed", "cc_pitch",
         "lega_ratio", "lega_target", "lega_step",
         "ptch_ratio", "ptch_target", "ptch_step",
         "pfin_ratio", "pfin_target", "pfin_step",
-        "vol_cur", "vol_target", "vol_kinc",
+        "vol_scale", "vol_cur", "vol_target", "vol_kinc",
         "pan", "cc_vol", "cc_pan", "cc_cutoff",
         "crush", "drive_gain", "ds_shift", "attenuate",
         "f_active", "f_mix", "f_scream", "f_cut_base", "f_reso_base",
@@ -274,10 +279,11 @@ class Voice:
     )
 
     def __init__(self, sample: Sample, idef: InstrumentDef, note: int,
-                 out_sr: int, samples_per_tick: float):
+                 iid: Optional[int], out_sr: int, samples_per_tick: float):
         self.data = sample.data
         self.n_channels = sample.data.shape[1]
         self.note = note
+        self.iid = iid          # índice del instrumento (None = pad sampler)
         n = len(sample.data)
         self.end = min(idef.end, n) if 0 < idef.end else n
         self.end = max(self.end, 2)
@@ -304,9 +310,15 @@ class Voice:
         self.pfin_target = 1.0
         self.pfin_step: Optional[float] = None
 
-        self.vol_cur = float(idef.volume)     # dominio 0-255
-        self.vol_target = float(idef.volume)
-        self.vol_kinc = 0.0                   # incremento por k-update
+        # Volumen del instrumento = volumen MÁXIMO de la voz. El dominio
+        # interno de vol_cur/vol_target es 0-255 RELATIVO a ese máximo:
+        # VOLM FF -> el volumen del instrumento, VOLM 80 -> la mitad. En
+        # render() se multiplica por vol_scale (= volumen del instrumento),
+        # que sigue en vivo al banco del proyecto (edición del editor).
+        self.vol_scale = idef.volume / 255.0
+        self.vol_cur = 255.0              # relativo: 255 = máx. del instrumento
+        self.vol_target = 255.0
+        self.vol_kinc = 0.0               # incremento por k-update
 
         self.pan = min(idef.pan, 254)
         self.cc_vol = 1.0             # 0-1 (MIDI CC)
@@ -338,6 +350,8 @@ class Voice:
 
     def set_volm(self, value: int):
         """VOLM ssvv: rampa de volumen hacia vv; ss en unidades de 4 ticks.
+        vv es RELATIVO al volumen del instrumento (vv=FF -> el máximo que
+        define el instrumento, vv=80 -> la mitad de ese máximo).
         ss=0 en el upstream es instantáneo; aquí usamos una micro-rampa de
         declick (~4 ms) para que el salto no chasquee."""
         target = float(value & 0xFF)
@@ -481,13 +495,14 @@ class Voice:
             step = 2.0 ** (1 - self.crush)
             x = np.round(x / step) * step
 
-        # Volumen con rampa k-rate (dominio 0-255 -> 0-1)
+        # Volumen con rampa k-rate: dominio 0-255 relativo al máximo del
+        # instrumento (vol_scale), más el CC de volumen del canal (0-1).
         v = self.vol_cur + self.vol_kinc * updates
         if self.vol_kinc > 0.0:
             v = np.minimum(v, self.vol_target)
         elif self.vol_kinc < 0.0:
             v = np.maximum(v, self.vol_target)
-        x *= (v * (1.0 / 255.0) * self.cc_vol)[:, None]
+        x *= (v * (1.0 / 255.0) * self.vol_scale * self.cc_vol)[:, None]
 
         # Filtro del upstream (bucle por sample; solo voces filtradas)
         if self.f_active:
@@ -1421,6 +1436,19 @@ class Engine:
                                 v.cc_pan = None      # van tras el delay
                                 v.cc_pitch = ch.cc_pitch
                                 v.cc_cutoff = ch.cc_cutoff
+                                # Volumen del instrumento en vivo: la voz
+                                # sigue al banco del proyecto (el mismo
+                                # objeto que edita el editor), así bajar/
+                                # subir el Volume del instrumento se oye
+                                # mientras la nota suena.
+                                if v.iid is not None:
+                                    ins = self.project.instrument_bank.get(v.iid)
+                                    if (ins is not None
+                                            and ins["type"] == "Sample"):
+                                        vol = int(
+                                            ins["params"].get("volume", 255)
+                                            or 0)
+                                        v.vol_scale = vol / 255.0
                                 v.render(self._stage[ch.idx], off, n)
                             if not v.active:
                                 ch.voice = None
@@ -1901,13 +1929,22 @@ class Engine:
             ch.last_instr = instr
         if ch.last_instr is None:
             ch.last_instr = 0
-        idef = self.instruments.get(ch.last_instr)
-        mdef = (
-            self.midi_instruments.get(ch.last_instr)
-            if idef is None else None
-        )
-        if idef is None and mdef is None:
+        # Re-parseo en cada trigger: el banco es el objeto vivo del editor
+        # (robotracker2/mixer), así las ediciones de los parámetros del
+        # instrumento se oyen en la nota siguiente. La nota que está
+        # sonando sigue además al volumen en vivo (ver render()).
+        bank = self.project.instrument_bank.get(ch.last_instr)
+        if bank is None:
             return                            # instrumento inexistente
+        idef = mdef = None
+        if bank["type"] == "Sample":
+            idef = self.instruments[ch.last_instr] = parse_instrument(
+                ch.last_instr, bank["params"])
+        elif bank["type"] == "Midi":
+            mdef = self.midi_instruments[ch.last_instr] = parse_midi_instrument(
+                ch.last_instr, bank["params"])
+        else:
+            return                            # tipo de instrumento desconocido
         t = 0
         if ch.chain != 0xFF:
             tb = self.project.transposes[ch.chain * 16 + ch.chain_pos]
@@ -1922,7 +1959,7 @@ class Engine:
             sample = self.bank.get(idef.sample_name)
             if sample is None:
                 return
-            ch.voice = Voice(sample, idef, final, self.sr,
+            ch.voice = Voice(sample, idef, final, ch.last_instr, self.sr,
                              self.samples_per_tick)
             ch.kind = "sample"
         else:
@@ -1971,7 +2008,7 @@ class Engine:
         idef = InstrumentDef(
             index=0, sample_name="", volume=int(255 * vol),
             pan=127, root_note=60)
-        self.pad_voice = Voice(Sample(sample, sr), idef, 60, self.sr,
+        self.pad_voice = Voice(Sample(sample, sr), idef, 60, None, self.sr,
                                self.samples_per_tick)
 
     def _process_row_commands(self, ch: Channel):

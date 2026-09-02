@@ -164,7 +164,12 @@ Sartenazo v1):
   canal (patrón de longitudes de step en ticks; Bulebule usa [7,5,6,5]).
 - Pitch por nota (root note + fine tune), volumen, pan (pan law original),
   master volume, loop oneshot/forward, recorte por `end`.
-- Comandos: `VOLM` (rampas), `KILL`, `DLAY`, `LEGA`, `TABL`, `STOP`, `HOP`.
+- Comandos: `VOLM` (rampas; el volumen del instrumento es el MÁXIMO de la
+  voz y `VOLM vv` escala relativo a él: FF = el volumen del instrumento,
+  80 ≈ la mitad; el volumen del instrumento se re-lee en vivo en cada
+  trigger y cada bloque de render, así editarlo desde el editor se oye al
+  instante, también en la nota que está sonando), `KILL`, `DLAY`, `LEGA`,
+  `TABL`, `STOP`, `HOP`.
 - Tablas (1 fila/tick, 3 columnas, HOP con contador).
 - Crush/downsample y filtro LP del upstream (ver limitaciones).
 - Instrumentos MIDI: note on/off, `MDCC`, `MDPG`, `MVEL` y `VOLM` → CC7,

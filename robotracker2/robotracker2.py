@@ -754,8 +754,9 @@ class Robotracker2App(App):
 
     # -- navegadores (samples / imágenes de pantalla) -------------------
     # Ambos (SampleBrowser, ImageBrowser) comparten la misma interfaz:
-    # move(button), activate(), back(), cleanup(). La app no necesita saber
-    # cuál de los dos está abierto.
+    # move(button), activate(), back(), cleanup(). SampleBrowser añade
+    # go_back()/go_forward() (historial de carpetas, flechas izq/dcha);
+    # ImageBrowser no los tiene y las flechas no hacen nada allí.
     def _open_browser(self, browser):
         self.browser = browser
         self.browser.size_hint = (1, 1)
@@ -778,6 +779,14 @@ class Robotracker2App(App):
             b.move(button)
         elif button == A:
             b.activate()
+        elif button == LEFT:
+            go_back = getattr(b, "go_back", None)
+            if go_back is not None:
+                go_back()
+        elif button == RIGHT:
+            go_forward = getattr(b, "go_forward", None)
+            if go_forward is not None:
+                go_forward()
         elif button in (B, BACK):
             b.back()
         return True

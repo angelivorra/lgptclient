@@ -95,7 +95,10 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
      (líneas de `images/002/textos`, compartido y no por canción: cada
      línea es un `value`) —, ve la miniatura real de cada entrada al pasar
      por ella, **A** entra/elige (inmediato, sin doble-tap — la vista previa
-     ya es gratis al moverse), **B** vuelve/cancela. Al elegir, escribe el
+     ya es gratis al moverse), **B** vuelve/cancela. Sobre y bajo la lista,
+     dos **indicadores de scroll** pequeños (triángulos) se encienden si hay
+     más entradas arriba/abajo y se atenúan si no se puede navegar hacia
+     allí. Al elegir, escribe el
      MDCC correspondiente. FX2 no se usa para esto en las canciones reales y
      queda fuera de esta vista especial (se conserva, no es editable aquí).
    - **HIT y SCREEN son independientes**: un MDCC se ejecuta cada tick
@@ -132,7 +135,12 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
    (**Crush + Drive** en pareja, Downsample), FILTER (**Cut + Res** en pareja,
    Type, Mode, Attenuate), LOOP (Loop mode, Start, End en hex) y TABLE. Los
    instrumentos **MIDI (0x80-0x8F)** muestran sus campos propios: Channel,
-   Note length, Volume, Table. El **dpad solo mueve el foco** (arr/abj fila,
+   Note length, Volume, Table. El **Volume del instrumento es el volumen
+   MÁXIMO** de la voz: el `VOLM vv` de la canción escala relativo a él
+   (FF = todo el volumen del instrumento, 80 ≈ la mitad), y se re-lee en
+   vivo — **editarlo mientras suena** (con la phrase en play) se oye al
+   instante, también en la nota que está sonando. El **dpad solo
+   mueve el foco** (arr/abj fila,
    izq/dcha entre parejas) y los valores se editan **manteniendo A**: A+arr/abj
    = paso grande, A+izq/dcha = paso fino (estilo LGPT); los enums ciclan. Solo
    se muestran los params que el engine implementa — el resto (Print FX, FX
@@ -140,8 +148,10 @@ oro) y sobre el mismo motor de audio/parser de [`../sinte`](../sinte) (vía
    guardar. Al entrar **desde PHRASE va al instrumento del step**. En **Sample**,
    **A abre el navegador de samples** (`screens/sample_browser.py`): navega la
    biblioteca, **previsualiza** al pasar por cada .wav y **A carga** (copia el
-   wav a la canción y lo asigna). Se guarda (writer extendido para
-   INSTRUMENTBANK).
+   wav a la canción y lo asigna). Las flechas **izq/dcha van atrás/adelante
+   por el historial de carpetas** con memoria (dos niveles y los que haya),
+   recordando la posición del cursor en cada una. Se guarda (writer
+   extendido para INSTRUMENTBANK).
 9. **PROJECT** (`screens/project_view.py`): menú reducido — **Tempo** y
    **Master** editables (izq/dcha ±1, A+izq/dcha ±10), **Load Song**,
    **Save Song** (persiste el `.dat`), **Exit** y las dos acciones Compact:

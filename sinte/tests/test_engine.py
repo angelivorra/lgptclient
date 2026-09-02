@@ -16,10 +16,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lgpt_engine import (  # noqa: E402
     Engine,
+    PANLAW,
     Sample,
     TICKS_PER_STEP,
     SAMPLE_RATE,
     NETCC_CHANNEL,
+    parse_instrument,
     parse_midi_instrument,
 )
 from lgpt_parser import LGPTProject
@@ -172,6 +174,87 @@ class TestVoices(unittest.TestCase):
         out = engine.render(512)           # 512 > declick (~176): completa el fundido
         self.assertLessEqual(voice.vol_cur, 0.5)
         self.assertEqual(float(np.abs(out[-1]).max()), 0.0)  # cola en silencio
+
+    def test_volumen_instrumento_es_maximo(self):
+        """El volumen del instrumento es el MÁXIMO de la voz: sin VOLM la
+        nota suena a ese volumen, VOLM FF = el mismo máximo y VOLM 80 ≈ la
+        mitad (escala relativa, no absoluta)."""
+        pan = PANLAW[127]             # pan central del instrumento del test
+
+        def set_vol(engine, v):
+            engine.project.instrument_bank[0]["params"]["volume"] = str(v)
+            engine.instruments[0] = parse_instrument(
+                0, engine.project.instrument_bank[0]["params"])
+
+        # sin VOLM: suena al máximo del instrumento (seno de amplitud 0.5)
+        engine = make_engine()
+        set_vol(engine, 100)
+        note_row(engine.project, 0)
+        engine._process_tick()
+        out = engine.render(1024)
+        self.assertAlmostEqual(float(np.abs(out).max()),
+                               0.5 * (100 / 255) * pan, delta=0.02)
+
+        # VOLM FF: el mismo máximo (antes saltaba a 255 absoluto)
+        engine = make_engine()
+        set_vol(engine, 100)
+        note_row(engine.project, 0)
+        engine.project.cmd1[0] = "VOLM"
+        engine.project.param1[0] = 0x00FF
+        engine._process_tick()
+        out = engine.render(1024)
+        self.assertAlmostEqual(float(np.abs(out).max()),
+                               0.5 * (100 / 255) * pan, delta=0.02)
+
+        # VOLM 80: la mitad del máximo del instrumento (cola tras el
+        # declick de ~4 ms para no medir la rampa inicial)
+        engine = make_engine()
+        set_vol(engine, 100)
+        note_row(engine.project, 0)
+        engine.project.cmd1[0] = "VOLM"
+        engine.project.param1[0] = 0x0080
+        engine._process_tick()
+        out = engine.render(2048)
+        self.assertAlmostEqual(float(np.abs(out[-200:]).max()),
+                               0.5 * (128 / 255) * (100 / 255) * pan,
+                               delta=0.02)
+
+        # subir el volumen del instrumento sube el máximo
+        engine = make_engine()
+        set_vol(engine, 200)
+        note_row(engine.project, 0)
+        engine.project.cmd1[0] = "VOLM"
+        engine.project.param1[0] = 0x00FF
+        engine._process_tick()
+        out = engine.render(1024)
+        self.assertAlmostEqual(float(np.abs(out).max()),
+                               0.5 * (200 / 255) * pan, delta=0.02)
+
+    def test_volumen_instrumento_editable_en_vivo(self):
+        """Editar el volumen del instrumento se oye en la nota que suena
+        (vol_scale en vivo) y en la nota siguiente (re-parseo al disparar)."""
+        pan = PANLAW[127]
+        engine = make_engine()
+        note_row(engine.project, 0)
+        engine._process_tick()
+        out = engine.render(1024)
+        self.assertAlmostEqual(float(np.abs(out).max()),
+                               0.5 * (128 / 255) * pan, delta=0.02)
+
+        # edición del editor: cambia el banco (objeto vivo) sin tocar la voz
+        engine.project.instrument_bank[0]["params"]["volume"] = "200"
+        out2 = engine.render(1024)          # la misma nota sigue sonando
+        self.assertAlmostEqual(float(np.abs(out2).max()),
+                               0.5 * (200 / 255) * pan, delta=0.02)
+
+        # la nota siguiente se dispara con el instrumento re-parseado
+        engine.start()                      # re-lee la fila 0
+        engine._process_tick()
+        self.assertIsNotNone(engine.channels[0].voice)
+        self.assertEqual(engine.instruments[0].volume, 200)
+        out3 = engine.render(1024)
+        self.assertAlmostEqual(float(np.abs(out3).max()),
+                               0.5 * (200 / 255) * pan, delta=0.02)
 
     def test_dlay(self):
         engine = make_engine()
