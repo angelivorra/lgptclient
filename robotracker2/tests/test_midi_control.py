@@ -207,7 +207,32 @@ def test_assign_pad_y_volumen():
         ctrl.set_pad_volume(9, 50)      # fuera de rango: no cambia nada
         ctrl.save()
         assert json.loads(cfg_file.read_text())["pad_volume"]["4"] == 0
-    print("  assign_pad y volumen OK")
+        print("  assign_pad y volumen OK")
+
+
+def test_sync_mute_persiste():
+    """L2+S cambia engine.muted; sync_mute+save escribe "mute" en el JSON.
+    Sin save(), el fichero no cambia (como pads/knobs)."""
+    engine = StubEngine()
+    with tempfile.TemporaryDirectory() as tmp:
+        song_dir = Path(tmp) / "song"
+        song_dir.mkdir()
+        cfg_file = song_dir / "robotraca.json"
+        cfg_file.write_text(json.dumps({"mute": [2, 6]}))
+        ctrl = MidiControl(buttons={}, hw_pots={}, pad_volume=45)
+        ctrl.set_song(engine, song_dir)
+        assert engine.muted == {2, 6}
+        engine.muted.discard(2)
+        ctrl.sync_mute()
+        assert json.loads(cfg_file.read_text())["mute"] == [2, 6], \
+            "sin save() el mute no se persiste"
+        ctrl.save()
+        assert json.loads(cfg_file.read_text())["mute"] == [6]
+        engine.muted.clear()
+        ctrl.sync_mute()
+        ctrl.save()
+        assert json.loads(cfg_file.read_text())["mute"] == []
+    print("  mute persiste al guardar OK")
 
 
 def test_midictrl_botones_parseados():
@@ -468,6 +493,7 @@ def main():
     test_build_song_pots()
     test_midictrl_set_song()
     test_assign_pad_y_volumen()
+    test_sync_mute_persiste()
     test_midictrl_botones_parseados()
     test_midictrl_open_sin_auto()
     test_on_trigger_hook()

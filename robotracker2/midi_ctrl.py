@@ -107,6 +107,14 @@ class MidiControl:
         self.pots.extend(pots)
         self.engine_ref["engine"] = engine
 
+    def sync_mute(self):
+        """Copia `engine.muted` al robotraca.json en memoria (clave
+        "mute"). Se persiste con save(), como pads/knobs."""
+        engine = self.engine_ref.get("engine")
+        if self._cfg is None or engine is None:
+            return
+        self._cfg["mute"] = sorted(engine.muted)
+
     # -- pads sampler por canción (pantalla PADS) ------------------------
     def _save(self):
         if self._cfg is not None and self._song_dir is not None:
@@ -157,10 +165,10 @@ class MidiControl:
 
     def save(self):
         """Persiste en el robotraca.json de la canción la configuración en
-        memoria (pads/pad_volume de PADS y pots/fx_mix de POTS). Hasta que
-        la app llama a esto (A sobre la fila GUARDAR de cada pantalla o
-        Guardar de la canción) los cambios viven solo en self._cfg y en el
-        engine."""
+        memoria (pads/pad_volume de PADS, pots/fx_mix de POTS y mute de
+        SONG). Hasta que la app llama a esto (A sobre la fila GUARDAR de
+        cada pantalla o Guardar de la canción) los cambios viven solo en
+        self._cfg y en el engine."""
         self._save()
 
     def pads_state(self):

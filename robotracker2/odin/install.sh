@@ -1,16 +1,13 @@
 #!/bin/bash
 # Instala robotracker2 en la Odin 2 (ROCKNIX).
 #
-#   ./install.sh [usuario@]host                 (p.ej. root@192.168.0.30)
-#   ./install.sh [usuario@]host --with-samples  (además sincroniza samples/,
-#                                                18 GB — solo por cable/lento)
+#   ./install.sh [usuario@]host                 (p.ej. root@192.168.0.101)
 #
 # Copia el código a /storage/robotracker2, el .gptk, y el launcher del port a
 # /storage/roms/ports/. Reutiliza el venv de robotracker (/storage/robotracker-
 # venv) y su sinte (/storage/sinte), que ya deben estar en el dispositivo.
-# También siembra /storage/samples (samples de las canciones) y sincroniza
-# /storage/images y /storage/ayuda_imagenes enteros (eventos de pantalla del
-# canal de robotas + sus miniaturas ya renderizadas, ~35 MB en total).
+# Sincroniza la biblioteca de samples (samples/ con subcarpetas), pads/,
+# /storage/images y /storage/ayuda_imagenes.
 set -euo pipefail
 
 HOST="${1:?uso: install.sh [usuario@]host}"
@@ -52,17 +49,6 @@ ssh "$HOST" '
   fi
 '
 
-# Siembra /storage/samples con los samples de las canciones ya presentes
-# (copia local en el dispositivo, rápida; no sobreescribe).
-echo ">> Sembrando /storage/samples con los samples de las canciones..."
-ssh "$HOST" '
-  shopt -s nullglob
-  for f in /storage/sinte/songs/*/samples/*.[wW][aA][vV]; do
-    cp -n "$f" /storage/samples/ 2>/dev/null || true
-  done
-  echo "   /storage/samples: $(ls /storage/samples | wc -l) wav"
-'
-
 # images/ (eventos de pantalla del canal de robotas) y ayuda_imagenes/ (sus
 # miniaturas ya renderizadas, para la vista previa del editor): pequeñas,
 # se sincronizan enteras siempre, sin flag.
@@ -73,6 +59,12 @@ fi
 if [ -d "$REPO/ayuda_imagenes" ]; then
     echo ">> Sincronizando ayuda_imagenes/ (miniaturas de vista previa)..."
     rsync -a --delete "$REPO/ayuda_imagenes/" "$HOST:/storage/ayuda_imagenes/"
+fi
+# Biblioteca de samples del navegador (organizada: drums/bass/synth/...).
+if [ -d "$REPO/samples" ]; then
+    echo ">> Sincronizando samples/ (biblioteca del navegador)..."
+    rsync -a --delete "$REPO/samples/" "$HOST:/storage/samples/"
+    echo "   /storage/samples: $(ssh "$HOST" 'find /storage/samples -iname "*.wav" | wc -l') wav"
 fi
 # Biblioteca de samples de los pads (clave "pads" del robotraca.json de cada
 # canción, resuelta contra /storage/pads): pequeña, entera siempre.
@@ -95,11 +87,5 @@ scp "$SRC/odin/keylog_test.sh"  "$HOST:/storage/robotracker2/keylog_test.sh"
 scp "$SRC/odin/Robotracker2.sh"      "$HOST:/storage/roms/ports/Robotracker2.sh"
 ssh "$HOST" 'chmod +x /storage/roms/ports/Robotracker2.sh \
                        /storage/robotracker2/keylog_test.sh'
-
-# Sincronización opcional de la biblioteca completa de samples (18 GB).
-if [ "${2:-}" = "--with-samples" ] && [ -d "$REPO/samples" ]; then
-    echo ">> Sincronizando biblioteca samples/ (18 GB, puede tardar)..."
-    rsync -a --info=progress2 "$REPO/samples/" "$HOST:/storage/samples/"
-fi
 
 echo ">> Hecho. Reinicia EmulationStation (o refresca Ports) y abre ROBOTRACKER2."

@@ -112,6 +112,7 @@ class Robotracker2App(App):
         self._pads_pad = None      # pad (1-4) al que apunta el navegador PADS
         self._pads_dirty = False   # pads de la canción sin guardar (memoria)
         self._pots_dirty = False   # knobs de la canción sin guardar (memoria)
+        self._mute_dirty = False   # mute de canales sin guardar (robotraca)
         self.fullscreen = fullscreen
         self.held = set()          # botones lógicos pulsados ahora
         self._trig_buttons = set()  # gatillos (ejes) actualmente "pulsados"
@@ -897,8 +898,8 @@ class Robotracker2App(App):
 
 
     def _save(self):
-        """Guarda la canción (lgptsav.dat) y, si las pantallas PADS/POTS
-        tienen cambios en memoria, también su robotraca.json."""
+        """Guarda la canción (lgptsav.dat) y el robotraca.json (mute de
+        SONG y, si hay, pads/knobs en memoria)."""
         ed = self.editor_screen
         try:
             save_project(ed.project)
@@ -906,11 +907,18 @@ class Robotracker2App(App):
             msg = "Guardado"
         except Exception as exc:                     # noqa: BLE001
             msg = f"Error: {exc}"
-        if self._pads_dirty or self._pots_dirty:
+        self._midi_ctrl.sync_mute()
+        if self._pads_dirty or self._pots_dirty or self._mute_dirty:
+            extra = []
+            if self._pads_dirty or self._pots_dirty:
+                extra.append("pads/knobs")
+            if self._mute_dirty:
+                extra.append("mute")
             self._midi_ctrl.save()
             self._pads_dirty = False
             self._pots_dirty = False
-            msg += " + pads/knobs"
+            self._mute_dirty = False
+            msg += " + " + "/".join(extra)
         self._sync_unsaved()
         ed.toast_msg(msg)
 
@@ -1103,6 +1111,9 @@ class Robotracker2App(App):
         eng = self.player.engine
         (eng.muted.add if muted else eng.muted.discard)(track)
         self.editor_screen.song_grid.set_muted(eng.muted)
+        self._midi_ctrl.sync_mute()
+        self._mute_dirty = True
+        self._sync_unsaved()
 
     def _mute_toggle(self, track):
         """L2+S: cada pulsación NUEVA de S (no la repetición del SO al
@@ -1213,7 +1224,8 @@ class Robotracker2App(App):
 
     # ------------------------------------------------------------------
     def _session_dirty(self):
-        return self.dirty or self._pads_dirty or self._pots_dirty
+        return self.dirty or self._pads_dirty or self._pots_dirty \
+            or self._mute_dirty
 
     def _sync_unsaved(self):
         """Asterisco en cabecera si hay cambios de canción, pads o knobs."""
@@ -1240,6 +1252,7 @@ class Robotracker2App(App):
         self.dirty = False
         self._pads_dirty = False
         self._pots_dirty = False
+        self._mute_dirty = False
         self.editor_screen.set_play_indicator(False)
         self.editor_screen.enter_song(project, display_name(song_dir.name))
         # PADS/POTS: estado de esta canción (robotraca.json "pads" y

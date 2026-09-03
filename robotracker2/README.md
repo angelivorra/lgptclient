@@ -379,6 +379,11 @@ Instalar desde este PC (con robotracker ya instalado en la Odin):
 robotracker2/odin/install.sh [usuario@]IP_de_la_odin
 ```
 
+El navegador de samples usa `samples/` en la raíz del repo, con
+subcarpetas (`drums/kick`, `bass/acid`, `synth/lead`…). Sin voces.
+`install.sh` la sincroniza siempre a `/storage/samples`. Las canciones
+siguen sonando desde `sinte/songs/<canción>/samples/`.
+
 ## Estructura
 
 | Archivo | Descripción |
