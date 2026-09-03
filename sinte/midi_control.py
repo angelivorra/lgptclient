@@ -247,6 +247,7 @@ def open_midi_input(port_name: str | None, engine_ref: dict,
             if hit is not None:
                 chans, tparam, idx, scale = hit
                 value = int(round(msg.value * scale))
+                engine_ref.setdefault("pot_cc", {})[idx] = value
                 for tch in chans:
                     engine.push_event("param", tch, tparam, value)
                 handled = True

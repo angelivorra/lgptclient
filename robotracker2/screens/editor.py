@@ -7,13 +7,13 @@ la tira fija D S C P I: D = PADS, S = SONG, C = CHAIN (CONFIG pinta su C
 magenta en la columna S), P = PHRASE, I = INSTRUMENT. El color indica la
 altura: azul = fila media, cian = fila de arriba (PROJECT/GROOVE/EFECTOS),
 magenta = fila de abajo (TABLE/CONFIG), mostrando en esa celda su letra
-(P/G/T/C/E). Alrededor de la celda activa, cuatro flechas de poco alto
-indican por dónde se puede navegar: encendidas si hay pantalla adyacente
-en esa dirección, atenuadas si no.
+(P/G/T/C/E). En el chip activo, una raya blanca arriba y/o abajo marca
+si Ctrl+flecha puede subir o bajar de fila; izquierda/derecha se leen
+en la tira D S C P I.
 """
 
 from kivy.clock import Clock
-from kivy.graphics import Color, Rectangle, RoundedRectangle, Triangle
+from kivy.graphics import Color, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
@@ -33,13 +33,14 @@ from screens.pots_view import PotsGrid
 from screens.project_view import ProjectMenu
 from screens.song_view import SongGrid
 from screens.table_view import TableGrid
-from theme import (COLOR_ACCENT, COLOR_ARROW_DIM, COLOR_BAR_BG, COLOR_BG,
-                   COLOR_BORDER, COLOR_ERROR, COLOR_OK, ROW_COLORS)
+from theme import (COLOR_ACCENT, COLOR_BAR_BG, COLOR_BG, COLOR_BAR_TEXT,
+                   COLOR_ERROR, COLOR_OK, ROW_COLORS)
 
 
 BAR_H = dp(52)
 NAV_CELL_W = dp(44)
-NAV_INSET_X = dp(8)              # bandas a los lados del chip para las flechas
+NAV_INSET_X = dp(4)
+NAV_LINE = (1, 1, 1, 1)          # raya blanca arriba/abajo del chip activo
 
 NAV_COLUMNS = ["D", "S", "C", "P", "I"]
 
@@ -53,42 +54,30 @@ class _NavCell(Label):
                          valign="middle", size_hint_x=None, width=NAV_CELL_W,
                          **kw)
         with self.canvas.before:
-            # flechas direccionales alrededor del chip (dibujadas antes que
-            # él, por si alguna píxel se solapa el chip la tapa). Cada Color
-            # intercalado con su Triangle: el último Color del canvas manda
-            # en todos los triángulos que le siguen.
-            self._dir_colors = {}
-            self._dir_tris = {}
-            for name in DIR_NAMES:
-                self._dir_colors[name] = Color(0, 0, 0, 0)
-                self._dir_tris[name] = Triangle(points=[0, 0, 0, 0, 0, 0])
             self._c = Color(0, 0, 0, 0)
             self._r = RoundedRectangle(radius=[dp(6)])
+            # rayas blancas sobre el chip (arriba = Ctrl+arriba, abajo =
+            # Ctrl+abajo). Se dibujan encima del fondo del chip.
+            self._dir_colors = {}
+            self._dir_bars = {}
+            for name in ("up", "down"):
+                self._dir_colors[name] = Color(0, 0, 0, 0)
+                self._dir_bars[name] = Rectangle()
         self.bind(pos=self._sync, size=self._sync)
 
     def _sync(self, *_):
         self.text_size = self.size
-        self._r.pos = (self.x + NAV_INSET_X, self.y + dp(6))
-        self._r.size = (self.width - 2 * NAV_INSET_X, self.height - dp(12))
-        cx, cy = self.center_x, self.center_y
-        x, y, w, h = self.x, self.y, self.width, self.height
-        # flechas de poco alto en las bandas que deja el chip
-        self._dir_tris["up"].points = [
-            cx - dp(5), y + h - dp(6),
-            cx + dp(5), y + h - dp(6),
-            cx, y + h - dp(1)]
-        self._dir_tris["down"].points = [
-            cx - dp(5), y + dp(6),
-            cx + dp(5), y + dp(6),
-            cx, y + dp(1)]
-        self._dir_tris["left"].points = [
-            x + dp(1), cy,
-            x + dp(7), cy - dp(3),
-            x + dp(7), cy + dp(3)]
-        self._dir_tris["right"].points = [
-            x + w - dp(1), cy,
-            x + w - dp(7), cy - dp(3),
-            x + w - dp(7), cy + dp(3)]
+        rx = self.x + NAV_INSET_X
+        ry = self.y + dp(6)
+        rw = self.width - 2 * NAV_INSET_X
+        rh = self.height - dp(12)
+        self._r.pos = (rx, ry)
+        self._r.size = (rw, rh)
+        pad, thick = dp(5), dp(2)
+        self._dir_bars["up"].pos = (rx + pad, ry + rh - thick - dp(2))
+        self._dir_bars["up"].size = (rw - 2 * pad, thick)
+        self._dir_bars["down"].pos = (rx + pad, ry + dp(2))
+        self._dir_bars["down"].size = (rw - 2 * pad, thick)
 
     def set(self, letter, bg):
         self.text = letter
@@ -97,19 +86,17 @@ class _NavCell(Label):
             self.color = COLOR_BG
         else:
             self._c.rgba = (0, 0, 0, 0)
-            self.color = COLOR_BORDER
+            self.color = COLOR_BAR_TEXT
 
     def set_dirs(self, dirs):
-        """Flechas de la celda: encendidas en las direcciones por las que se
-        puede navegar desde la pantalla actual, atenuadas donde no hay
-        pantalla, invisibles en celdas inactivas (`dirs=None`)."""
-        for name in DIR_NAMES:
-            if dirs is None:
-                self._dir_colors[name].rgba = (0, 0, 0, 0)
-            elif name in dirs:
-                self._dir_colors[name].rgba = COLOR_ACCENT
+        """Rayas del chip activo: blancas si Ctrl+flecha sube/baja de
+        fila; ocultas si no hay pantalla en esa dirección o la celda no
+        está activa (`dirs=None`)."""
+        for name in ("up", "down"):
+            if dirs is not None and name in dirs:
+                self._dir_colors[name].rgba = NAV_LINE
             else:
-                self._dir_colors[name].rgba = COLOR_ARROW_DIM
+                self._dir_colors[name].rgba = (0, 0, 0, 0)
 
 
 class EditorScreen(Screen):
@@ -433,8 +420,8 @@ class EditorScreen(Screen):
 
 
     def _nav_dirs(self):
-        """Direcciones por las que se puede navegar desde la pantalla
-        actual (según `navmap`): encienden las flechas de la celda activa."""
+        """Direcciones con pantalla vecina (según `navmap`): encienden
+        las rayas del chip activo."""
         return {name for (dx, dy), name in zip(_DIR_DELTAS, DIR_NAMES)
                 if neighbor(self.current, dx, dy)}
 

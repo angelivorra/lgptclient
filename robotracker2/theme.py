@@ -1,7 +1,10 @@
-"""Estética de robotracker2: skin inspirada en Renoise 3 (tema gris por defecto).
+"""Estética de robotracker2: skin inspirada en Renoise 3, fondo negro.
 
-Cromado gris, datos en columnas de color (nota clara, instrumento verde, FX
-amarillo/cian), selección azul, playhead verde. Sin acento oro.
+Cromado en las rejillas (nota clara, instrumento verde, FX amarillo/cian),
+selección azul, playhead verde. Sin acento oro.
+
+SONG usa una paleta propia (naranja, tiras por canal). El resto de
+pantallas sigue el azul de COLOR_ACCENT.
 
 Registra "Icons" (DejaVu Sans, glifos ▶ ■). Fija el color de ventana.
 """
@@ -13,9 +16,10 @@ from kivy.core.window import Window
 
 _FONTS = Path(__file__).resolve().parent / "fonts"
 
-# Paleta Renoise 3 (RGBA 0-1). Gris de cuerpo, no negro puro.
-COLOR_BG = (0.20, 0.20, 0.20, 1)
-COLOR_BAR_BG = (0.14, 0.14, 0.14, 1)
+# Paleta Renoise 3 (RGBA 0-1). Fondo negro; el cromado gris queda en
+# celdas, cabeceras y texto.
+COLOR_BG = (0, 0, 0, 1)
+COLOR_BAR_BG = (0, 0, 0, 1)
 COLOR_BAR_TEXT = (0.78, 0.78, 0.76, 1)
 COLOR_ACCENT = (0.42, 0.58, 0.82, 1)      # azul de selección / foco
 COLOR_BTN = (0.32, 0.32, 0.32, 1)
@@ -40,7 +44,23 @@ COLOR_HEADER_TXT = (0.68, 0.68, 0.64, 1)
 COLOR_MUTED = (0.86, 0.34, 0.32, 1)
 COLOR_MUTE_OVERLAY = (0, 0, 0, 0.45)
 COLOR_ICON = COLOR_ACCENT
-COLOR_ARROW_DIM = (0.38, 0.38, 0.38, 1)
+
+# SONG: acento naranja y tira de color por canal (no reutiliza COLOR_ACCENT).
+COLOR_SONG_ACCENT = (0.98, 0.52, 0.16, 1)
+COLOR_SONG_ROW = (0.20, 0.12, 0.07, 1)
+COLOR_SONG_SEL = (0.98, 0.52, 0.16, 0.30)
+COLOR_SONG_CELL_FG = (0.06, 0.04, 0.03, 1)
+COLOR_SONG_HEADER_SEL = (0.16, 0.09, 0.04, 1)
+COLOR_SONG_TRACK = (
+    (0.98, 0.55, 0.18, 1),
+    (0.92, 0.42, 0.14, 1),
+    (0.90, 0.62, 0.18, 1),
+    (0.86, 0.76, 0.22, 1),
+    (0.58, 0.82, 0.24, 1),
+    (0.38, 0.78, 0.28, 1),
+    (0.32, 0.86, 0.42, 1),
+    (0.22, 0.78, 0.55, 1),
+)
 
 # Columnas de datos (como el pattern de Renoise)
 COLOR_NOTE = (0.90, 0.90, 0.88, 1)
@@ -80,6 +100,6 @@ LabelBase.register("Icons", str(_FONTS / "DejaVuSans.ttf"))
 
 
 def setup_window(fullscreen=False):
-    """Fondo gris Renoise; ventana (PC) o pantalla completa (Odin)."""
+    """Fondo negro; ventana (PC) o pantalla completa (Odin)."""
     Window.clearcolor = COLOR_BG
     Window.fullscreen = "auto" if fullscreen else False

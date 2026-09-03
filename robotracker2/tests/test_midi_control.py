@@ -340,6 +340,29 @@ def test_pot5_canal_persiste_al_recargar():
     print("  pot5 canal 3 persiste al recargar OK")
 
 
+def test_cambiar_canal_mueve_el_cc_del_knob():
+    """Si K1 ya había mandado un CC al bajo, A+dir de CANAL no debe
+    dejar el amount en la pista vieja y el giro en una muteada."""
+    engine = StubEngine()
+    with tempfile.TemporaryDirectory() as tmp:
+        pads_dir = Path(tmp) / "pads"
+        pads_dir.mkdir()
+        ctrl = MidiControl(buttons={}, hw_pots=HW_POTS, pad_volume=45,
+                           pads_dir=pads_dir)
+        song_dir = Path(tmp) / "song"
+        song_dir.mkdir()
+        (song_dir / "robotraca.json").write_text(json.dumps({
+            "pots": {"pot1": "2:acid"},
+        }))
+        ctrl.set_song(engine, song_dir)
+        ctrl.engine_ref["pot_cc"] = {0: 90}
+        engine.events.clear()
+        ctrl.set_pot_canal(1, 1)            # C 3 -> C 4 (JSON 2 -> 3)
+        assert ("param", 2, "acid", 0) in engine.events, engine.events
+        assert ("param", 3, "acid", 90) in engine.events, engine.events
+    print("  cambiar canal mueve el CC del knob OK")
+
+
 def test_on_trigger_hook():
     """El hook on_trigger (asegurar el stream al disparar un pad, para que
     los pads suenen sin reproducción) viaja en engine_ref, que el callback
@@ -450,6 +473,7 @@ def main():
     test_on_trigger_hook()
     test_pots_state_y_edicion()
     test_pot5_canal_persiste_al_recargar()
+    test_cambiar_canal_mueve_el_cc_del_knob()
 
     app = Robotracker2App(songs_dir=DEFAULT_SONGS)
 

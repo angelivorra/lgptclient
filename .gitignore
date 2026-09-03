@@ -185,3 +185,16 @@ sinte/LittleGPTracker/
 sinte/songs/*/*.wav
 # backups de save_project (LGPT)
 *.dat.bak
+
+# Bounces locales para oír plugins LADSPA de distorsión (riff de bajo de
+# abducción). El generador sí se versiona; los WAV no.
+sinte/distorsion_ladspa/**
+!sinte/distorsion_ladspa/genera.py
+
+# Bounces de tipos de trance-gate (mismo riff). WAV ignorados; genera.py sí.
+sinte/gates/**
+!sinte/gates/genera.py
+
+# Bounces de filtros LADSPA (mismo riff). WAV ignorados; genera.py sí.
+sinte/filtros_ladspa/**
+!sinte/filtros_ladspa/genera.py

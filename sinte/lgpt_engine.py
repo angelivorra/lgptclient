@@ -31,7 +31,6 @@ que llama a render(): no hay locks en el camino de audio.
 from __future__ import annotations
 
 import json
-import math
 import queue
 import time
 from dataclasses import dataclass
@@ -958,44 +957,35 @@ class BodeFx:
 
 
 class BassDriveFx:
-    """Saturación de bajo que conserva el cuerpo (numpy, sin LADSPA).
+    """Distorsión electrónica de bajo (Pointer cast, pointer_cast_1910.so).
 
-    Distinto de `valve` (bitcrush Decimator, que llena agudos y convierte
-    el bajo en "guitarra"): aquí es tanh + lowpass. `amount` 0 = bypass;
-    al subir, más drive y el LPF cierra hacia ~2.8 kHz para tirar el fizz.
-    El `fx_mix` del canal sigue mezclando dry/wet.
+    Receta de `corte4000_mix55_rms110.wav`: cutoff 4000 Hz, mezcla
+    paralela 55 % con el seco (el grave no se va) y RMS ~110 % del
+    bloque seco. `amount` 0 = bypass; a 1 es esa receta. El `fx_mix`
+    del canal sigue pudiendo secar más.
 
-    Stateful (el polo del LPF): un bloque continúa donde acabó el
-    anterior, sin clic entre callbacks."""
+    Sin alternativa en numpy: si el .so no está, falla al crear el
+    efecto igual que `AcidFx`."""
 
-    DRIVE_MAX = 8.0
-    LPF_OPEN = 12000.0
-    LPF_CLOSED = 2800.0
+    CUTOFF_HZ = 4000.0
+    MIX_MAX = 0.55
+    RMS_RATIO = 1.10
 
     def __init__(self, sr: int):
-        self.sr = sr
-        self._z = np.zeros(2, dtype=np.float64)
+        from ladspa_fx import LadspaStereoPointerCast
+        self.plugin = LadspaStereoPointerCast(sr)
+        self.plugin.set(self.CUTOFF_HZ, 1.0)
 
     def apply(self, buf: np.ndarray, amount: float):
         if amount <= 0.001:
             return
-        drive = 1.0 + (self.DRIVE_MAX - 1.0) * amount
-        x = np.tanh(drive * buf.astype(np.float64)) / math.tanh(drive)
-        cutoff = self.LPF_OPEN * (self.LPF_CLOSED / self.LPF_OPEN) ** amount
-        a = math.exp(-2.0 * math.pi * cutoff / self.sr)
-        g = 1.0 - a
-        out = np.empty_like(x)
-        z = self._z
-        for c in range(x.shape[1]):
-            acc = z[c]
-            col = x[:, c]
-            y = np.empty_like(col)
-            for i in range(col.shape[0]):
-                acc = a * acc + g * col[i]
-                y[i] = acc
-            z[c] = acc
-            out[:, c] = y
-        buf[:] = out.astype(np.float32)
+        dry = buf.copy()
+        self.plugin.run(buf)
+        mix = self.MIX_MAX * amount
+        buf[:] = dry * (1.0 - mix) + buf * mix
+        dry_rms = float(np.sqrt((dry ** 2).mean())) + 1e-6
+        wet_rms = float(np.sqrt((buf ** 2).mean())) + 1e-6
+        buf *= min(max(dry_rms * self.RMS_RATIO / wet_rms, 0.25), 4.0)
 
 
 class TranceGateFx:
@@ -1048,8 +1038,8 @@ class TranceGateFx:
 
 
 # Presets disponibles para los pots (target = "canal:nombre"). El orden de
-# este dict es el orden de la cadena de efectos: drive (valve / bass_drive)
-# -> filtro (acid / acid_lfo) -> delay -> metal -> bode, para que el
+# este dict es el orden de la cadena de efectos: drive (valve / bass_drive
+# pointer-cast) -> filtro (acid / acid_lfo) -> delay -> metal -> bode, para que el
 # desplazamiento de frecuencia procese la señal ya distorsionada; los
 # marcados `after_presence` (trance_gate) van después de compensar RMS.
 EFFECT_PRESETS = {

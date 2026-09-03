@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""BassDriveFx: saturación + LPF que conserva el grave (preset bass_drive).
+"""BassDriveFx: pointer-cast paralelo (receta corte4000 mix55 rms110).
 
 Ejecutar con: .venv/bin/python -m unittest discover -s tests -v
 """
@@ -31,6 +31,15 @@ def _band_energy(buf, lo, hi, sr=SR):
     return float((spec[mask] ** 2).sum())
 
 
+def _plugin_disponible():
+    try:
+        BassDriveFx(SR)
+        return True
+    except Exception:
+        return False
+
+
+@unittest.skipUnless(_plugin_disponible(), "pointer_cast_1910.so no instalado")
 class TestBassDriveFx(unittest.TestCase):
     def test_registrado_en_effect_presets(self):
         self.assertIs(EFFECT_PRESETS["bass_drive"], BassDriveFx)
@@ -53,26 +62,22 @@ class TestBassDriveFx(unittest.TestCase):
         high = _band_energy(buf, 800, 8000)
         self.assertGreater(low, high * 3.0)
 
-    def test_menos_agudos_que_un_bitcrush_equivalente(self):
-        """Valve (Decimator) llena 800-8k; bass_drive no tanto.
+    def test_rms_cerca_del_seco(self):
+        dry = _sine(80)
+        wet = dry.copy()
+        BassDriveFx(SR).apply(wet, 1.0)
+        r_dry = float(np.sqrt((dry ** 2).mean()))
+        r_wet = float(np.sqrt((wet ** 2).mean()))
+        self.assertGreater(r_wet / r_dry, 0.9)
+        self.assertLess(r_wet / r_dry, 1.4)
 
-        Si LADSPA no está, se compara contra un bitcrush numpy (mismo
-        síntoma: energía aguda alta sobre un seno de 80 Hz)."""
-        src = _sine(80)
-        bass = src.copy()
-        BassDriveFx(SR).apply(bass, 1.0)
-        bass_hf = _band_energy(bass, 800, 8000)
-
-        crushed = src.copy()
-        try:
-            from lgpt_engine import ValveFx
-            ValveFx(SR).apply(crushed, 1.0)
-        except Exception:
-            bits = 4
-            step = 2.0 / (2 ** bits)
-            crushed[:] = np.round(crushed / step) * step
-        crush_hf = _band_energy(crushed, 800, 8000)
-        self.assertLess(bass_hf, crush_hf * 0.6)
+    def test_sigue_correlacionado_con_el_seco(self):
+        """Mix 55 %: no sustituye el bajo, se oye el original debajo."""
+        dry = _sine(80)[:, 0]
+        wet = np.column_stack([dry, dry]).astype(np.float32)
+        BassDriveFx(SR).apply(wet, 1.0)
+        corr = float(np.corrcoef(dry, wet[:, 0])[0, 1])
+        self.assertGreater(corr, 0.5)
 
 
 if __name__ == "__main__":

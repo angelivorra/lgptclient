@@ -29,14 +29,16 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    **I** = INSTRUMENT. El color indica la altura: **azul** = fila media,
    **cian** = fila de arriba (PROJECT/GROOVE/EFECTOS), **magenta** = fila de
    abajo (TABLE/CONFIG), mostrando en esa celda su letra (P/G/T/C/E).
-   Alrededor de la celda activa, cuatro flechas de poco alto indican por
-   dónde se puede navegar desde la pantalla actual: **encendidas** (azul) si
-   hay pantalla adyacente en esa dirección, **atenuadas** si no.
+   En el chip activo, una **raya blanca arriba y/o abajo** indica si
+   **Ctrl+flecha** puede subir o bajar de fila; izquierda/derecha se leen
+   en la tira D S C P I.
    **Esc** vuelve a la lista de canciones.
 
 3. **SONG** (`screens/song_view.py`): parrilla 256×8 de índices de chain
-   (bandas por compás/beat, cursor dorado). Cabecera con el nº de canal
-   (1–6) e iconos vectoriales: micrófono en el canal 7 (voz) y robot en el 8.
+   (bandas por compás/beat, celda naranja sólida, marco y escuadras en el
+   canal del cursor, tira de color por canal). Cabecera
+   con el nº de canal (1–6) e iconos vectoriales: micrófono en el canal 7
+   (voz) y robot en el 8.
    Dpad mueve el cursor, **A+dir**
    edita (±1 izq/dcha, ±0x10 arr/abj; en vacío crea chain), **B** borra.
    Portapapeles/selección estilo LGPT: **A** copia/pega/pone 00; **Ctrl+S**

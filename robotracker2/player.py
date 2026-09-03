@@ -36,8 +36,11 @@ class Player:
                 return True
             try:
                 import sounddevice as sd
+                # 2048 como lttileplayer.toml: scream y otros LADSPA pesados
+                # con el blocksize por defecto (~512) se pasan de presupuesto.
                 self._stream = sd.OutputStream(
                     samplerate=SAMPLE_RATE, channels=2, dtype="float32",
+                    blocksize=2048,
                     callback=self._audio_callback)
                 self._stream.start()
                 return True

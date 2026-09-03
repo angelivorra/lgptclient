@@ -183,7 +183,7 @@
         </INSTRUMENT>
         <INSTRUMENT ID="20" TYPE="Sample">
             <PARAM NAME="sample" VALUE="Ghosthack-Bass Shot_Roller_C.wav" />
-            <PARAM NAME="volume" VALUE="78" />
+            <PARAM NAME="volume" VALUE="191" />
             <PARAM NAME="interpol" VALUE="linear" />
             <PARAM NAME="crush" VALUE="16" />
             <PARAM NAME="crushdrive" VALUE="255" />

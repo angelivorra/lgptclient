@@ -239,9 +239,13 @@ class MidiControl:
         """Actualiza la clave "pots" en memoria y reconstruye la lista de
         targets en vivo (self.pots se muta en sitio: el callback MIDI la
         lee en cada mensaje). El borrador conserva la elección a medias
-        (canal sin efecto o al revés)."""
+        (canal sin efecto o al revés). Si el knob ya había mandado un CC,
+        se reaplica al target nuevo y se pone a 0 el anterior: si no, al
+        cambiar canal (p.ej. A+dir sobre CANAL, a una pista muteada) el
+        giro se iba al canal nuevo y el bajo se quedaba sordo."""
         if self._cfg is None:
             return
+        old_canal, old_efecto, _pct = self._pot_state(pot)
         pots = self._cfg.get("pots")
         pots = dict(pots) if isinstance(pots, dict) else {}
         if canal is not None and efecto is not None:
@@ -251,6 +255,28 @@ class MidiControl:
         self._cfg["pots"] = pots
         self._pot_sel[pot] = (canal, efecto)
         self._rebuild_pots()
+        self._reaplicar_pot(pot, old_canal, old_efecto, canal, efecto)
+
+    def _reaplicar_pot(self, pot, old_canal, old_efecto, canal, efecto):
+        """Mueve la cantidad del knob (último CC, o fx_amounts ya en el
+        engine) del target viejo al nuevo."""
+        engine = self.engine_ref.get("engine")
+        if engine is None:
+            return
+        cc = (self.engine_ref.get("pot_cc") or {}).get(pot - 1)
+        if cc is None and old_canal is not None and old_efecto is not None:
+            try:
+                amt = engine.channels[old_canal - 1].fx_amounts.get(
+                    old_efecto, 0.0)
+            except (AttributeError, IndexError):
+                amt = 0.0
+            if amt > 0.001:
+                cc = int(round(amt * 127))
+        moved = (old_canal, old_efecto) != (canal, efecto)
+        if moved and old_canal is not None and old_efecto is not None:
+            engine.push_event("param", old_canal - 1, old_efecto, 0)
+        if canal is not None and efecto is not None and cc is not None:
+            engine.push_event("param", canal - 1, efecto, cc)
 
     def set_pot_mix(self, pot, delta):
         """Porcentaje de mezcla dry/wet del efecto al que apunta el knob

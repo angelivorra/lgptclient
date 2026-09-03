@@ -49,7 +49,8 @@ class _Descriptor(ctypes.Structure):
 class LadspaPlugin:
     """Instancia genérica de un plugin LADSPA (un canal de audio)."""
 
-    def __init__(self, path: str, unique_id: int, sample_rate: int):
+    def __init__(self, path: str, unique_id: int, sample_rate: int,
+                 controls: dict[int, float] | None = None):
         if not Path(path).is_file():
             raise FileNotFoundError(path)
         self._lib = ctypes.CDLL(path)
@@ -81,19 +82,27 @@ class LadspaPlugin:
             desc.connect_port)
         self._run = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_ulong)(
             desc.run)
-        if desc.activate:
-            activate = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(desc.activate)
-            activate(self._handle)
         self._controls: dict[int, ctypes.c_float] = {}
-        # Conecta TODOS los puertos de control, de entrada y de salida: el
-        # plugin lee los de entrada y ESCRIBE en los de salida (latencia,
-        # atenuación...) aunque no los usemos. Puntero sin conectar = segfault.
-        LADSPA_PORT_INPUT = 0x1
+        # Dummy audio: algunos plugins (ZamEQ2) pisan NaN si activate()
+        # corre sin puertos de audio conectados.
+        self._dummy_audio: list[np.ndarray] = []
         LADSPA_PORT_CONTROL = 0x4
+        LADSPA_PORT_AUDIO = 0x8
         for port in range(desc.PortCount):
             flags = desc.PortDescriptors[port]
             if flags & LADSPA_PORT_CONTROL:
                 self.set_control(port, 0.0)
+            elif flags & LADSPA_PORT_AUDIO:
+                dummy = np.zeros(64, dtype=np.float32)
+                self._dummy_audio.append(dummy)
+                self._connect(self._handle, port,
+                              dummy.ctypes.data_as(ctypes.c_void_p))
+        if controls:
+            for port, val in controls.items():
+                self.set_control(port, val)
+        if desc.activate:
+            activate = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(desc.activate)
+            activate(self._handle)
 
     def set_control(self, port: int, value: float):
         f = self._controls.get(port)
@@ -109,6 +118,15 @@ class LadspaPlugin:
         self._connect(self._handle, in_port, data)
         self._connect(self._handle, out_port, data)
         self._run(self._handle, len(buf))
+
+    def run_to(self, src: np.ndarray, dst: np.ndarray,
+               in_port: int, out_port: int):
+        """Entrada y salida en buffers distintos (plugins que no soportan in-place)."""
+        self._connect(self._handle, in_port,
+                      src.ctypes.data_as(ctypes.c_void_p))
+        self._connect(self._handle, out_port,
+                      dst.ctypes.data_as(ctypes.c_void_p))
+        self._run(self._handle, len(src))
 
 
 CAPS_PATH = "/usr/lib/ladspa/caps.so"
@@ -527,6 +545,109 @@ class LadspaStereoCrossoverDist:
     def set(self, amplitude: float):
         self.left.set(amplitude)
         self.right.set(amplitude)
+
+    def run(self, buf: np.ndarray):
+        """buf (n, 2) float32, in-place."""
+        left = np.ascontiguousarray(buf[:, 0])
+        self.left.run(left)
+        buf[:, 0] = left
+        right = np.ascontiguousarray(buf[:, 1])
+        self.right.run(right)
+        buf[:, 1] = right
+
+
+FOLDOVER_PATH = "/usr/lib/ladspa/foldover_1213.so"
+FOLDOVER_ID = 1213
+
+# Puertos del Foldover distortion (confirmados con `analyseplugin`)
+FLD_DRIVE = 0       # 0-1
+FLD_SKEW = 1        # 0-1; 0 = plegado simétrico (armónicos impares)
+FLD_INPUT = 2
+FLD_OUTPUT = 3
+
+
+class LadspaFoldover(LadspaPlugin):
+    """Foldover distortion (foldover_1213.so): plegado de onda, un canal.
+
+    Distorsión electrónica (synth / West Coast), no saturación de
+    guitarra: en un seno de 80 Hz sube el 3er armónico y el grave sigue
+    siendo el pico del espectro. Skew fijo a 0. Drive 0 no es bypass
+    limpio (sube un poco el RMS): el preset no llama a `run` con amount 0."""
+
+    def __init__(self, sample_rate: int, path: str = FOLDOVER_PATH):
+        super().__init__(path, FOLDOVER_ID, sample_rate)
+        self.set_control(FLD_SKEW, 0.0)
+
+    def set(self, drive: float):
+        self.set_control(FLD_DRIVE, min(max(drive, 0.0), 1.0))
+
+    def run(self, buf: np.ndarray):
+        super().run(buf, FLD_INPUT, FLD_OUTPUT)
+
+
+class LadspaStereoFoldover:
+    """Dos instancias mono del Foldover para el buffer estéreo."""
+
+    def __init__(self, sample_rate: int):
+        self.left = LadspaFoldover(sample_rate)
+        self.right = LadspaFoldover(sample_rate)
+
+    def set(self, drive: float):
+        self.left.set(drive)
+        self.right.set(drive)
+
+    def run(self, buf: np.ndarray):
+        """buf (n, 2) float32, in-place."""
+        left = np.ascontiguousarray(buf[:, 0])
+        self.left.run(left)
+        buf[:, 0] = left
+        right = np.ascontiguousarray(buf[:, 1])
+        self.right.run(right)
+        buf[:, 1] = right
+
+
+PTR_CAST_PATH = "/usr/lib/ladspa/pointer_cast_1910.so"
+PTR_CAST_ID = 1910
+
+# Puertos de Pointer cast distortion (analyseplugin)
+PTR_CUTOFF = 0      # 0.0001*sr .. 0.3*sr (log)
+PTR_MIX = 1         # 0-1 dry/wet del plugin
+PTR_INPUT = 2
+PTR_OUTPUT = 3
+
+
+class LadspaPointerCast(LadspaPlugin):
+    """Pointer cast distortion (pointer_cast_1910.so): glitch digital
+    reinterpretaando bits del float, un canal.
+
+    Cutoff del efecto en Hz; el dry/wet interno se deja a 1 y la mezcla
+    la hace el preset (paralelo con el seco)."""
+
+    def __init__(self, sample_rate: int, path: str = PTR_CAST_PATH):
+        super().__init__(path, PTR_CAST_ID, sample_rate)
+        self.sr = sample_rate
+        self.set_control(PTR_MIX, 1.0)
+
+    def set(self, cutoff_hz: float, mix: float = 1.0):
+        lo = 0.0001 * self.sr
+        hi = 0.3 * self.sr
+        self.set_control(PTR_CUTOFF, min(max(cutoff_hz, lo), hi))
+        self.set_control(PTR_MIX, min(max(mix, 0.0), 1.0))
+
+    def run(self, buf: np.ndarray):
+        super().run(buf, PTR_INPUT, PTR_OUTPUT)
+
+
+class LadspaStereoPointerCast:
+    """Dos instancias mono del Pointer cast para el buffer estéreo."""
+
+    def __init__(self, sample_rate: int):
+        self.left = LadspaPointerCast(sample_rate)
+        self.right = LadspaPointerCast(sample_rate)
+
+    def set(self, cutoff_hz: float, mix: float = 1.0):
+        self.left.set(cutoff_hz, mix)
+        self.right.set(cutoff_hz, mix)
 
     def run(self, buf: np.ndarray):
         """buf (n, 2) float32, in-place."""

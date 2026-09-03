@@ -145,59 +145,50 @@ def _indicadores_screens():
 
 
 def _flechas_nav():
-    """Flechas direccionales de la cabecera del editor: encendidas si hay
-    pantalla adyacente en esa dirección (según navmap), atenuadas si no, e
-    invisibles en las celdas inactivas."""
-    from screens.editor import EditorScreen
-    from theme import COLOR_ACCENT, COLOR_ARROW_DIM
+    """Rayas blancas del chip activo: visibles si Ctrl+arriba/abajo lleva
+    a otra pantalla (según navmap); ocultas si no, y en celdas inactivas."""
+    from screens.editor import NAV_LINE, EditorScreen
 
     es = EditorScreen()
     es.current = "song"
     es._update_nav(1, 1, "S")
     cell = es.nav_cells[1]
     assert cell.text == "S", cell.text
-    # SONG (1,1): vecinos en las cuatro direcciones
-    for name in ("up", "down", "left", "right"):
-        assert tuple(cell._dir_colors[name].rgba) == COLOR_ACCENT, \
-            (name, cell._dir_colors[name].rgba)
-    print("  SONG: las cuatro flechas encendidas OK")
+    # SONG (1,1): PROJECT arriba, TABLE abajo
+    assert tuple(cell._dir_colors["up"].rgba) == NAV_LINE
+    assert tuple(cell._dir_colors["down"].rgba) == NAV_LINE
+    print("  SONG: rayas arriba y abajo OK")
 
-    # las celdas inactivas no llevan flechas
     for other in es.nav_cells[:1] + es.nav_cells[2:]:
         assert all(tuple(c.rgba)[3] == 0 for c in other._dir_colors.values())
-    print("  celdas inactivas sin flechas OK")
+    print("  celdas inactivas sin rayas OK")
 
-    # PROJECT (1,0): sin pantalla arriba ni a la derecha
+    # PROJECT (1,0): sin pantalla arriba; SONG abajo
     es.current = "project"
     es._update_nav(1, 0, "P")
     cell = es.nav_cells[1]
     assert cell.text == "P", cell.text
-    assert tuple(cell._dir_colors["up"].rgba) == COLOR_ARROW_DIM
-    assert tuple(cell._dir_colors["right"].rgba) == COLOR_ARROW_DIM
-    assert tuple(cell._dir_colors["down"].rgba) == COLOR_ACCENT   # SONG
-    assert tuple(cell._dir_colors["left"].rgba) == COLOR_ACCENT   # EFECTOS
-    print("  PROJECT: arriba/dcha apagadas, abajo/izq encendidas OK")
+    assert tuple(cell._dir_colors["up"].rgba)[3] == 0
+    assert tuple(cell._dir_colors["down"].rgba) == NAV_LINE
+    print("  PROJECT: solo raya abajo OK")
 
     # GROOVE (3,0): solo PHRASE debajo
     es.current = "groove"
     es._update_nav(3, 0, "G")
     cell = es.nav_cells[3]
     assert cell.text == "G", cell.text
-    assert tuple(cell._dir_colors["down"].rgba) == COLOR_ACCENT
-    for name in ("up", "left", "right"):
-        assert tuple(cell._dir_colors[name].rgba) == COLOR_ARROW_DIM, name
-    print("  GROOVE: solo abajo encendida OK")
+    assert tuple(cell._dir_colors["down"].rgba) == NAV_LINE
+    assert tuple(cell._dir_colors["up"].rgba)[3] == 0
+    print("  GROOVE: solo raya abajo OK")
 
-    # INSTRUMENT (4,1): sin pantalla a la derecha ni arriba
+    # INSTRUMENT (4,1): TABLE abajo, nada arriba
     es.current = "instrument"
     es._update_nav(4, 1, "I")
     cell = es.nav_cells[4]
     assert cell.text == "I", cell.text
-    assert tuple(cell._dir_colors["right"].rgba) == COLOR_ARROW_DIM
-    assert tuple(cell._dir_colors["up"].rgba) == COLOR_ARROW_DIM
-    assert tuple(cell._dir_colors["left"].rgba) == COLOR_ACCENT   # PHRASE
-    assert tuple(cell._dir_colors["down"].rgba) == COLOR_ACCENT   # TABLE
-    print("  INSTRUMENT: dcha/arriba apagadas OK")
+    assert tuple(cell._dir_colors["up"].rgba)[3] == 0
+    assert tuple(cell._dir_colors["down"].rgba) == NAV_LINE
+    print("  INSTRUMENT: solo raya abajo OK")
 
     es.song_name = "demo"
     es.current = "song"

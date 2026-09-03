@@ -22,11 +22,12 @@ from controls import DOWN, LEFT, RIGHT, UP
 from lgpt_model import (EMPTY, NUM_TRACKS, SongView, clip_region,
                         duplicate_chain, paste_region, read_cell)
 
-from theme import (COLOR_ACCENT, COLOR_BAR, COLOR_BEAT, COLOR_BG, COLOR_CELL,
-                   COLOR_EMPTY, COLOR_HEADER_BG, COLOR_HEADER_TXT,
-                   COLOR_HINT_BG, COLOR_ICON, COLOR_LINENUM, COLOR_LINENUM_CUR,
-                   COLOR_MUTE_OVERLAY, COLOR_MUTED, COLOR_PLAY, COLOR_ROW_CURSOR,
-                   COLOR_SEL)
+from theme import (COLOR_BAR, COLOR_BEAT, COLOR_BG, COLOR_CELL, COLOR_EMPTY,
+                   COLOR_HEADER_BG, COLOR_HEADER_TXT, COLOR_HINT_BG,
+                   COLOR_LINENUM, COLOR_LINENUM_CUR, COLOR_MUTE_OVERLAY,
+                   COLOR_MUTED, COLOR_PLAY, COLOR_SONG_ACCENT,
+                   COLOR_SONG_CELL_FG, COLOR_SONG_HEADER_SEL, COLOR_SONG_ROW,
+                   COLOR_SONG_SEL, COLOR_SONG_TRACK)
 
 ROW_H = dp(30)
 HEADER_H = dp(34)                       # cabecera con el nº de canal
@@ -244,7 +245,7 @@ class SongGrid(Widget):
         Color(*color)
         Rectangle(texture=tex, size=(tw, th), pos=(x, y + (h - th) / 2))
 
-    def _icon_voice(self, cx, cy, s, color=COLOR_ICON):
+    def _icon_voice(self, cx, cy, s, color=COLOR_SONG_ACCENT):
         """Micrófono (canal de voz)."""
         Color(*color)
         bw, bh = s * 0.40, s * 0.56
@@ -255,7 +256,7 @@ class SongGrid(Widget):
         Line(points=[cx - s * 0.20, cy - bh * 0.46,
                      cx + s * 0.20, cy - bh * 0.46], width=1.4)
 
-    def _icon_robot(self, cx, cy, s, color=COLOR_ICON):
+    def _icon_robot(self, cx, cy, s, color=COLOR_SONG_ACCENT):
         """Cabeza de robot (canal de robot)."""
         hw, hh = s * 0.64, s * 0.52
         Color(*color)
@@ -265,11 +266,34 @@ class SongGrid(Widget):
                 size=(s * 0.12, s * 0.12))
         RoundedRectangle(pos=(cx - hw / 2, cy - hh / 2), size=(hw, hh),
                          radius=[s * 0.14])
-        # ojos recortados en color de fondo
-        Color(*COLOR_HEADER_BG)
+        # ojos recortados en el fondo de cabecera
+        Color(*COLOR_BG)
         er = s * 0.12
         Ellipse(pos=(cx - hw * 0.26 - er / 2, cy - er / 2), size=(er, er))
         Ellipse(pos=(cx + hw * 0.26 - er / 2, cy - er / 2), size=(er, er))
+
+    def _frame_column(self, x, y, w, h):
+        """Marco naranja y escuadras en L del canal del cursor."""
+        Color(*COLOR_SONG_ACCENT)
+        Line(rectangle=(x + 0.5, y + 0.5, w - 1, h - 1), width=1)
+        bar_h = dp(3)
+        Rectangle(pos=(x, y + h - bar_h), size=(w, bar_h))
+        arm = min(dp(12), w * 0.38, h * 0.10)
+        x0, y0, x1, y1 = x, y, x + w, y + h
+        for pts in (
+            [x0, y1 - arm, x0, y1, x0 + arm, y1],
+            [x1 - arm, y1, x1, y1, x1, y1 - arm],
+            [x0, y0 + arm, x0, y0, x0 + arm, y0],
+            [x1 - arm, y0, x1, y0, x1, y0 + arm],
+        ):
+            Line(points=pts, width=1.6, cap="square", joint="miter")
+
+    def _track_ink(self, track, muted, selected):
+        if muted:
+            return COLOR_MUTED
+        if selected:
+            return COLOR_SONG_ACCENT
+        return COLOR_SONG_TRACK[track]
 
     def _redraw(self, *_):
         self.canvas.clear()
@@ -288,7 +312,7 @@ class SongGrid(Widget):
                     break
                 y = content_top - (i + 1) * ROW_H
                 if row == self.cursor_row:
-                    band = COLOR_ROW_CURSOR
+                    band = COLOR_SONG_ROW
                 elif row % 16 == 0:
                     band = COLOR_BAR
                 elif row % 4 == 0:
@@ -310,14 +334,13 @@ class SongGrid(Widget):
                     in_sel = (region and region[0] <= row <= region[2]
                               and region[1] <= t <= region[3])
                     if is_cursor:
-                        Color(*COLOR_ACCENT)
-                        RoundedRectangle(pos=(x + dp(3), y + dp(3)),
-                                         size=(track_w - dp(6), ROW_H - dp(6)),
-                                         radius=[dp(6)])
-                        color = COLOR_BG
+                        Color(*COLOR_SONG_ACCENT)
+                        Rectangle(pos=(x + dp(2), y + dp(2)),
+                                  size=(track_w - dp(4), ROW_H - dp(4)))
+                        color = COLOR_SONG_CELL_FG
                     else:
                         if in_sel:
-                            Color(*COLOR_SEL)
+                            Color(*COLOR_SONG_SEL)
                             Rectangle(pos=(x + dp(1), y + dp(1)),
                                       size=(track_w - dp(2), ROW_H - dp(2)))
                         if self.play_pos[t] == row:
@@ -326,39 +349,50 @@ class SongGrid(Widget):
                                       size=(track_w - dp(2), ROW_H - dp(2)))
                         color = COLOR_CELL if v != EMPTY else COLOR_EMPTY
                     self._text(x, y, track_w, text, color)
+            hint = self._selection_hint()
+            hint_h = HINT_H if hint else 0
             # columnas muteadas: atenúa el cuerpo (debajo de la cabecera)
             for t in self.muted:
                 x = self.x + GUTTER_W + t * track_w
                 Color(*COLOR_MUTE_OVERLAY)
-                Rectangle(pos=(x, self.y),
-                          size=(track_w, self.height - HEADER_H))
+                Rectangle(pos=(x, self.y + hint_h),
+                          size=(track_w, self.height - HEADER_H - hint_h))
             # cabecera de canales (1..6, voz, robot); muteadas en rojo
             hy = self.y + self.height - HEADER_H
             Color(*COLOR_HEADER_BG)
             Rectangle(pos=(self.x, hy), size=(self.width, HEADER_H))
+            strip_h = dp(3)
             for t in range(NUM_TRACKS):
                 x = self.x + GUTTER_W + t * track_w
+                selected = t == self.cursor_track
+                muted = t in self.muted
+                if selected:
+                    Color(*COLOR_SONG_HEADER_SEL)
+                    Rectangle(pos=(x, hy), size=(track_w, HEADER_H))
+                Color(*COLOR_SONG_TRACK[t])
+                Rectangle(pos=(x, hy + HEADER_H - strip_h),
+                          size=(track_w, strip_h))
                 cx, cy = x + track_w / 2, hy + HEADER_H / 2
                 s = min(track_w, HEADER_H) * 0.66
-                muted = t in self.muted
+                ink = self._track_ink(t, muted, selected)
                 if t == VOICE_TRACK:
-                    self._icon_voice(cx, cy, s,
-                                     COLOR_MUTED if muted else COLOR_ICON)
+                    self._icon_voice(cx, cy, s, ink)
                 elif t == ROBOT_TRACK:
-                    self._icon_robot(cx, cy, s,
-                                     COLOR_MUTED if muted else COLOR_ICON)
+                    self._icon_robot(cx, cy, s, ink)
                 else:
                     self._text(x, hy, track_w, str(t + 1),
-                               COLOR_MUTED if muted else COLOR_HEADER_TXT,
+                               ink if selected else (
+                                   COLOR_MUTED if muted else COLOR_HEADER_TXT),
                                h=HEADER_H)
-            # hint de operaciones con la selección activa (franja inferior)
-            hint = self._selection_hint()
+            col_x = self.x + GUTTER_W + self.cursor_track * track_w
+            self._frame_column(col_x, self.y + hint_h, track_w,
+                               self.height - hint_h)
             if hint:
                 Color(*COLOR_HINT_BG)
                 Rectangle(pos=(self.x, self.y), size=(self.width, HINT_H))
-                Color(*COLOR_ACCENT)
+                Color(*COLOR_SONG_ACCENT)
                 Line(points=[self.x, self.y + HINT_H,
                              self.x + self.width, self.y + HINT_H], width=1)
                 self._text_left(self.x + dp(12), self.y, self.width - dp(24),
-                                hint, COLOR_ACCENT, h=HINT_H,
+                                hint, COLOR_SONG_ACCENT, h=HINT_H,
                                 font_size=FONT_SMALL)
