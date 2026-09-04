@@ -11,14 +11,13 @@ muestra el error (la app pasa el toast del editor).
 
 from pathlib import Path
 
-from kivy.core.text import Label as CoreLabel
 from kivy.graphics import Color, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
 from theme import (COLOR_ACCENT, COLOR_ACTION, COLOR_BG, COLOR_BTN, COLOR_DIR,
-                   COLOR_HEADER, COLOR_SCRIM, COLOR_WAV)
+                   COLOR_HEADER, COLOR_SCRIM, COLOR_WAV, core_label)
 
 ROW_H = dp(30)
 TOP_PAD = dp(70)
@@ -179,9 +178,7 @@ class SampleBrowser(Widget):
     def _texture(self, text):
         tex = self._tex.get(text)
         if tex is None:
-            lbl = CoreLabel(text=text, font_size=FONT, bold=True)
-            lbl.refresh()
-            tex = lbl.texture
+            tex = core_label(text, FONT).texture
             self._tex[text] = tex
         return tex
 

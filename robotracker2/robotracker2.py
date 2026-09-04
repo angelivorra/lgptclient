@@ -23,6 +23,7 @@ os.environ.setdefault("KIVY_NO_ARGS", "1")
 
 import argparse
 import filecmp
+import queue
 import shutil
 import time
 from pathlib import Path
@@ -43,7 +44,7 @@ from config import load_config, save_config
 from controls import (A, B, BACK, DOWN, DPAD, L2, LEFT, R2, RIGHT, SELECT,
                       START, UP, GAMEPAD_BUTTONS, hat_to_buttons, key_to_button,
                       trigger_axis_buttons)
-from lgpt_model import compact_instruments, compact_sequencer
+from lgpt_model import EMPTY, compact_instruments, compact_sequencer
 from midi_ctrl import POTS_KNOBS, MidiControl
 from midi_input import MidiNotesInput, midi_input_names
 from sinte_bridge import save_project
@@ -53,7 +54,7 @@ except ImportError:
     GamepadReader = None
 from songs import DEFAULT_SONGS, display_name, find_songs, load_project
 from player import Player
-from robots import screen_label
+from robots import ROBOT_TRACK, RobotPlayback, screen_label
 from screens.confirm import ConfirmDialog
 from screens.load_song import LoadSongScreen
 from screens.editor import EditorScreen
@@ -123,6 +124,9 @@ class Robotracker2App(App):
         self.player = None         # reproductor de la canción cargada
         self._song_dir = None      # directorio de la canción cargada
         self._play_start = None    # monotonic() al arrancar (temporizador)
+        self._play_keys = [None] * 8  # (phrase, step) por canal: pulso SONG
+        self._robot_play = RobotPlayback()  # SCREEN sostenida + HIT del canal 8
+        self._pad_hits = queue.SimpleQueue()  # pads MIDI -> destello en _tick
         self._fresh_press = False  # el botón actual no estaba ya en self.held
         self.midi_live = False     # pintado MIDI en vivo en PHRASE (R2+START)
         self._midi_notes = MidiNotesInput()
@@ -368,6 +372,8 @@ class Robotracker2App(App):
             return self._dispatch_project(button, active)
         if ed.current == "config":
             return self._dispatch_config(button, active)
+        if ed.current == "live":
+            return self._dispatch_live(button, active)
         if button == BACK:
             self.sm.current = "load"
             return True
@@ -519,13 +525,15 @@ class Robotracker2App(App):
         self._pads_dirty = True
         self._sync_unsaved()
 
-    def _ensure_pad_audio(self):
+    def _ensure_pad_audio(self, pad_idx=None):
         """Los pads suenan aunque la canción no esté reproduciéndose: su
         Voice se renderiza en el callback del stream, así que basta con
         que el stream exista. Se crea perezoso (aquí, al disparar un pad
         desde el callback MIDI), no al cargar la canción."""
         if self.player is not None:
             self.player._ensure_stream()
+        if pad_idx is not None:
+            self._pad_hits.put(pad_idx)
 
     def _pads_save(self):
         """Guarda los pads en memoria al robotraca.json de la canción. Los
@@ -871,6 +879,13 @@ class Robotracker2App(App):
             return False
         return True
 
+    def _dispatch_live(self, button, active):
+        """Solo lectura: dpad/A/B no editan; BACK vuelve a la lista."""
+        if button == BACK:
+            self.sm.current = "load"
+            return True
+        return True
+
     def _config_changed(self):
         """Persiste la configuración global (interfaces MIDI) al cambiar."""
         if self.midi_live:        # la interfaz puede haber cambiado: apaga
@@ -1185,13 +1200,21 @@ class Robotracker2App(App):
         for note, vel in notes:
             g.live_note(step, note, vel)
 
-    def _tick(self, _dt):
+    def _tick(self, dt):
         for accion in self._midi_ctrl.drain():
             self._midi_action(accion)
         if self.midi_live:
             self._paint_midi_notes()
         ed = self.editor_screen
         p = self.player
+        while True:
+            try:
+                ed.pads_grid.hit(self._pad_hits.get_nowait())
+            except queue.Empty:
+                break
+        if self._midi_ctrl is not None:
+            ed.pots_grid.set_live(self._midi_ctrl.live_pot_cc())
+        ed.pads_grid.tick_pulse(dt)
         if p is not None and ed.current == "song":
             ed.song_grid.set_muted(p.engine.muted)   # refleja mutes en vivo
         playing = self.sm.current == "editor" and p is not None and p.playing
@@ -1202,13 +1225,28 @@ class Robotracker2App(App):
             ed.set_play_indicator(False)
         if not playing:
             ed.song_grid.set_play([None] * 8)
+            ed.song_grid.clear_pulse()
             ed.chain_grid.set_play(None)
             ed.phrase_grid.set_play(None)
+            self._play_keys = [None] * 8
+            if (self._robot_play.playing or self._robot_play.cc is not None
+                    or self._robot_play.note is not None
+                    or self._robot_play.hit_note is not None):
+                self._robot_play.reset()
+                ed.live_grid.reset()
+            elif ed.current == "live":
+                ed.live_grid.tick_pulse(dt)
             return
         chans = p.engine.channels
+        hits = self._song_hits(p.engine)
+        self._robot_play.update(p.engine)
+        if ed.current == "live":
+            ed.live_grid.set_from(self._robot_play)
+            ed.live_grid.tick_pulse(dt)
         if ed.current == "song":
             ed.song_grid.set_play(
                 [c.song_pos if c.playing else None for c in chans])
+            ed.song_grid.tick_pulse(dt, hits)
         elif ed.current == "chain":
             t = ed.chain_grid.track
             c = chans[t]
@@ -1221,6 +1259,29 @@ class Robotracker2App(App):
             ph = ed.phrase_grid.pv.phrase_of(t) if ed.phrase_grid.pv else None
             ed.phrase_grid.set_play(
                 c.phrase_pos if (c.playing and c.phrase == ph) else None)
+
+    def _song_hits(self, engine):
+        """Canales que acaban de avanzar a un step con nota (o MDCC en robotas)."""
+        hits = []
+        notes = engine.project.notes
+        cmd1 = engine.project.cmd1
+        n = len(notes)
+        for i, ch in enumerate(engine.channels):
+            if not ch.playing or ch.phrase == 0xFF:
+                self._play_keys[i] = None
+                continue
+            key = (ch.phrase, ch.phrase_pos)
+            if key == self._play_keys[i]:
+                continue
+            self._play_keys[i] = key
+            row = ch.phrase * 16 + ch.phrase_pos
+            if row >= n:
+                continue
+            if notes[row] != EMPTY:
+                hits.append(i)
+            elif i == ROBOT_TRACK and cmd1[row] == "MDCC":
+                hits.append(i)
+        return hits
 
     # ------------------------------------------------------------------
     def _session_dirty(self):
@@ -1249,6 +1310,8 @@ class Robotracker2App(App):
         self._midi_ctrl.set_song(self.player.engine, song_dir)
         self._song_dir = song_dir
         self._play_start = None
+        self._robot_play.reset()
+        self.editor_screen.live_grid.reset()
         self.dirty = False
         self._pads_dirty = False
         self._pots_dirty = False

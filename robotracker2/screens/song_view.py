@@ -13,7 +13,6 @@ métodos:
 La edición muta el `LGPTProject` en memoria vía `SongView`.
 """
 
-from kivy.core.text import Label as CoreLabel
 from kivy.graphics import Color, Ellipse, Line, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
@@ -27,7 +26,7 @@ from theme import (COLOR_BAR, COLOR_BEAT, COLOR_BG, COLOR_CELL, COLOR_EMPTY,
                    COLOR_LINENUM, COLOR_LINENUM_CUR, COLOR_MUTE_OVERLAY,
                    COLOR_MUTED, COLOR_PLAY, COLOR_SONG_ACCENT,
                    COLOR_SONG_CELL_FG, COLOR_SONG_HEADER_SEL, COLOR_SONG_ROW,
-                   COLOR_SONG_SEL, COLOR_SONG_TRACK)
+                   COLOR_SONG_SEL, COLOR_SONG_TRACK, core_label, draw_play_mark)
 
 ROW_H = dp(30)
 HEADER_H = dp(34)                       # cabecera con el nº de canal
@@ -57,12 +56,33 @@ class SongGrid(Widget):
         self.sel_anchor = None         # (row, track) extremo fijo de la selección
         self.play_pos = [None] * NUM_TRACKS   # fila en el playhead por canal
         self.muted = set()                    # canales muteados (0-7)
+        self.pulse = [0.0] * NUM_TRACKS       # destello 1→0 al disparar nota
         self._tex = {}
         self.bind(pos=self._redraw, size=self._redraw)
 
     def set_play(self, positions):
         if positions != self.play_pos:
             self.play_pos = positions
+            self._redraw()
+
+    def tick_pulse(self, dt, hits=()):
+        """Aplica destellos nuevos y los deja caer. Redibuja si hay algo vivo."""
+        decay = dt * 4.0
+        hits = set(hits)
+        alive = False
+        for t in range(NUM_TRACKS):
+            if t in hits:
+                self.pulse[t] = 1.0
+            elif self.pulse[t] > 0:
+                self.pulse[t] = max(0.0, self.pulse[t] - decay)
+            if self.pulse[t] > 0:
+                alive = True
+        if alive or hits:
+            self._redraw()
+
+    def clear_pulse(self):
+        if any(self.pulse):
+            self.pulse = [0.0] * NUM_TRACKS
             self._redraw()
 
     def set_muted(self, muted):
@@ -80,6 +100,7 @@ class SongGrid(Widget):
         self.clipboard = None
         self.play_pos = [None] * NUM_TRACKS
         self.muted = set()
+        self.pulse = [0.0] * NUM_TRACKS
         self._redraw()
 
     @property
@@ -226,9 +247,7 @@ class SongGrid(Widget):
         key = (text, font_size)
         tex = self._tex.get(key)
         if tex is None:
-            lbl = CoreLabel(text=text, font_size=font_size, bold=True)
-            lbl.refresh()
-            tex = lbl.texture
+            tex = core_label(text, font_size).texture
             self._tex[key] = tex
         return tex
 
@@ -349,6 +368,15 @@ class SongGrid(Widget):
                                       size=(track_w - dp(2), ROW_H - dp(2)))
                         color = COLOR_CELL if v != EMPTY else COLOR_EMPTY
                     self._text(x, y, track_w, text, color)
+                    if self.play_pos[t] == row:
+                        draw_play_mark(x + dp(1), y, track_w - dp(2), ROW_H)
+                    a = self.pulse[t]
+                    if a > 0 and self.play_pos[t] == row:
+                        Color(1, 1, 1, 0.28 * a)
+                        Rectangle(pos=(x + dp(2), y + dp(2)),
+                                  size=(track_w - dp(4), ROW_H - dp(4)))
+                if any(self.play_pos[t] == row for t in range(NUM_TRACKS)):
+                    draw_play_mark(self.x + dp(2), y, GUTTER_W - dp(4), ROW_H)
             hint = self._selection_hint()
             hint_h = HINT_H if hint else 0
             # columnas muteadas: atenúa el cuerpo (debajo de la cabecera)
@@ -369,9 +397,14 @@ class SongGrid(Widget):
                 if selected:
                     Color(*COLOR_SONG_HEADER_SEL)
                     Rectangle(pos=(x, hy), size=(track_w, HEADER_H))
+                a = self.pulse[t]
+                if a > 0:
+                    Color(1, 1, 1, 0.50 * a)
+                    Rectangle(pos=(x, hy), size=(track_w, HEADER_H))
                 Color(*COLOR_SONG_TRACK[t])
-                Rectangle(pos=(x, hy + HEADER_H - strip_h),
-                          size=(track_w, strip_h))
+                strip = strip_h + (dp(10) * a if a > 0 else 0)
+                Rectangle(pos=(x, hy + HEADER_H - strip),
+                          size=(track_w, strip))
                 cx, cy = x + track_w / 2, hy + HEADER_H / 2
                 s = min(track_w, HEADER_H) * 0.66
                 ink = self._track_ink(t, muted, selected)

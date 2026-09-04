@@ -11,13 +11,12 @@ existe al arrancar, se conserva en el fichero pero se muestra "(no
 disponible)" y se avisa con un toast.
 """
 
-from kivy.core.text import Label as CoreLabel
 from kivy.graphics import Color, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from theme import COLOR_ACCENT, COLOR_BG, COLOR_ERROR, COLOR_ITEM, \
-    COLOR_MISSING, COLOR_VALUE
+    COLOR_MISSING, COLOR_VALUE, core_label
 
 FONT = dp(24)
 ITEM_H = dp(46)
@@ -124,9 +123,7 @@ class ConfigMenu(Widget):
     def _texture(self, text):
         tex = self._tex.get(text)
         if tex is None:
-            lbl = CoreLabel(text=text, font_size=FONT, bold=True)
-            lbl.refresh()
-            tex = lbl.texture
+            tex = core_label(text, FONT).texture
             self._tex[text] = tex
         return tex
 

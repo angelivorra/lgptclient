@@ -13,7 +13,6 @@ arriba/abajo.
 from pathlib import Path
 
 from kivy.core.image import Image as CoreImage
-from kivy.core.text import Label as CoreLabel
 from kivy.graphics import Color, Line, Rectangle, RoundedRectangle, Triangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
@@ -22,7 +21,7 @@ from controls import DOWN, UP
 from robots import CC_LABELS, ayuda_preview_path, classify_folder, lyric_lines
 from theme import (COLOR_ACCENT, COLOR_ACTION, COLOR_BG, COLOR_BTN, COLOR_HEADER,
                    COLOR_ITEM, COLOR_PREVIEW_BG, COLOR_PREVIEW_BORDER,
-                   COLOR_SCRIM)
+                   COLOR_SCRIM, core_label)
 
 ROW_H = dp(30)
 TOP_PAD = dp(70)
@@ -173,9 +172,7 @@ class ImageBrowser(Widget):
     def _texture(self, text):
         tex = self._tex.get(text)
         if tex is None:
-            lbl = CoreLabel(text=text, font_size=FONT, bold=True)
-            lbl.refresh()
-            tex = lbl.texture
+            tex = core_label(text, FONT).texture
             self._tex[text] = tex
         return tex
 

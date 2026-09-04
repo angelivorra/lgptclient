@@ -4,10 +4,10 @@ Como LGPT: dos columnas por step — PHRASE (índice de phrase) y TRANSPOSE. La
 chain mostrada es la de la celda de SONG (song_row, track) desde la que se
 entró. Dpad mueve (arr/abj = step, izq/dcha = columna), A+dir edita el valor,
 A copia/pega/00, B borra. Crear una phrase en un hueco crea la chain si hace
-falta (estilo Piggy), reutilizando `ChainView` del modelo.
+falta (estilo Piggy), reutilizando `ChainView` del modelo. Encima de las
+columnas, etiquetas PHRASE y TRSP.
 """
 
-from kivy.core.text import Label as CoreLabel
 from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
@@ -16,17 +16,21 @@ from controls import DOWN, LEFT, RIGHT, UP
 from lgpt_model import (CHAIN_LEN, EMPTY, NUM_TRACKS, ChainView, SongView,
                         duplicate_phrase)
 
-from theme import (COLOR_ACCENT, COLOR_BEAT, COLOR_BG, COLOR_CELL, COLOR_EMPTY,
-                   COLOR_HINT_BG, COLOR_LINENUM, COLOR_LINENUM_CUR, COLOR_PLAY,
-                   COLOR_ROW_CURSOR, COLOR_SEL, COLOR_TRSP)
+from theme import (COLOR_ACCENT, COLOR_BEAT, COLOR_BG, COLOR_BORDER, COLOR_CELL,
+                   COLOR_EMPTY, COLOR_HEADER_BG, COLOR_HEADER_TXT, COLOR_HINT_BG,
+                   COLOR_LINENUM, COLOR_LINENUM_CUR, COLOR_PLAY,
+                   COLOR_ROW_CURSOR, COLOR_SEL, COLOR_TRSP, core_label,
+                   draw_play_mark)
 
 ROW_H = dp(30)
-TOP_PAD = dp(20)
+HEADER_H = dp(22)
+TOP_PAD = HEADER_H
 LM = dp(48)
 STEP_W = dp(64)
 COL_W = dp(96)
 FONT = dp(17)
 FONT_SMALL = dp(15)
+FONT_HDR = dp(12)
 HINT_H = dp(32)                         # franja inferior del hint de selección
 
 _EDIT = {RIGHT: 1, LEFT: -1, UP: 0x10, DOWN: -0x10}
@@ -250,24 +254,41 @@ class ChainGrid(Widget):
         key = (text, font_size)
         tex = self._tex.get(key)
         if tex is None:
-            lbl = CoreLabel(text=text, font_size=font_size, bold=True)
-            lbl.refresh()
-            tex = lbl.texture
+            tex = core_label(text, font_size).texture
             self._tex[key] = tex
         return tex
 
-    def _text(self, x, y, w, text, color):
-        tex = self._texture(text)
+    def _text(self, x, y, w, text, color, h=ROW_H, font_size=FONT):
+        tex = self._texture(text, font_size)
         tw, th = tex.size
         Color(*color)
         Rectangle(texture=tex, size=(tw, th),
-                  pos=(x + (w - tw) / 2, y + (ROW_H - th) / 2))
+                  pos=(x + (w - tw) / 2, y + (h - th) / 2))
 
     def _text_left(self, x, y, w, text, color, h=ROW_H, font_size=FONT):
         tex = self._texture(text, font_size)
         tw, th = tex.size
         Color(*color)
         Rectangle(texture=tex, size=(tw, th), pos=(x, y + (h - th) / 2))
+
+    def _draw_headers(self, x_ph, x_tr):
+        """PHRASE / TRSP alineados con las dos columnas."""
+        hy = self.y + self.height - HEADER_H
+        Color(*COLOR_HEADER_BG)
+        Rectangle(pos=(self.x, hy), size=(self.width, HEADER_H))
+        Color(*COLOR_BORDER)
+        Rectangle(pos=(self.x, hy), size=(self.width, dp(1)))
+        for col, (cx, label, color) in enumerate((
+                (x_ph, "PHRASE", COLOR_CELL),
+                (x_tr, "TRSP", COLOR_TRSP))):
+            active = col == self.cursor_col
+            ink = color if active else COLOR_HEADER_TXT
+            if active:
+                Color(*color)
+                Rectangle(pos=(cx, hy + HEADER_H - dp(2)),
+                          size=(COL_W, dp(2)))
+            self._text(cx, hy, COL_W, label, ink, h=HEADER_H,
+                       font_size=FONT_HDR)
 
     def _redraw(self, *_):
         self.canvas.clear()
@@ -282,6 +303,7 @@ class ChainGrid(Widget):
         with self.canvas:
             Color(*COLOR_BG)
             Rectangle(pos=self.pos, size=self.size)
+            self._draw_headers(x_ph, x_tr)
             for step in range(CHAIN_LEN):
                 y = self.y + self.height - TOP_PAD - (step + 1) * ROW_H
                 if step == self.cursor_step:
@@ -318,6 +340,8 @@ class ChainGrid(Widget):
                         Rectangle(pos=(cx + dp(1), y + dp(1)),
                                   size=(cw - dp(2), ROW_H - dp(2)))
                     self._text(cx, y, cw, text, base_c)
+                if step == self.play_step:
+                    draw_play_mark(x_step, y, x_tr + COL_W - x_step, ROW_H)
             # hint de operaciones con la selección activa (franja inferior)
             hint = self._selection_hint()
             if hint:

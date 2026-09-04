@@ -404,6 +404,25 @@ def test_on_trigger_hook():
     print("  on_trigger en engine_ref OK")
 
 
+def test_live_pot_cc():
+    """El CC crudo del LPD8 se guarda aunque el knob no tenga target
+    en la canción, para pintar la aguja en vivo."""
+    from types import SimpleNamespace
+
+    from sinte_bridge import record_hw_pot_cc
+
+    ctrl = MidiControl(buttons={}, hw_pots=HW_POTS, pad_volume=45)
+    assert ctrl.live_pot_cc() == [None, None, None, None], ctrl.live_pot_cc()
+    record_hw_pot_cc(ctrl.engine_ref, SimpleNamespace(
+        type="control_change", channel=0, control=70, value=64))
+    assert ctrl.live_pot_cc()[0] == 64, ctrl.live_pot_cc()
+    record_hw_pot_cc(ctrl.engine_ref, SimpleNamespace(
+        type="control_change", channel=0, control=74, value=10))
+    assert ctrl.live_pot_cc()[2] == 10, ctrl.live_pot_cc()
+    ctrl.close()
+    print("  live_pot_cc sigue el CC del hardware OK")
+
+
 def test_midictrl_open_sin_auto():
     """Sin interfaz configurada (None) no abre nada: el primer puerto del
     sistema podría ser la interfaz de notas, no la de control."""
@@ -497,6 +516,7 @@ def main():
     test_midictrl_botones_parseados()
     test_midictrl_open_sin_auto()
     test_on_trigger_hook()
+    test_live_pot_cc()
     test_pots_state_y_edicion()
     test_pot5_canal_persiste_al_recargar()
     test_cambiar_canal_mueve_el_cc_del_knob()

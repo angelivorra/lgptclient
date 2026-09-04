@@ -66,6 +66,21 @@ class MidiControl:
         self._cfg = None          # robotraca.json de la canción cargada
         self._song_dir = None     # directorio de la canción cargada
         self._pot_sel = {}        # (canal, efecto) en edición sin target aún
+        # Specs físicos de todos los knobs (con o sin target): el callback
+        # MIDI guarda el CC crudo para pintar la UI en vivo.
+        specs = []
+        for key, entry in (hw_pots or {}).items():
+            if not isinstance(entry, dict):
+                continue
+            spec = parse_button_spec(entry.get("cc", ""))
+            try:
+                idx = int(str(key)[3:]) - 1
+            except (ValueError, TypeError):
+                continue
+            if spec is None or not 0 <= idx < 8:
+                continue
+            specs.append((spec, idx))
+        self.engine_ref["hw_pot_specs"] = specs
 
     @property
     def active(self):
@@ -209,6 +224,11 @@ class MidiControl:
             fx_mix = cfg.get("fx_mix", {})
             pct = fx_mix.get(str(canal - 1), {}).get(efecto, 100)
         return canal, efecto, pct
+
+    def live_pot_cc(self):
+        """CC crudo 0-127 (o None si aún no ha llegado) de POT 1/2/5/6."""
+        raw = self.engine_ref.get("pot_cc_raw") or {}
+        return [raw.get(pot - 1) for pot in POTS_KNOBS]
 
     def pots_state(self):
         """[(canal, efecto, pct)] de los knobs 1/2/5/6 para la pantalla

@@ -6,7 +6,8 @@ selección azul, playhead verde. Sin acento oro.
 SONG usa una paleta propia (naranja, tiras por canal). El resto de
 pantallas sigue el azul de COLOR_ACCENT.
 
-Registra "Icons" (DejaVu Sans, glifos ▶ ■). Fija el color de ventana.
+Registra "Tracker" (DejaVu Sans Mono Bold, hex y columnas) e "Icons"
+(DejaVu Sans, glifos ▶ ■). Fija el color de ventana.
 """
 
 from pathlib import Path
@@ -38,6 +39,9 @@ COLOR_BAR = (0.13, 0.13, 0.14, 1)
 COLOR_ROW_CURSOR = (0.26, 0.32, 0.40, 1)
 COLOR_SEL = (0.28, 0.46, 0.72, 0.38)
 COLOR_PLAY = (0.10, 0.38, 0.20, 1)
+# Marca del playhead (barra) que se pinta ENCIMA del cursor, para que
+# se vea también cuando coinciden en la misma celda/step.
+COLOR_PLAY_MARK = (0.42, 0.92, 0.50, 1)
 COLOR_HINT_BG = (0.12, 0.12, 0.13, 0.96)
 COLOR_HEADER_BG = (0.16, 0.16, 0.16, 1)
 COLOR_HEADER_TXT = (0.68, 0.68, 0.64, 1)
@@ -96,7 +100,31 @@ ROW_COLORS = {
     2: (0.72, 0.52, 0.78, 1),
 }
 
+TRACKER_FONT = "Tracker"
+LabelBase.register(
+    TRACKER_FONT,
+    fn_regular=str(_FONTS / "DejaVuSansMono.ttf"),
+    fn_bold=str(_FONTS / "DejaVuSansMono-Bold.ttf"),
+)
 LabelBase.register("Icons", str(_FONTS / "DejaVuSans.ttf"))
+
+
+def core_label(text, font_size, bold=True):
+    """CoreLabel de las rejillas: DejaVu Sans Mono (bold = cara bold, no sintetizado)."""
+    from kivy.core.text import Label as CoreLabel
+    lbl = CoreLabel(text=text, font_size=font_size, bold=bold,
+                    font_name=TRACKER_FONT)
+    lbl.refresh()
+    return lbl
+
+
+def draw_play_mark(x, y, w, h):
+    """Barra izquierda + raya superior del playhead (llamar dentro de canvas)."""
+    from kivy.graphics import Color, Rectangle
+    from kivy.metrics import dp
+    Color(*COLOR_PLAY_MARK)
+    Rectangle(pos=(x, y + dp(1)), size=(dp(3), h - dp(2)))
+    Rectangle(pos=(x, y + h - dp(3)), size=(w, dp(2)))
 
 
 def setup_window(fullscreen=False):

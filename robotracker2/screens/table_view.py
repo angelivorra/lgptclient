@@ -5,24 +5,27 @@ TABL del step del cursor si lo hay; si no, la primera existente. Dpad: arr/abj
 fila, izq/dcha campo (cmd1,prm1,cmd2,prm2,cmd3,prm3). A+dir edita (cmd cicla la
 lista de FX de tablas; param ±1/±0x10), A copia/pega/def por campo, B borra.
 Editar crea la tabla si no existe. Se guarda (writer de sinte extendido).
+Encima de las columnas, etiquetas FX1 / FX2 / FX3 (cmd+param de cada una).
 """
 
-from kivy.core.text import Label as CoreLabel
 from kivy.graphics import Color, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
 from lgpt_model import FX_EMPTY
-from theme import (COLOR_ACCENT, COLOR_BEAT, COLOR_BG, COLOR_EMPTY, COLOR_FX1,
-                   COLOR_FX2, COLOR_FX3, COLOR_LINENUM, COLOR_LINENUM_CUR,
-                   COLOR_ROW_CURSOR)
+from theme import (COLOR_ACCENT, COLOR_BEAT, COLOR_BG, COLOR_BORDER, COLOR_EMPTY,
+                   COLOR_FX1, COLOR_FX2, COLOR_FX3, COLOR_HEADER_BG,
+                   COLOR_HEADER_TXT, COLOR_LINENUM, COLOR_LINENUM_CUR,
+                   COLOR_ROW_CURSOR, core_label)
 
 TABLE_LEN = 16
 ROW_H = dp(30)
-TOP_PAD = dp(20)
+HEADER_H = dp(22)
+TOP_PAD = HEADER_H
 STEP_W = dp(52)
 FONT = dp(17)
+FONT_HDR = dp(12)
 
 # FX que se pueden ciclar en tablas: solo los usados en las canciones de songs/
 # (4 chars cada uno; "HOP ", "PAN " llevan espacio).
@@ -42,6 +45,8 @@ _CMDKEY = {"cmd1": "cmd1", "prm1": "cmd1", "cmd2": "cmd2", "prm2": "cmd2",
            "cmd3": "cmd3", "prm3": "cmd3"}
 _PRMKEY = {"cmd1": "param1", "prm1": "param1", "cmd2": "param2",
            "prm2": "param2", "cmd3": "param3", "prm3": "param3"}
+_HDR_GROUPS = [("FX1", COLOR_FX1, 0, 2), ("FX2", COLOR_FX2, 2, 4),
+               ("FX3", COLOR_FX3, 4, 6)]
 
 
 class TableGrid(Widget):
@@ -173,21 +178,37 @@ class TableGrid(Widget):
             return raw.strip().ljust(4) if raw is not None else "----"
         return f"{raw:04X}" if raw is not None else "...."
 
-    def _texture(self, text):
-        tex = self._tex.get(text)
+    def _texture(self, text, font_size=FONT):
+        key = (text, font_size)
+        tex = self._tex.get(key)
         if tex is None:
-            lbl = CoreLabel(text=text, font_size=FONT, bold=True)
-            lbl.refresh()
-            tex = lbl.texture
-            self._tex[text] = tex
+            tex = core_label(text, font_size).texture
+            self._tex[key] = tex
         return tex
 
-    def _text(self, x, y, w, text, color):
-        tex = self._texture(text)
+    def _text(self, x, y, w, text, color, h=ROW_H, font_size=FONT):
+        tex = self._texture(text, font_size)
         tw, th = tex.size
         Color(*color)
         Rectangle(texture=tex, size=(tw, th),
-                  pos=(x + (w - tw) / 2, y + (ROW_H - th) / 2))
+                  pos=(x + (w - tw) / 2, y + (h - th) / 2))
+
+    def _draw_headers(self, xs):
+        """FX1 / FX2 / FX3, cada uno cubre cmd+param."""
+        hy = self.y + self.height - HEADER_H
+        Color(*COLOR_HEADER_BG)
+        Rectangle(pos=(self.x, hy), size=(self.width, HEADER_H))
+        Color(*COLOR_BORDER)
+        Rectangle(pos=(self.x, hy), size=(self.width, dp(1)))
+        for label, color, i0, i1 in _HDR_GROUPS:
+            gx = xs[i0]
+            gw = sum(COLS[i][1] for i in range(i0, i1))
+            active = i0 <= self.cursor_col < i1
+            ink = color if active else COLOR_HEADER_TXT
+            if active:
+                Color(*color)
+                Rectangle(pos=(gx, hy + HEADER_H - dp(2)), size=(gw, dp(2)))
+            self._text(gx, hy, gw, label, ink, h=HEADER_H, font_size=FONT_HDR)
 
     def _redraw(self, *_):
         self.canvas.clear()
@@ -203,6 +224,7 @@ class TableGrid(Widget):
         with self.canvas:
             Color(*COLOR_BG)
             Rectangle(pos=self.pos, size=self.size)
+            self._draw_headers(xs)
             for row in range(TABLE_LEN):
                 y = self.y + self.height - TOP_PAD - (row + 1) * ROW_H
                 if row == self.cursor_row:

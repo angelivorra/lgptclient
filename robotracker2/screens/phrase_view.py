@@ -23,11 +23,13 @@ Con el cursor en cualquier columna de una fila del canal de robotas se
 muestra a la derecha una **miniatura** de esa fila: la que ya deja generada
 `bin/genera.py --markdown` en `ayuda_imagenes/` (mismo fondo+icono/glow/frame
 que ve el dispositivo real), para ver de un vistazo qué se envía sin tener
-que abrir el navegador.
+que abrir el navegador. Junto a SCREEN, un **filmstrip** de 16 thumbs
+alineados con los steps (vacío si el step no tiene MDCC). En HIT, un
+icono (bombo / caja / combo) acompaña la etiqueta. Encima de las
+columnas, etiquetas NOTE/INST/FX1/FX2 (HIT/SCREEN en el canal robot).
 """
 
 from kivy.core.image import Image as CoreImage
-from kivy.core.text import Label as CoreLabel
 from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
@@ -36,18 +38,23 @@ from controls import DOWN, LEFT, RIGHT, UP
 from lgpt_model import EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView, note_name_to_byte
 from robots import (HIT_NOTES, ROBOT_INSTR, ROBOT_TRACK, ayuda_preview_path,
                     hit_label, mdcc_unpack, screen_label)
+from screens.hit_icons import draw_hit_icon
 from sinte_bridge import note_byte_to_name
 from theme import (COLOR_ACCENT, COLOR_BEAT, COLOR_BG, COLOR_BORDER, COLOR_EMPTY,
-                   COLOR_FX1, COLOR_FX2, COLOR_HINT_BG, COLOR_HIT, COLOR_INSTR,
+                   COLOR_FX1, COLOR_FX2, COLOR_HEADER_BG, COLOR_HEADER_TXT,
+                   COLOR_HINT_BG, COLOR_HIT, COLOR_INSTR,
                    COLOR_LINENUM, COLOR_LINENUM_CUR, COLOR_NOTE, COLOR_PLAY,
-                   COLOR_ROW_CURSOR, COLOR_SCREEN, COLOR_SEL)
+                   COLOR_PLAY_MARK, COLOR_ROW_CURSOR, COLOR_SCREEN, COLOR_SEL,
+                   core_label, draw_play_mark)
 
 ROW_H = dp(30)
-TOP_PAD = dp(20)
+HEADER_H = dp(22)
+TOP_PAD = HEADER_H
 LM = dp(36)
 STEP_W = dp(52)
 FONT = dp(17)
 FONT_SMALL = dp(15)
+FONT_HDR = dp(12)
 HINT_H = dp(32)                         # franja inferior del hint de selección
 MAX_NOTE = 131                     # (9+2)*12 - 1
 
@@ -60,7 +67,7 @@ FX_USED = ["VOLM", "KILL", "DLAY", "LEGA", "TABL", "STOP", "MDCC", "MDPG",
 COLS = [("note", dp(70)), ("instr", dp(52)),
         ("fx1cmd", dp(74)), ("fx1prm", dp(74)),
         ("fx2cmd", dp(74)), ("fx2prm", dp(74))]
-ROBOT_COLS = [("hit", dp(110)), ("screen", dp(150))]
+ROBOT_COLS = [("hit", dp(148)), ("screen", dp(150))]
 
 _HIT_NOTE_LIST = [note for _label, note in HIT_NOTES]
 
@@ -71,6 +78,11 @@ _COL_COLOR = {"note": COLOR_NOTE, "instr": COLOR_INSTR,
 _KIND = {"note": "note", "instr": "instr", "fx1cmd": "cmd", "fx2cmd": "cmd",
          "fx1prm": "prm", "fx2prm": "prm", "hit": "hit", "screen": "screen"}
 _WHICH = {"fx1cmd": 1, "fx1prm": 1, "fx2cmd": 2, "fx2prm": 2}
+
+# Etiqueta de cabecera por grupo de columnas (span de índices).
+_HDR_GROUPS = [("NOTE", COLOR_NOTE, 0, 1), ("INST", COLOR_INSTR, 1, 2),
+               ("FX1", COLOR_FX1, 2, 4), ("FX2", COLOR_FX2, 4, 6)]
+_HDR_ROBOT = [("HIT", COLOR_HIT, 0, 1), ("SCREEN", COLOR_SCREEN, 1, 2)]
 
 
 class PhraseGrid(Widget):
@@ -97,6 +109,9 @@ class PhraseGrid(Widget):
         self._tex = {}
         self._preview_path = None
         self._preview_tex = None
+        self._img_cache = {}               # path -> textura (reuso entre steps)
+        self._strip_path = [None] * PHRASE_LEN
+        self._strip_tex = [None] * PHRASE_LEN
         self.bind(pos=self._redraw, size=self._redraw)
 
     def _cols(self):
@@ -117,23 +132,42 @@ class PhraseGrid(Widget):
         self._redraw()
 
     # -- miniatura de pantalla (canal de robotas) -----------------------
-    def _update_preview(self):
-        path = None
-        if self.track == ROBOT_TRACK:
-            raw = self._get_raw(self.cursor_step, 1)      # 1 = columna SCREEN
-            if isinstance(raw, int):
-                cc, value = mdcc_unpack(raw)
-                path = ayuda_preview_path(self.ayuda_dir, cc, value)
+    def _screen_path(self, step):
+        raw = self._get_raw(step, 1)          # 1 = columna SCREEN
+        if isinstance(raw, int):
+            cc, value = mdcc_unpack(raw)
+            return ayuda_preview_path(self.ayuda_dir, cc, value)
+        return None
 
-        if path == self._preview_path:
+    def _tex_for_path(self, path):
+        if path is None:
+            return None
+        key = str(path)
+        tex = self._img_cache.get(key)
+        if key not in self._img_cache:
+            tex = None
+            if path.exists():
+                try:
+                    tex = CoreImage(key).texture
+                except Exception:               # noqa: BLE001
+                    tex = None
+            self._img_cache[key] = tex
+        return tex
+
+    def _update_preview(self):
+        if self.track != ROBOT_TRACK:
+            self._preview_path = None
+            self._preview_tex = None
+            self._strip_path = [None] * PHRASE_LEN
+            self._strip_tex = [None] * PHRASE_LEN
             return
-        self._preview_path = path
-        self._preview_tex = None
-        if path is not None and path.exists():
-            try:
-                self._preview_tex = CoreImage(str(path)).texture
-            except Exception:                       # noqa: BLE001
-                self._preview_tex = None
+        for step in range(PHRASE_LEN):
+            path = self._screen_path(step)
+            if path != self._strip_path[step]:
+                self._strip_path[step] = path
+                self._strip_tex[step] = self._tex_for_path(path)
+        self._preview_path = self._strip_path[self.cursor_step]
+        self._preview_tex = self._strip_tex[self.cursor_step]
 
     def phrase_label(self):
         p = self.pv.phrase_of(self.track) if self.pv else None
@@ -504,24 +538,56 @@ class PhraseGrid(Widget):
         key = (text, font_size)
         tex = self._tex.get(key)
         if tex is None:
-            lbl = CoreLabel(text=text, font_size=font_size, bold=True)
-            lbl.refresh()
-            tex = lbl.texture
+            tex = core_label(text, font_size).texture
             self._tex[key] = tex
         return tex
 
-    def _text(self, x, y, w, text, color):
-        tex = self._texture(text)
+    def _text(self, x, y, w, text, color, h=ROW_H, font_size=FONT):
+        tex = self._texture(text, font_size)
         tw, th = tex.size
         Color(*color)
         Rectangle(texture=tex, size=(tw, th),
-                  pos=(x + (w - tw) / 2, y + (ROW_H - th) / 2))
+                  pos=(x + (w - tw) / 2, y + (h - th) / 2))
 
     def _text_left(self, x, y, w, text, color, h=ROW_H, font_size=FONT):
         tex = self._texture(text, font_size)
         tw, th = tex.size
         Color(*color)
         Rectangle(texture=tex, size=(tw, th), pos=(x, y + (h - th) / 2))
+
+    def _draw_hit_cell(self, x, y, w, note, color, text):
+        """Icono de golpe + etiqueta (BOMBO / CAJA / combos)."""
+        icon_w = dp(36)
+        cy = y + ROW_H / 2
+        self._draw_hit_icon(x + dp(6), cy, icon_w, note, color)
+        self._text_left(x + icon_w + dp(10), y, w - icon_w - dp(14),
+                        text, color)
+
+    def _draw_hit_icon(self, x, cy, size, note, color):
+        draw_hit_icon(x, cy, size, note, color)
+
+    def _draw_headers(self, x_step, xs, cols, block_right):
+        """NOTE/INST/FX1/FX2 (o HIT/SCREEN) alineados con las columnas."""
+        hy = self.y + self.height - HEADER_H
+        is_robot = self.track == ROBOT_TRACK
+        if is_robot:
+            hx, hw = x_step, block_right - x_step
+        else:
+            hx, hw = self.x, self.width
+        Color(*COLOR_HEADER_BG)
+        Rectangle(pos=(hx, hy), size=(hw, HEADER_H))
+        Color(*COLOR_BORDER)
+        Rectangle(pos=(hx, hy), size=(hw, dp(1)))
+        groups = _HDR_ROBOT if is_robot else _HDR_GROUPS
+        for label, color, i0, i1 in groups:
+            gx = xs[i0]
+            gw = sum(cols[i][1] for i in range(i0, i1))
+            active = i0 <= self.cursor_col < i1
+            ink = color if active else COLOR_HEADER_TXT
+            if active:
+                Color(*color)
+                Rectangle(pos=(gx, hy + HEADER_H - dp(2)), size=(gw, dp(2)))
+            self._text(gx, hy, gw, label, ink, h=HEADER_H, font_size=FONT_HDR)
 
     def _redraw(self, *_):
         self.canvas.clear()
@@ -541,26 +607,30 @@ class PhraseGrid(Widget):
         for _kind, w in cols:
             xs.append(x)
             x += w
+        thumb_w = ROW_H - dp(4)
+        x_thumb = x + dp(10)
+        block_right = (x_thumb + thumb_w) if is_robot else x
         region = self._region()
         with self.canvas:
 
             Color(*COLOR_BG)
             Rectangle(pos=self.pos, size=self.size)
+            self._draw_headers(x_step, xs, cols, block_right)
             for step in range(PHRASE_LEN):
                 y = self.y + self.height - TOP_PAD - (step + 1) * ROW_H
                 if step == self.cursor_step:
                     Color(*COLOR_ROW_CURSOR)
-                    # En el canal de robotas, solo el ancho del bloque HIT/
-                    # SCREEN (no toda la fila: el resto es la miniatura).
-                    row_x, row_w = (x_step, x - x_step) if is_robot \
+                    # En el canal de robotas, el bloque HIT/SCREEN + filmstrip
+                    # (el resto es la miniatura grande).
+                    row_x, row_w = (x_step, block_right - x_step) if is_robot \
                         else (self.x, self.width)
                     Rectangle(pos=(row_x, y), size=(row_w, ROW_H))
                 elif step == self.play_step:
                     Color(*COLOR_PLAY)
-                    Rectangle(pos=(x_step, y), size=(x - x_step, ROW_H))
+                    Rectangle(pos=(x_step, y), size=(block_right - x_step, ROW_H))
                 elif step % 4 == 0:
                     Color(*COLOR_BEAT)
-                    Rectangle(pos=(x_step, y), size=(x - x_step, ROW_H))
+                    Rectangle(pos=(x_step, y), size=(block_right - x_step, ROW_H))
                 num_c = (COLOR_LINENUM_CUR if step == self.cursor_step
                          else COLOR_LINENUM)
                 self._text(x_step, y, STEP_W, f"{step:02X}", num_c)
@@ -581,14 +651,21 @@ class PhraseGrid(Widget):
                         Color(*COLOR_SEL)
                         Rectangle(pos=(cx + dp(1), y + dp(1)),
                                   size=(w - dp(2), ROW_H - dp(2)))
-                    self._text(cx, y, w, text, color)
+                    if kind == "hit" and raw is not None:
+                        self._draw_hit_cell(cx, y, w, raw, color, text)
+                    else:
+                        self._text(cx, y, w, text, color)
+                if is_robot:
+                    self._draw_thumb(step, x_thumb, y, thumb_w)
+                if step == self.play_step:
+                    draw_play_mark(x_step, y, block_right - x_step, ROW_H)
 
             if is_robot:
-                free_x = x + dp(32)
+                free_x = block_right + dp(24)
                 avail_w = self.width - (free_x - self.x) - dp(24)
                 avail_h = self.height - TOP_PAD - dp(24)
-                size = max(dp(1), min(avail_w, avail_h))   # cuadrada, lo más grande posible
-                preview_x = free_x + (avail_w - size) / 2  # centrada en el hueco libre
+                size = max(dp(1), min(avail_w, avail_h))
+                preview_x = free_x + (avail_w - size) / 2
                 self._draw_preview(preview_x, size)
 
             # hint de operaciones con la selección activa (franja inferior)
@@ -602,6 +679,30 @@ class PhraseGrid(Widget):
                 self._text_left(self.x + dp(12), self.y, self.width - dp(24),
                                 hint, COLOR_ACCENT, h=HINT_H,
                                 font_size=FONT_SMALL)
+
+    def _draw_thumb(self, step, tx, y, size):
+        """Celda del filmstrip alineada con el step (vacía si no hay SCREEN)."""
+        pad = dp(3)
+        x = tx + pad
+        yy = y + pad
+        s = size - 2 * pad
+        Color(0.09, 0.10, 0.13, 1)
+        Rectangle(pos=(x, yy), size=(s, s))
+        tex = self._strip_tex[step]
+        if tex is not None:
+            tw, th = tex.size
+            scale = min(s / tw, s / th)
+            dw, dh = tw * scale, th * scale
+            Color(1, 1, 1, 1)
+            Rectangle(texture=tex, size=(dw, dh),
+                      pos=(x + (s - dw) / 2, yy + (s - dh) / 2))
+        if step == self.cursor_step:
+            Color(*COLOR_ACCENT)
+        elif step == self.play_step:
+            Color(*COLOR_PLAY_MARK)
+        else:
+            Color(*COLOR_BORDER)
+        Line(rectangle=(x, yy, s, s), width=1.2)
 
     def _draw_preview(self, px, size):
         pw = ph = size

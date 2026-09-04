@@ -117,6 +117,25 @@ def parse_pot_target(target: str) -> tuple | None:
     return (tuple(chans), name, scale)
 
 
+def record_hw_pot_cc(engine_ref: dict, msg) -> None:
+    """Guarda el CC crudo (0-127) del knob físico en engine_ref['pot_cc_raw'].
+
+    Independiente de si la canción tiene target: sirve para pintar la
+    posición del controlador en vivo. `hw_pot_specs` es lista de
+    (spec, idx) con spec de parse_button_spec e idx 0-7 (pot1 -> 0).
+    """
+    if msg.type != "control_change":
+        return
+    for spec, idx in engine_ref.get("hw_pot_specs") or ():
+        if spec is None:
+            continue
+        mtype, ch, num = spec
+        if mtype == "control_change" and msg.channel == ch \
+                and msg.control == num:
+            engine_ref.setdefault("pot_cc_raw", {})[idx] = msg.value
+            return
+
+
 def match_pot(pots: list, msg) -> tuple | None:
     """Devuelve (canales, parámetro, nº de knob 0-7, escala) del pot que
     coincide con el mensaje, o None.
@@ -204,6 +223,7 @@ def open_midi_input(port_name: str | None, engine_ref: dict,
             rq.put((msg.type, getattr(msg, "channel", 0), num))
         if engine_ref.get("capture_mode"):
             return                          # CONFIG capturando: no disparar
+        record_hw_pot_cc(engine_ref, msg)
         # Los botones mapeados tienen prioridad sobre pots y CC
         action = match_button(buttons, msg)
         if action is not None:
@@ -222,7 +242,10 @@ def open_midi_input(port_name: str | None, engine_ref: dict,
                         idx = 0
                     hook = engine_ref.get("on_trigger")
                     if hook is not None:
-                        hook()      # p.ej. asegurar el stream de audio
+                        try:
+                            hook(idx)
+                        except TypeError:
+                            hook()
                     engine.push_event("trigger", idx)
             else:
                 ui_queue.put(action)

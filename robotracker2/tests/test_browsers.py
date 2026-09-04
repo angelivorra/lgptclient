@@ -181,6 +181,24 @@ def _flechas_nav():
     assert tuple(cell._dir_colors["up"].rgba)[3] == 0
     print("  GROOVE: solo raya abajo OK")
 
+    # CHAIN (2,1): LIVE arriba, nada abajo
+    es.current = "chain"
+    es._update_nav(2, 1, "C")
+    cell = es.nav_cells[2]
+    assert cell.text == "C", cell.text
+    assert tuple(cell._dir_colors["up"].rgba) == NAV_LINE
+    assert tuple(cell._dir_colors["down"].rgba)[3] == 0
+    print("  CHAIN: raya arriba (LIVE) OK")
+
+    # LIVE (2,0): CHAIN abajo
+    es.current = "live"
+    es._update_nav(2, 0, "V")
+    cell = es.nav_cells[2]
+    assert cell.text == "V", cell.text
+    assert tuple(cell._dir_colors["down"].rgba) == NAV_LINE
+    assert tuple(cell._dir_colors["up"].rgba)[3] == 0
+    print("  LIVE: solo raya abajo OK")
+
     # INSTRUMENT (4,1): TABLE abajo, nada arriba
     es.current = "instrument"
     es._update_nav(4, 1, "I")

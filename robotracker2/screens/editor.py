@@ -3,11 +3,11 @@
 Navegación entre pantallas con L+dpad (Ctrl+flechas en PC) según `navmap`.
 La cabecera muestra a la izquierda el nombre de la pantalla + la canción
 (` *` si hay cambios sin guardar: lgptsav.dat, pads o knobs) y a la derecha
-la tira fija D S C P I: D = PADS, S = SONG, C = CHAIN (CONFIG pinta su C
-magenta en la columna S), P = PHRASE, I = INSTRUMENT. El color indica la
-altura: azul = fila media, cian = fila de arriba (PROJECT/GROOVE/EFECTOS),
-magenta = fila de abajo (TABLE/CONFIG), mostrando en esa celda su letra
-(P/G/T/C/E). En el chip activo, una raya blanca arriba y/o abajo marca
+la tira fija D S C P I: D = PADS, S = SONG, C = CHAIN (LIVE pinta su V
+cian en la columna C; CONFIG pinta su C magenta en la columna S), P = PHRASE,
+I = INSTRUMENT. El color indica la altura: azul = fila media, cian = fila de
+arriba (PROJECT/GROOVE/EFECTOS/LIVE), magenta = fila de abajo (TABLE/CONFIG),
+mostrando en esa celda su letra (P/G/T/C/E/V). En el chip activo, una raya blanca arriba y/o abajo marca
 si Ctrl+flecha puede subir o bajar de fila; izquierda/derecha se leen
 en la tira D S C P I.
 """
@@ -27,6 +27,7 @@ from screens.chain_view import ChainGrid
 from screens.config_view import ConfigMenu
 from screens.groove_view import GrooveGrid
 from screens.instrument_view import InstrumentMenu
+from screens.live_view import LiveGrid
 from screens.pads_view import PadsGrid
 from screens.phrase_view import PhraseGrid
 from screens.pots_view import PotsGrid
@@ -178,6 +179,9 @@ class EditorScreen(Screen):
         self.chain_grid = ChainGrid(on_change=self._grid_changed,
                                     size_hint=(1, 1),
                                     pos_hint={"x": 0, "y": 0})
+        self.live_grid = LiveGrid(ayuda_dir=ayuda_dir,
+                                  size_hint=(1, 1),
+                                  pos_hint={"x": 0, "y": 0})
         self.phrase_grid = PhraseGrid(on_change=self._grid_changed,
                                       on_nav=self.refresh_header,
                                       on_pick_screen=on_pick_screen,
@@ -404,6 +408,7 @@ class EditorScreen(Screen):
             "pots": self.pots_grid,
             "pads": self.pads_grid,
             "chain": self.chain_grid,
+            "live": self.live_grid,
             "phrase": self.phrase_grid,
             "groove": self.groove_grid,
             "phrase_table": self.table_grid,

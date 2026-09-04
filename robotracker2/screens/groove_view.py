@@ -7,14 +7,14 @@ global; editar afecta a la reproducción y se guarda (writer de sinte extendido)
 Portapapeles propio.
 """
 
-from kivy.core.text import Label as CoreLabel
 from kivy.graphics import Color, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
 from theme import (COLOR_ACCENT, COLOR_BEAT, COLOR_BG, COLOR_CELL, COLOR_EMPTY,
-                   COLOR_LINENUM, COLOR_LINENUM_CUR, COLOR_ROW_CURSOR)
+                   COLOR_LINENUM, COLOR_LINENUM_CUR, COLOR_ROW_CURSOR,
+                   core_label)
 
 GROOVE_COUNT = 32
 GROOVE_LEN = 16
@@ -120,9 +120,7 @@ class GrooveGrid(Widget):
     def _texture(self, text):
         tex = self._tex.get(text)
         if tex is None:
-            lbl = CoreLabel(text=text, font_size=FONT, bold=True)
-            lbl.refresh()
-            tex = lbl.texture
+            tex = core_label(text, FONT).texture
             self._tex[text] = tex
         return tex
 

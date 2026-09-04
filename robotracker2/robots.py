@@ -53,6 +53,18 @@ HIT_NOTES = [
 ]
 HIT_BY_NOTE = {note: label for label, note in HIT_NOTES}
 
+# Piezas de cada golpe para iconos y pads LIVE: 62 bombo, 63 caja1, 65 caja2.
+HIT_PARTS = {
+    62: (62,),
+    63: (63,),
+    65: (65,),
+    64: (62, 63),
+    66: (62, 65),
+    67: (63, 65),
+}
+HIT_PADS = (62, 63, 65)        # BOMBO / CAJA1 / CAJA2 (orden de la fila LIVE)
+_EMPTY_NOTE = 0xFF
+
 # Categoría de cada carpeta "control" de images/ (para etiquetar el SCREEN).
 CC_LABELS = {1: "IMG", 2: "TXT", 3: "ANI"}
 CC_LYRIC = 2                # control especial: letra sincronizada
@@ -61,6 +73,11 @@ CC_LYRIC = 2                # control especial: letra sincronizada
 def hit_label(note):
     """Nombre del golpe para una nota (o el hex crudo si no está mapeada)."""
     return HIT_BY_NOTE.get(note, f"N{note:02X}")
+
+
+def hit_pad_notes(note):
+    """Notas-pad (62/63/65) que enciende este golpe; vacío si no está mapeado."""
+    return HIT_PARTS.get(note, ())
 
 
 def mdcc_pack(cc, value):
@@ -120,3 +137,67 @@ def ayuda_preview_path(ayuda_dir, cc, value):
         if frames:
             return frames[0]
     return None
+
+
+class RobotPlayback:
+    """Estado LIVE del canal robot: último MDCC sostenido y golpe al avanzar.
+
+    Se actualiza cada tick desde el engine (no desde el cursor del editor).
+    `cc`/`value` se conservan entre steps y chains sin MDCC; `reset()` los
+    borra (stop del transporte). `hit_note` solo vale el tick en que cambia
+    `(phrase, phrase_pos)` y el step tiene nota.
+    """
+
+    def __init__(self):
+        self._key = None
+        self.cc = None
+        self.value = None
+        self.note = None
+        self.hit_note = None
+        self.playing = False
+        self.muted = False
+
+    def reset(self):
+        self._key = None
+        self.cc = None
+        self.value = None
+        self.note = None
+        self.hit_note = None
+        self.playing = False
+        self.muted = False
+
+    def update(self, engine):
+        """Lee `engine.channels[ROBOT_TRACK]` y notes/cmd1/param1 del project."""
+        if engine is None:
+            self.reset()
+            return self
+        ch = engine.channels[ROBOT_TRACK]
+        self.muted = ROBOT_TRACK in getattr(engine, "muted", ())
+        chan_on = bool(ch.playing) and ch.phrase != _EMPTY_NOTE
+        if not chan_on:
+            self.playing = False
+            self.note = None
+            self.hit_note = None
+            self._key = None
+            return self
+        self.playing = True
+        key = (ch.phrase, ch.phrase_pos)
+        advanced = key != self._key
+        self._key = key
+        proj = engine.project
+        row = ch.phrase * 16 + ch.phrase_pos
+        notes = proj.notes
+        self.note = None
+        self.hit_note = None
+        if row >= len(notes):
+            return self
+        n = notes[row]
+        if n != _EMPTY_NOTE:
+            self.note = n
+            if advanced:
+                self.hit_note = n
+        cmd1 = proj.cmd1
+        if row < len(cmd1) and str(cmd1[row]).strip() == "MDCC":
+            param = proj.param1[row] if row < len(proj.param1) else 0
+            self.cc, self.value = mdcc_unpack(param)
+        return self

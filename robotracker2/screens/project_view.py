@@ -12,12 +12,11 @@ El cursor (arriba/abajo) salta los separadores. A (tap) activa la acción; en un
 valor no hace nada. Editar un valor muta `project.project` y marca dirty.
 """
 
-from kivy.core.text import Label as CoreLabel
 from kivy.graphics import Color, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
-from theme import COLOR_ACCENT, COLOR_BG, COLOR_ITEM, COLOR_VALUE
+from theme import COLOR_ACCENT, COLOR_BG, COLOR_ITEM, COLOR_VALUE, core_label
 
 FONT = dp(24)
 ITEM_H = dp(42)
@@ -102,9 +101,7 @@ class ProjectMenu(Widget):
     def _texture(self, text):
         tex = self._tex.get(text)
         if tex is None:
-            lbl = CoreLabel(text=text, font_size=FONT, bold=True)
-            lbl.refresh()
-            tex = lbl.texture
+            tex = core_label(text, FONT).texture
             self._tex[text] = tex
         return tex
 

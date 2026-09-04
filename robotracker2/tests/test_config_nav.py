@@ -78,6 +78,25 @@ def test_editor_navigates_to_config():
     print("  editor navigates to config OK")
 
 
+def test_navmap_live_above_chain():
+    assert neighbor("chain", 0, -1) == "live"
+    assert neighbor("live", 0, 1) == "chain"
+    assert neighbor("live", -1, 0) == "project"
+    assert neighbor("live", 1, 0) == "groove"
+    print("  navmap live above chain OK")
+
+
+def test_editor_navigates_to_live():
+    from screens.editor import EditorScreen  # noqa: E402
+
+    ed = EditorScreen()
+    ed.goto("live")
+    assert ed.current == "live"
+    assert ed.live_grid is not None
+    assert ed._header_text().startswith("LIVE")
+    print("  editor navigates to live OK")
+
+
 def test_config_change_persists():
     from screens.editor import EditorScreen  # noqa: E402
 
@@ -123,6 +142,10 @@ if __name__ == "__main__":
             test_editor_navigates_to_pots()
             print("test_editor_navigates_to_config:")
             test_editor_navigates_to_config()
+            print("test_navmap_live_above_chain:")
+            test_navmap_live_above_chain()
+            print("test_editor_navigates_to_live:")
+            test_editor_navigates_to_live()
             print("test_config_change_persists:")
             test_config_change_persists()
             print("test_config_roundtrip_file:")

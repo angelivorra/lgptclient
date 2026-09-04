@@ -23,11 +23,11 @@ from lgpt_writer import save_project  # noqa: E402
 from midi_control import _apply_pad_volume, apply_song_config, \
     build_song_pots, load_song_cfg, match_button, match_pot, \
     open_midi_input, parse_button_spec, parse_pot_target, \
-    save_song_cfg  # noqa: E402
+    record_hw_pot_cc, save_song_cfg  # noqa: E402
 
 __all__ = ["LGPTProject", "EFFECT_PRESETS", "Engine",
            "note_byte_to_name", "save_project",
            "SINTE_DIR", "_apply_pad_volume", "apply_song_config",
            "build_song_pots", "load_song_cfg", "match_button", "match_pot",
            "open_midi_input", "parse_button_spec", "parse_pot_target",
-           "save_song_cfg"]
+           "record_hw_pot_cc", "save_song_cfg"]

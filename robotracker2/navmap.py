@@ -3,20 +3,21 @@
 Las pantallas están en una rejilla 2D (el cuadro del indicador de LGPT) y se
 navega con Ctrl+flechas hacia la pantalla adyacente. Diagrama:
 
-EFECTOS PROJECT           GROOVE
+EFECTOS PROJECT LIVE      GROOVE
 PADS    SONG    CHAIN     PHRASE    INSTRUMENT
         CONFIG            TABLE     TABLE
 
 PROJECT está encima de SONG y GROOVE encima de PHRASE; CONFIG debajo de SONG;
-PADS a la izquierda de SONG (pads sampler por canción) y EFECTOS encima de
-PADS (efectos de los knobs del controlador por canción); PHRASE e INSTRUMENT
-tienen cada uno su TABLE debajo. Cada entrada: clave -> ((col, fila),
-etiqueta, letra). Fila 0 = arriba.
+LIVE encima de CHAIN (preview del canal robot); PADS a la izquierda de SONG
+(pads sampler por canción) y EFECTOS encima de PADS (efectos de los knobs del
+controlador por canción); PHRASE e INSTRUMENT tienen cada uno su TABLE debajo.
+Cada entrada: clave -> ((col, fila), etiqueta, letra). Fila 0 = arriba.
 """
 
 SCREENS = {
     "pots":             ((0, 0), "EFECTOS",    "E"),
     "project":          ((1, 0), "PROJECT",    "P"),
+    "live":             ((2, 0), "LIVE",       "V"),
     "groove":           ((3, 0), "GROOVE",     "G"),
     "pads":             ((0, 1), "PADS",       "D"),
     "song":             ((1, 1), "SONG",       "S"),

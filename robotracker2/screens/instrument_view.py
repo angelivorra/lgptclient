@@ -2,28 +2,31 @@
 
 Estilo LGPT: el dpad solo mueve el foco (arr/abj = fila, izq/dcha = pareja);
 los valores se editan manteniendo A — A+arr/abj = paso grande, A+izq/dcha =
-paso fino. Los instrumentos MIDI (type="Midi") muestran sus campos propios
-(channel, note length, volume, table). Se muestran solo los parámetros que el
-engine implementa; el resto (print fx, effect amount, feedback mix, ...) se
-conservan en el XML al guardar (writer actualiza VALUE en sitio). El
-instrumento se elige en el primer campo (o viene del step de PHRASE); en
-"Sample", A abre el navegador de samples.
+paso fino. A la derecha, la **onda del sample** con marcas de loop
+(start/end). Los instrumentos MIDI no tienen onda.
 """
 
-from kivy.core.text import Label as CoreLabel
-from kivy.graphics import Color, Rectangle, RoundedRectangle
+from pathlib import Path
+
+import numpy as np
+import soundfile as sf
+from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
 from sinte_bridge import note_byte_to_name
-from theme import COLOR_ACCENT, COLOR_BG, COLOR_HDR, COLOR_LABEL, COLOR_VALUE
+from theme import (COLOR_ACCENT, COLOR_BG, COLOR_BORDER, COLOR_HDR, COLOR_LABEL,
+                   COLOR_OK, COLOR_VALUE, core_label)
 
 FONT = dp(22)
 FONT_HDR = dp(15)
 ITEM_H = dp(38)
 HDR_H = dp(26)
 PAD_TOP = dp(30)
+WAVE_W = dp(300)
+WAVE_H = dp(180)
+WAVE_BINS = 220
 
 # Valores de los campos enum (se conserva el actual si no está en la lista).
 ENUMS = {
@@ -86,6 +89,8 @@ class InstrumentMenu(Widget):
         self.on_nav = on_nav
         self.on_pick_sample = on_pick_sample
         self._tex = {}
+        self._wave_key = None
+        self._wave = None          # (lo, hi, n_samp) o None
         self.bind(pos=self._redraw, size=self._redraw)
 
     def set_project(self, project):
@@ -93,6 +98,8 @@ class InstrumentMenu(Widget):
         self.instr_ids = sorted(project.instrument_bank)
         self.pos_in_ids = 0
         self._reset_cursor()
+        self._wave_key = None
+        self._wave = None
         self._redraw()
 
     @property
@@ -106,6 +113,7 @@ class InstrumentMenu(Widget):
         if iid in self.instr_ids:
             self.pos_in_ids = self.instr_ids.index(iid)
             self._reset_cursor()
+            self._wave_key = None
             self._redraw()
 
     def field_key(self):
@@ -164,6 +172,7 @@ class InstrumentMenu(Widget):
                 self.pos_in_ids = (self.pos_in_ids + d * step) % len(
                     self.instr_ids)
                 self._reset_cursor()
+                self._wave_key = None
                 if self.on_nav:
                     self.on_nav()
             return
@@ -205,6 +214,7 @@ class InstrumentMenu(Widget):
             params["sample"] = name
             if self.on_change:
                 self.on_change()
+            self._wave_key = None
             self._redraw()
 
     # -- scroll ---------------------------------------------------------
@@ -256,9 +266,7 @@ class InstrumentMenu(Widget):
         key = (text, font_size)
         tex = self._tex.get(key)
         if tex is None:
-            lbl = CoreLabel(text=text, font_size=font_size, bold=True)
-            lbl.refresh()
-            tex = lbl.texture
+            tex = core_label(text, font_size).texture
             self._tex[key] = tex
         return tex
 
@@ -274,7 +282,11 @@ class InstrumentMenu(Widget):
         gap = dp(24)
         pair_gap = dp(40)
         block_w = label_w + val_w + gap + (label_w + val_w + pair_gap)
-        x0 = self.center_x - block_w / 2
+        show_wave = not self._is_midi()
+        if show_wave:
+            x0 = self.x + dp(24)
+        else:
+            x0 = self.center_x - block_w / 2
         n = self._visible()
         with self.canvas:
             Color(*COLOR_BG)
@@ -305,9 +317,94 @@ class InstrumentMenu(Widget):
                     self._draw(sx + label_w + gap, y,
                                self._value_text(slot), val_c)
                 y -= ITEM_H
+            if show_wave:
+                self._ensure_wave()
+                self._draw_wave(self.x + self.width - WAVE_W - dp(20),
+                                self.y + self.height - PAD_TOP - WAVE_H,
+                                WAVE_W, WAVE_H)
 
     def _draw(self, x, y, text, color):
         tex = self._texture(text)
         Color(*color)
         Rectangle(texture=tex, size=tex.size,
                   pos=(x, y + (ITEM_H - tex.size[1]) / 2 - dp(3)))
+
+    def _int_param(self, key, default=0):
+        try:
+            return int(self._params().get(key, default) or default)
+        except (TypeError, ValueError):
+            return default
+
+    def _ensure_wave(self):
+        if self._is_midi() or not self.instr_ids:
+            self._wave = None
+            return
+        name = self._params().get("sample") or ""
+        key = (str(self.project.dir), name)
+        if key == self._wave_key:
+            return
+        self._wave_key = key
+        self._wave = None
+        if not name:
+            return
+        path = Path(self.project.dir) / "samples" / name
+        if not path.is_file():
+            return
+        try:
+            data, _sr = sf.read(str(path), dtype="float32", always_2d=True)
+        except Exception:                          # noqa: BLE001
+            return
+        mono = data.mean(axis=1)
+        n = int(mono.shape[0])
+        if n < 2:
+            return
+        bins = min(WAVE_BINS, n)
+        bucket = max(1, n // bins)
+        usable = (n // bucket) * bucket
+        chunk = mono[:usable].reshape(-1, bucket)
+        lo = chunk.min(axis=1)
+        hi = chunk.max(axis=1)
+        peak = float(max(np.max(np.abs(lo)), np.max(np.abs(hi)), 1e-6))
+        self._wave = (lo / peak, hi / peak, n)
+
+    def _draw_wave(self, x, y, w, h):
+        Color(0.08, 0.09, 0.10, 1)
+        RoundedRectangle(pos=(x, y), size=(w, h), radius=[dp(8)])
+        Color(*COLOR_BORDER)
+        Line(rectangle=(x, y, w, h), width=1)
+        if self._wave is None:
+            tex = self._texture("sin sample", FONT_HDR)
+            Color(*COLOR_HDR)
+            Rectangle(texture=tex, size=tex.size,
+                      pos=(x + (w - tex.size[0]) / 2,
+                           y + (h - tex.size[1]) / 2))
+            return
+        lo, hi, n_samp = self._wave
+        pad = dp(10)
+        inner_x, inner_y = x + pad, y + pad
+        inner_w, inner_h = w - 2 * pad, h - 2 * pad
+        start = self._int_param("start", 0)
+        end = self._int_param("end", 0)
+        end_f = n_samp if end <= 0 else min(end, n_samp)
+        start_f = max(0, min(start, n_samp - 1))
+        sx = inner_x + inner_w * (start_f / n_samp)
+        ex = inner_x + inner_w * (end_f / n_samp)
+        Color(0.32, 0.78, 0.42, 0.16)
+        Rectangle(pos=(sx, inner_y), size=(max(dp(2), ex - sx), inner_h))
+        mid = inner_y + inner_h / 2
+        amp = inner_h * 0.46
+        nbin = len(lo)
+        dx = max(1.0, inner_w / nbin)
+        Color(*COLOR_ACCENT)
+        for i in range(nbin):
+            y1 = mid + float(lo[i]) * amp
+            y2 = mid + float(hi[i]) * amp
+            if y2 < y1:
+                y1, y2 = y2, y1
+            Rectangle(pos=(inner_x + i * dx, y1),
+                      size=(dx, max(1.0, y2 - y1)))
+        focus = self.field_key() if self.instr_ids else ""
+        Color(*(COLOR_OK if focus == "start" else COLOR_BORDER))
+        Line(points=[sx, inner_y, sx, inner_y + inner_h], width=1.4)
+        Color(*(COLOR_OK if focus == "end" else COLOR_BORDER))
+        Line(points=[ex, inner_y, ex, inner_y + inner_h], width=1.4)
