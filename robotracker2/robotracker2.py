@@ -827,6 +827,10 @@ class Robotracker2App(App):
             return
         name = dest.name
         self.editor_screen.instrument_menu.set_sample(name)
+        # El engine precarga samples/ al abrir la canción; sin esto el
+        # WAV nuevo no suena hasta guardar y recargar.
+        if self.player is not None:
+            self.player.engine.bank.load(name)
         self._mark_dirty()
         self.editor_screen.toast_msg(notice or f"Sample: {name}")
         self._close_browser()
