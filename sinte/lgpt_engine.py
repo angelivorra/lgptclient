@@ -105,23 +105,45 @@ class Sample:
 
 
 class SampleBank:
-    """Carga los WAV del directorio samples/ de un proyecto."""
+    """WAV del directorio samples/ de un proyecto.
+
+    Precarga los que hay al crear el engine y, si el editor asigna un
+    WAV nuevo, `get()` lo lee de disco en el siguiente disparo (sin
+    recargar la canción).
+    """
 
     def __init__(self, project_dir: Path):
+        self.project_dir = Path(project_dir)
         self.samples: dict[str, Sample] = {}
-        sample_dir = project_dir / "samples"
+        sample_dir = self.project_dir / "samples"
         if not sample_dir.is_dir():
             return
         for wav in sorted(sample_dir.glob("*.wav")):
-            try:
-                data, sr = sf.read(str(wav), dtype="float32", always_2d=True)
-            except Exception as exc:  # WAV ilegible: se ignora con aviso
-                print(f"[engine] no se puede cargar {wav.name}: {exc}")
-                continue
-            self.samples[wav.name] = Sample(np.ascontiguousarray(data), sr)
+            self.load(wav.name)
 
     def get(self, name: str) -> Optional[Sample]:
-        return self.samples.get(name)
+        if not name:
+            return None
+        sample = self.samples.get(name)
+        if sample is not None:
+            return sample
+        return self.load(name)
+
+    def load(self, name: str) -> Optional[Sample]:
+        """Carga (o recarga) un WAV de samples/ por nombre de fichero."""
+        if not name:
+            return None
+        wav = self.project_dir / "samples" / name
+        if not wav.is_file():
+            return None
+        try:
+            data, sr = sf.read(str(wav), dtype="float32", always_2d=True)
+        except Exception as exc:  # WAV ilegible: se ignora con aviso
+            print(f"[engine] no se puede cargar {wav.name}: {exc}")
+            return None
+        sample = Sample(np.ascontiguousarray(data), sr)
+        self.samples[name] = sample
+        return sample
 
 
 @dataclass
@@ -2050,6 +2072,8 @@ class Engine:
         self._cut_voice(ch)
         self._midi_stop_note(ch)
         if idef is not None:
+            # get() lee de disco si el WAV no estaba en el banco (sample
+            # asignado en el editor después de cargar la canción).
             sample = self.bank.get(idef.sample_name)
             if sample is None:
                 return

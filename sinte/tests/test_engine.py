@@ -338,6 +338,32 @@ class TestVoices(unittest.TestCase):
             out = engine.render(512)
             self.assertGreater(float(np.abs(out).max()), 0.01)
 
+    def test_nuevo_sample_se_oye_sin_recargar(self):
+        """Asignar un WAV nuevo al instrumento (como el editor) se oye
+        al disparar, sin recrear el Engine ni recargar la canción."""
+        import tempfile
+        import soundfile as sf
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            (d / "samples").mkdir()
+            t = np.arange(SAMPLE_RATE // 10, dtype=np.float32) / SAMPLE_RATE
+            sig = (0.5 * np.sin(2 * np.pi * 440 * t))[:, None]
+            p = make_project()
+            p.dir = d
+            engine = Engine(p)
+            self.assertIsNone(engine.bank.samples.get("nuevo.wav"))
+
+            sf.write(str(d / "samples" / "nuevo.wav"), sig, SAMPLE_RATE,
+                     subtype="PCM_16")
+            engine.project.instrument_bank[0]["params"]["sample"] = "nuevo.wav"
+            note_row(engine.project, 0)
+            engine.start()
+            engine._process_tick()
+            self.assertIsNotNone(engine.channels[0].voice)
+            self.assertIn("nuevo.wav", engine.bank.samples)
+            out = engine.render(512)
+            self.assertGreater(float(np.abs(out).max()), 0.01)
+
     def test_satan_preset(self):
         engine = make_engine()
         note_row(engine.project, 0)
