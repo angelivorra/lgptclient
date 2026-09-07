@@ -1,0 +1,20 @@
+Filas de SONG (play desde el principio; 150 BPM).
+Canal 1 = riff; 2 = capa; 3 = drums/lead; 4 = arpegio.
+En el tracker C-1 = C2 cientifico (bajo NES).
+
+00  triangle         ostinato C (bajo NES)
+01  square 50%       el mismo riff
+02  pulse 25%        el mismo riff
+03  pulse 12.5%      el mismo riff (mas fino)
+04  saw              el mismo riff
+05  chip osc         el mismo riff
+06  triangle+square  bajo + melodía
+07  triangle+pulse12 bajo + lead fino
+08  drums            kick/snare/hat
+09  bass+drums       ostinato + bateria
+0A  trio NES         bajo + drums + melodía
+0B  arp pulse12      arpegio 16ths (C-E-G-C)
+0C  square C4        cromatico
+0D  triangle         saltos de octava
+0E  saw              riff lead
+0F  stack            drums+bajo+lead+arp
