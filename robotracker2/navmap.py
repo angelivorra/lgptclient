@@ -1,7 +1,9 @@
 """Mapa de navegación de pantallas estilo LittleGPTracker.
 
-Las pantallas están en una rejilla 2D (el cuadro del indicador de LGPT) y se
-navega con Ctrl+flechas hacia la pantalla adyacente. Diagrama:
+Las pantallas están en una rejilla 2D (el cuadro del indicador de LGPT).
+Arriba/abajo va a la celda inmediata; izquierda/derecha siempre a la
+pantalla principal (fila media) de la columna vecina — no se recuerda
+LIVE/PROJECT/GROOVE al cruzar. Diagrama:
 
 EFECTOS PROJECT LIVE      GROOVE
 PADS    SONG    CHAIN     PHRASE    INSTRUMENT
@@ -37,8 +39,19 @@ GRID_ROWS = 3
 
 _BY_POS = {pos: key for key, (pos, _label, _letter) in SCREENS.items()}
 
+# Fila media = PADS / SONG / CHAIN / PHRASE / INSTRUMENT.
+HOME_ROW = 1
+
 
 def neighbor(current, dx, dy):
-    """Pantalla adyacente en la dirección (dx, dy) o None si no hay ninguna."""
+    """Pantalla en la dirección (dx, dy) o None si no hay ninguna.
+
+    Arriba/abajo: celda inmediata (LIVE encima de CHAIN, CONFIG debajo
+    de SONG, …). Izquierda/derecha: pantalla principal de la columna
+    vecina, para que SONG→CHAIN no caiga en LIVE aunque vinieras de
+    PROJECT o estuvieras ya en LIVE.
+    """
     (cx, cy), _label, _letter = SCREENS[current]
-    return _BY_POS.get((cx + dx, cy + dy))
+    if dx != 0:
+        return _BY_POS.get((cx + dx, HOME_ROW))
+    return _BY_POS.get((cx, cy + dy))

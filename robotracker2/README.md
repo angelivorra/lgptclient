@@ -21,7 +21,10 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    ```
 
 
-   Se navega con **Ctrl+flechas** hacia la pantalla adyacente. La cabecera
+   **Ctrl+arriba/abajo** va a la pantalla de encima o debajo (LIVE sobre
+   CHAIN, PROJECT sobre SONG, …). **Ctrl+izquierda/derecha** siempre a la
+   pantalla principal de esa columna (PADS / SONG / CHAIN / PHRASE /
+   INSTRUMENT), no a LIVE ni a PROJECT aunque vinieras de ahí. La cabecera
    muestra el nombre de la pantalla + la canción (` *` si hay cambios sin
    guardar: lgptsav.dat, pads, knobs o pistas) y a la derecha una tira fija
    **D S C P I**: **D** = PADS (TRACKS pinta su **N** magenta en la columna D),

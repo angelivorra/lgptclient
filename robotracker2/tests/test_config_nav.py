@@ -44,7 +44,8 @@ def test_navmap_pots_above_pads():
     # POTS está encima de PADS (columna 0, fila 0)
     assert neighbor("pads", 0, -1) == "pots"
     assert neighbor("pots", 0, 1) == "pads"
-    assert neighbor("pots", 1, 0) == "project"
+    # izquierda/derecha salta a la principal de la columna, no a PROJECT
+    assert neighbor("pots", 1, 0) == "song"
     print("  navmap pots above pads OK")
 
 
@@ -98,9 +99,22 @@ def test_editor_navigates_to_config():
 def test_navmap_live_above_chain():
     assert neighbor("chain", 0, -1) == "live"
     assert neighbor("live", 0, 1) == "chain"
-    assert neighbor("live", -1, 0) == "project"
-    assert neighbor("live", 1, 0) == "groove"
     print("  navmap live above chain OK")
+
+
+def test_navmap_horizontal_goes_home():
+    # Cruzar de columna siempre a PADS/SONG/CHAIN/PHRASE/INSTRUMENT.
+    assert neighbor("song", 1, 0) == "chain"
+    assert neighbor("chain", -1, 0) == "song"
+    assert neighbor("project", 1, 0) == "chain"
+    assert neighbor("config", 1, 0) == "chain"
+    assert neighbor("live", -1, 0) == "song"
+    assert neighbor("live", 1, 0) == "phrase"
+    assert neighbor("groove", -1, 0) == "chain"
+    assert neighbor("phrase_table", -1, 0) == "chain"
+    assert neighbor("tracks", 1, 0) == "song"
+    assert neighbor("instrument_table", -1, 0) == "phrase"
+    print("  navmap horizontal goes home OK")
 
 
 def test_editor_navigates_to_live():
@@ -112,6 +126,21 @@ def test_editor_navigates_to_live():
     assert ed.live_grid is not None
     assert ed._header_text().startswith("LIVE")
     print("  editor navigates to live OK")
+
+
+def test_editor_horizontal_goes_home():
+    from screens.editor import EditorScreen  # noqa: E402
+
+    ed = EditorScreen()
+    ed.goto("live")
+    ed.navigate(-1, 0)
+    assert ed.current == "song", ed.current
+    # Desde PROJECT, la vecina a la derecha es CHAIN (no LIVE). No se
+    # hace goto("chain"): set_context necesita un proyecto cargado.
+    ed.goto("project")
+    assert neighbor(ed.current, 1, 0) == "chain"
+    print("  editor horizontal goes home OK")
+
 
 
 def test_config_change_persists():
@@ -165,8 +194,12 @@ if __name__ == "__main__":
             test_editor_navigates_to_config()
             print("test_navmap_live_above_chain:")
             test_navmap_live_above_chain()
+            print("test_navmap_horizontal_goes_home:")
+            test_navmap_horizontal_goes_home()
             print("test_editor_navigates_to_live:")
             test_editor_navigates_to_live()
+            print("test_editor_horizontal_goes_home:")
+            test_editor_horizontal_goes_home()
             print("test_config_change_persists:")
             test_config_change_persists()
             print("test_config_roundtrip_file:")

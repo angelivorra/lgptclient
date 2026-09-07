@@ -1,6 +1,8 @@
 """Editor de canción: contenedor de las pantallas estilo LGPT.
 
-Navegación entre pantallas con L+dpad (Ctrl+flechas en PC) según `navmap`.
+Navegación entre pantallas con L+dpad (Ctrl+flechas en PC) según `navmap`
+(arriba/abajo = celda inmediata; izquierda/derecha = principal de la
+columna).
 La cabecera muestra a la izquierda el nombre de la pantalla + la canción
 (` *` si hay cambios sin guardar: lgptsav.dat, pads, knobs o pistas) y a la
 derecha la tira fija D S C P I: D = PADS (TRACKS pinta su N magenta en la

@@ -6,9 +6,7 @@
     }
   },
   "master": 125,
-  "mute": [
-    6
-  ],
+  "mute": [],
   "pots": {
     "pot1": "1,2:acid",
     "pot2": "4:bode",
@@ -18,6 +16,16 @@
     "pot8": "0:tempo"
   },
   "presence": [],
+  "tracks": [
+    "drum",
+    "bass",
+    "bass",
+    "synth",
+    "noise",
+    "synth",
+    "vocoder",
+    "robot"
+  ],
   "vocoder": [
     6
   ]
