@@ -10,10 +10,11 @@ métodos:
 - Ctrl+S cicla la selección: libre -> filas completas -> todo lo visible.
 - S copia la selección; Ctrl+A la corta; Ctrl+A sin selección pega el bloque.
 
-La edición muta el `LGPTProject` en memoria vía `SongView`.
+La edición muta el `LGPTProject` en memoria vía `SongView`. La cabecera
+muestra el icono y el nombre del tipo de cada pista (ver `tracks.py`).
 """
 
-from kivy.graphics import Color, Ellipse, Line, Rectangle, RoundedRectangle
+from kivy.graphics import Color, Line, Rectangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
@@ -21,23 +22,23 @@ from controls import DOWN, LEFT, RIGHT, UP
 from lgpt_model import (EMPTY, NUM_TRACKS, SongView, clip_region,
                         duplicate_chain, paste_region, read_cell)
 
+from screens.track_icons import draw_track_icon
 from theme import (COLOR_BAR, COLOR_BEAT, COLOR_BG, COLOR_CELL, COLOR_EMPTY,
                    COLOR_HEADER_BG, COLOR_HEADER_TXT, COLOR_HINT_BG,
                    COLOR_LINENUM, COLOR_LINENUM_CUR, COLOR_MUTE_OVERLAY,
                    COLOR_MUTED, COLOR_PLAY, COLOR_SONG_ACCENT,
                    COLOR_SONG_CELL_FG, COLOR_SONG_HEADER_SEL, COLOR_SONG_ROW,
                    COLOR_SONG_SEL, COLOR_SONG_TRACK, core_label, draw_play_mark)
+from tracks import DEFAULT_TRACKS, track_caption
 
 ROW_H = dp(30)
-HEADER_H = dp(34)                       # cabecera con el nº de canal
+HEADER_H = dp(48)                       # icono + nombre del tipo de pista
 GUTTER_W = dp(54)
 FONT = dp(17)
 FONT_SMALL = dp(15)
+FONT_HDR = dp(11)
 HINT_H = dp(32)                         # franja inferior del hint de selección
-
-# Canales especiales (0-index): 6 = voz (canal 7), 7 = robot (canal 8)
-VOICE_TRACK = 6
-ROBOT_TRACK = 7
+NAME_H = dp(16)                         # franja del nombre bajo el icono
 
 _MOVE = {UP: (-1, 0), DOWN: (1, 0), LEFT: (0, -1), RIGHT: (0, 1)}
 _EDIT = {RIGHT: 1, LEFT: -1, UP: 0x10, DOWN: -0x10}
@@ -57,6 +58,7 @@ class SongGrid(Widget):
         self.play_pos = [None] * NUM_TRACKS   # fila en el playhead por canal
         self.muted = set()                    # canales muteados (0-7)
         self.pulse = [0.0] * NUM_TRACKS       # destello 1→0 al disparar nota
+        self.tracks = list(DEFAULT_TRACKS)    # tipo (drum/bass/...) por canal
         self._tex = {}
         self.bind(pos=self._redraw, size=self._redraw)
 
@@ -102,6 +104,12 @@ class SongGrid(Widget):
         self.muted = set()
         self.pulse = [0.0] * NUM_TRACKS
         self._redraw()
+
+    def set_tracks(self, kinds):
+        kinds = list(kinds)
+        if kinds != self.tracks:
+            self.tracks = kinds
+            self._redraw()
 
     @property
     def has_selection(self):
@@ -251,8 +259,8 @@ class SongGrid(Widget):
             self._tex[key] = tex
         return tex
 
-    def _text(self, x, y, w, text, color, h=ROW_H):
-        tex = self._texture(text)
+    def _text(self, x, y, w, text, color, h=ROW_H, font_size=FONT):
+        tex = self._texture(text, font_size)
         tw, th = tex.size
         Color(*color)
         Rectangle(texture=tex, size=(tw, th),
@@ -263,33 +271,6 @@ class SongGrid(Widget):
         tw, th = tex.size
         Color(*color)
         Rectangle(texture=tex, size=(tw, th), pos=(x, y + (h - th) / 2))
-
-    def _icon_voice(self, cx, cy, s, color=COLOR_SONG_ACCENT):
-        """Micrófono (canal de voz)."""
-        Color(*color)
-        bw, bh = s * 0.40, s * 0.56
-        RoundedRectangle(pos=(cx - bw / 2, cy - bh * 0.10),
-                         size=(bw, bh), radius=[bw / 2])
-        Line(circle=(cx, cy - bh * 0.02, s * 0.34, 120, 240), width=1.4)
-        Line(points=[cx, cy - bh * 0.46, cx, cy - bh * 0.10], width=1.4)
-        Line(points=[cx - s * 0.20, cy - bh * 0.46,
-                     cx + s * 0.20, cy - bh * 0.46], width=1.4)
-
-    def _icon_robot(self, cx, cy, s, color=COLOR_SONG_ACCENT):
-        """Cabeza de robot (canal de robot)."""
-        hw, hh = s * 0.64, s * 0.52
-        Color(*color)
-        Line(points=[cx, cy + hh * 0.5, cx, cy + hh * 0.5 + s * 0.16],
-             width=1.4)
-        Ellipse(pos=(cx - s * 0.06, cy + hh * 0.5 + s * 0.10),
-                size=(s * 0.12, s * 0.12))
-        RoundedRectangle(pos=(cx - hw / 2, cy - hh / 2), size=(hw, hh),
-                         radius=[s * 0.14])
-        # ojos recortados en el fondo de cabecera
-        Color(*COLOR_BG)
-        er = s * 0.12
-        Ellipse(pos=(cx - hw * 0.26 - er / 2, cy - er / 2), size=(er, er))
-        Ellipse(pos=(cx + hw * 0.26 - er / 2, cy - er / 2), size=(er, er))
 
     def _frame_column(self, x, y, w, h):
         """Marco naranja y escuadras en L del canal del cursor."""
@@ -385,7 +366,7 @@ class SongGrid(Widget):
                 Color(*COLOR_MUTE_OVERLAY)
                 Rectangle(pos=(x, self.y + hint_h),
                           size=(track_w, self.height - HEADER_H - hint_h))
-            # cabecera de canales (1..6, voz, robot); muteadas en rojo
+            # cabecera de canales: nº + icono + nombre; muteadas en rojo
             hy = self.y + self.height - HEADER_H
             Color(*COLOR_HEADER_BG)
             Rectangle(pos=(self.x, hy), size=(self.width, HEADER_H))
@@ -394,6 +375,7 @@ class SongGrid(Widget):
                 x = self.x + GUTTER_W + t * track_w
                 selected = t == self.cursor_track
                 muted = t in self.muted
+                bg = COLOR_SONG_HEADER_SEL if selected else COLOR_HEADER_BG
                 if selected:
                     Color(*COLOR_SONG_HEADER_SEL)
                     Rectangle(pos=(x, hy), size=(track_w, HEADER_H))
@@ -405,18 +387,17 @@ class SongGrid(Widget):
                 strip = strip_h + (dp(10) * a if a > 0 else 0)
                 Rectangle(pos=(x, hy + HEADER_H - strip),
                           size=(track_w, strip))
-                cx, cy = x + track_w / 2, hy + HEADER_H / 2
-                s = min(track_w, HEADER_H) * 0.66
                 ink = self._track_ink(t, muted, selected)
-                if t == VOICE_TRACK:
-                    self._icon_voice(cx, cy, s, ink)
-                elif t == ROBOT_TRACK:
-                    self._icon_robot(cx, cy, s, ink)
-                else:
-                    self._text(x, hy, track_w, str(t + 1),
-                               ink if selected else (
-                                   COLOR_MUTED if muted else COLOR_HEADER_TXT),
-                               h=HEADER_H)
+                kind = (self.tracks[t] if t < len(self.tracks)
+                        else DEFAULT_TRACKS[t])
+                s = min(track_w * 0.62, HEADER_H - NAME_H) * 0.82
+                cx = x + track_w / 2
+                cy = hy + NAME_H + (HEADER_H - NAME_H) / 2
+                draw_track_icon(cx, cy, s, kind, ink, bg=bg)
+                name_ink = ink if selected else (
+                    COLOR_MUTED if muted else COLOR_HEADER_TXT)
+                self._text(x, hy, track_w, track_caption(t, kind), name_ink,
+                           h=NAME_H, font_size=FONT_HDR)
             col_x = self.x + GUTTER_W + self.cursor_track * track_w
             self._frame_column(col_x, self.y + hint_h, track_w,
                                self.height - hint_h)

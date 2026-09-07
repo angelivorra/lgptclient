@@ -2,12 +2,14 @@
 
 Navegación entre pantallas con L+dpad (Ctrl+flechas en PC) según `navmap`.
 La cabecera muestra a la izquierda el nombre de la pantalla + la canción
-(` *` si hay cambios sin guardar: lgptsav.dat, pads o knobs) y a la derecha
-la tira fija D S C P I: D = PADS, S = SONG, C = CHAIN (LIVE pinta su V
-cian en la columna C; CONFIG pinta su C magenta en la columna S), P = PHRASE,
-I = INSTRUMENT. El color indica la altura: azul = fila media, cian = fila de
-arriba (PROJECT/GROOVE/EFECTOS/LIVE), magenta = fila de abajo (TABLE/CONFIG),
-mostrando en esa celda su letra (P/G/T/C/E/V). En el chip activo, una raya blanca arriba y/o abajo marca
+(` *` si hay cambios sin guardar: lgptsav.dat, pads, knobs o pistas) y a la
+derecha la tira fija D S C P I: D = PADS (TRACKS pinta su N magenta en la
+columna D), S = SONG, C = CHAIN (LIVE pinta su V cian en la columna C;
+CONFIG pinta su C magenta en la columna S), P = PHRASE, I = INSTRUMENT. El
+color indica la altura: azul = fila media, cian = fila de
+arriba (PROJECT/GROOVE/EFECTOS/LIVE), magenta = fila de abajo
+(TABLE/CONFIG/TRACKS), mostrando en esa celda su letra (P/G/T/C/E/V/N). En
+el chip activo, una raya blanca arriba y/o abajo marca
 si Ctrl+flecha puede subir o bajar de fila; izquierda/derecha se leen
 en la tira D S C P I.
 """
@@ -22,7 +24,6 @@ from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 
 from navmap import SCREENS, neighbor
-from robots import ROBOT_TRACK
 from screens.chain_view import ChainGrid
 from screens.config_view import ConfigMenu
 from screens.groove_view import GrooveGrid
@@ -34,8 +35,10 @@ from screens.pots_view import PotsGrid
 from screens.project_view import ProjectMenu
 from screens.song_view import SongGrid
 from screens.table_view import TableGrid
+from screens.tracks_view import TracksGrid
 from theme import (COLOR_ACCENT, COLOR_BAR_BG, COLOR_BG, COLOR_BAR_TEXT,
                    COLOR_ERROR, COLOR_OK, ROW_COLORS)
+from tracks import track_caption
 
 
 BAR_H = dp(52)
@@ -109,7 +112,7 @@ class EditorScreen(Screen):
         self.project = None
         self.config = {}          # configuración global (interfaces MIDI)
         self._config_cb = None    # callback al cambiar la config
-        self.unsaved = False      # lgptsav.dat, pads o knobs sin guardar
+        self.unsaved = False      # lgptsav.dat, pads, knobs o pistas sin guardar
 
 
         outer = FloatLayout()
@@ -173,6 +176,8 @@ class EditorScreen(Screen):
                                   pos_hint={"x": 0, "y": 0})
         self.pads_grid = PadsGrid(size_hint=(1, 1),
                                   pos_hint={"x": 0, "y": 0})
+        self.tracks_grid = TracksGrid(size_hint=(1, 1),
+                                      pos_hint={"x": 0, "y": 0})
         self.song_grid = SongGrid(on_change=self._grid_changed,
                                   size_hint=(1, 1),
                                   pos_hint={"x": 0, "y": 0})
@@ -230,6 +235,16 @@ class EditorScreen(Screen):
         self.groove_grid.set_project(project)
         self.instrument_menu.set_project(project)
         self.goto("song")
+
+    def set_tracks(self, kinds):
+        """Tipos de pista (icono + nombre) de esta canción, a las
+        rejillas y a TRACKS / EFECTOS."""
+        self.song_grid.set_tracks(kinds)
+        self.chain_grid.set_tracks(kinds)
+        self.phrase_grid.set_tracks(kinds)
+        self.tracks_grid.set_state(kinds)
+        self.pots_grid.set_tracks(kinds)
+        self.header.text = self._header_text()
 
     def refresh_header(self, *_):
         self.header.text = self._header_text()
@@ -381,15 +396,18 @@ class EditorScreen(Screen):
     def _song_title(self):
         return f"{self.song_name} *" if self.unsaved else self.song_name
 
+    def _track_name(self, track):
+        return track_caption(track, kinds=self.song_grid.tracks)
+
     def _header_text(self):
         label = SCREENS[self.current][1]
         name = self._song_title()
         if self.current == "chain":
-            return f"CHAIN {self.chain_grid.chain_label()}    {name}"
+            return (f"CHAIN {self.chain_grid.chain_label()}  "
+                    f"{self._track_name(self.chain_grid.track)}    {name}")
         if self.current == "phrase":
-            tag = "PHRASE (ROBOT)" if self.phrase_grid.track == ROBOT_TRACK \
-                else "PHRASE"
-            base = f"{tag} {self.phrase_grid.phrase_label()}    {name}"
+            base = (f"PHRASE {self.phrase_grid.phrase_label()}  "
+                    f"{self._track_name(self.phrase_grid.track)}    {name}")
             sample = self.phrase_grid.current_sample_name()
             return f"{base}    {sample}" if sample else base
         if self.current == "groove":
@@ -407,6 +425,7 @@ class EditorScreen(Screen):
             "song": self.song_grid,
             "pots": self.pots_grid,
             "pads": self.pads_grid,
+            "tracks": self.tracks_grid,
             "chain": self.chain_grid,
             "live": self.live_grid,
             "phrase": self.phrase_grid,

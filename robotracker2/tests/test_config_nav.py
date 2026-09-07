@@ -48,6 +48,13 @@ def test_navmap_pots_above_pads():
     print("  navmap pots above pads OK")
 
 
+def test_navmap_tracks_below_pads():
+    # TRACKS está debajo de PADS (columna 0, fila 2)
+    assert neighbor("pads", 0, 1) == "tracks"
+    assert neighbor("tracks", 0, -1) == "pads"
+    print("  navmap tracks below pads OK")
+
+
 def test_editor_navigates_to_pads():
     from screens.editor import EditorScreen  # noqa: E402
 
@@ -66,6 +73,16 @@ def test_editor_navigates_to_pots():
     assert ed.current == "pots"
     assert ed.pots_grid is not None
     print("  editor navigates to pots OK")
+
+
+def test_editor_navigates_to_tracks():
+    from screens.editor import EditorScreen  # noqa: E402
+
+    ed = EditorScreen()
+    ed.goto("tracks")
+    assert ed.current == "tracks"
+    assert ed.tracks_grid is not None
+    print("  editor navigates to tracks OK")
 
 
 def test_editor_navigates_to_config():
@@ -136,10 +153,14 @@ if __name__ == "__main__":
             test_navmap_pads_left_of_song()
             print("test_navmap_pots_above_pads:")
             test_navmap_pots_above_pads()
+            print("test_navmap_tracks_below_pads:")
+            test_navmap_tracks_below_pads()
             print("test_editor_navigates_to_pads:")
             test_editor_navigates_to_pads()
             print("test_editor_navigates_to_pots:")
             test_editor_navigates_to_pots()
+            print("test_editor_navigates_to_tracks:")
+            test_editor_navigates_to_tracks()
             print("test_editor_navigates_to_config:")
             test_editor_navigates_to_config()
             print("test_navmap_live_above_chain:")

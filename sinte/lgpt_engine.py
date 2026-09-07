@@ -1325,7 +1325,8 @@ class Engine:
         # Modo de reproducción restringida (loop de un solo elemento):
         # None = canción completa; ("chain", track, chain) o
         # ("phrase", track, phrase) = solo ese elemento del canal `track`,
-        # en bucle. Lo usa robotracker2 para "play" desde CHAIN/PHRASE.
+        # en bucle. Lo usa robotracker2 para "play" desde CHAIN/PHRASE
+        # (CHAIN arranca en el step del cursor; al terminar vuelve a 00).
         self.loop_scope = None
 
         self.events: queue.SimpleQueue = queue.SimpleQueue()
@@ -1413,7 +1414,7 @@ class Engine:
 
     # -- transporte ---------------------------------------------------------
 
-    def start(self, from_row: int | None = None):
+    def start(self, from_row: int | None = None, from_step: int = 0):
         """(Re)inicia la canción.
 
         Sin `from_row` (player/mixer) arranca desde el principio con el
@@ -1425,7 +1426,10 @@ class Engine:
         suena nada).
 
         Si `loop_scope` está activo (play desde CHAIN/PHRASE en robotracker2)
-        solo se arranca ese canal, en la chain/phrase indicada, en bucle."""
+        solo se arranca ese canal, en la chain/phrase indicada, en bucle.
+        `from_step` (0-15) es el step de la chain desde el que arranca
+        (el cursor en robotracker2); al terminar el bucle vuelve al
+        step 0. En PHRASE se ignora y arranca en el step 0."""
         for ch in self.channels:
             ch.playing = False
             ch.voice = None
@@ -1443,7 +1447,7 @@ class Engine:
             ch.g_pos = 0
             ch.g_ticks = self._groove_len(0, 0)
         if self.loop_scope is not None:
-            self._start_loop()
+            self._start_loop(from_step)
         elif from_row is None:
             # Arranque clásico desde el principio: cada canal entra en su
             # primer contenido de la song.
@@ -1470,19 +1474,31 @@ class Engine:
         self.unsupported_cmds.clear()
         self._transport("transport_start")
 
-    def _start_loop(self):
+    def _start_loop(self, from_step: int = 0):
         """Arranca solo el canal objetivo de `loop_scope` en su chain/phrase
-        (en bucle). El resto de canales quedan en silencio."""
+        (en bucle), desde `from_step` (el cursor). El resto de canales
+        quedan en silencio. Si el step está vacío se busca el siguiente
+        con contenido hacia adelante (sin dar la vuelta); si no hay nada,
+        el canal no arranca."""
         kind, track, idx = self.loop_scope
         if not 0 <= track < CHANNEL_COUNT:
             return
         ch = self.channels[track]
+        step = max(0, min(15, int(from_step)))
         if kind == "chain":
             if idx == 0xFF or idx >= len(self.project.chains) // 16:
                 return
+            base = idx * 16
+            found = None
+            for s in range(step, 16):
+                if self.project.chains[base + s] != 0xFF:
+                    found = s
+                    break
+            if found is None:
+                return
             ch.playing = True
             ch.chain = idx
-            self._set_chain_pos(ch, 0, -1)
+            self._set_chain_pos(ch, found, -1)
         elif kind == "phrase":
             if idx == 0xFF or idx >= len(self.project.notes) // 16:
                 return

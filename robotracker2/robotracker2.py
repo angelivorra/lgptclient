@@ -113,6 +113,7 @@ class Robotracker2App(App):
         self._pads_pad = None      # pad (1-4) al que apunta el navegador PADS
         self._pads_dirty = False   # pads de la canción sin guardar (memoria)
         self._pots_dirty = False   # knobs de la canción sin guardar (memoria)
+        self._tracks_dirty = False # tipos de pista sin guardar (robotraca)
         self._mute_dirty = False   # mute de canales sin guardar (robotraca)
         self.fullscreen = fullscreen
         self.held = set()          # botones lógicos pulsados ahora
@@ -356,6 +357,8 @@ class Robotracker2App(App):
             return self._dispatch_pots(button, active)
         if ed.current == "pads":
             return self._dispatch_pads(button, active)
+        if ed.current == "tracks":
+            return self._dispatch_tracks(button, active)
         if ed.current == "song":
             return self._dispatch_song(button, active)
         if ed.current == "chain":
@@ -574,6 +577,54 @@ class Robotracker2App(App):
         self._sync_unsaved()
         self.editor_screen.toast_msg(f"PAD {self._pads_pad}: {name}")
         self._close_browser()
+
+
+    # ------------------------------------------------------------------
+    # Pantalla TRACKS (tipo/icono de cada pista, ver screens/tracks_view.py)
+    # ------------------------------------------------------------------
+    def _dispatch_tracks(self, button, active):
+        g = self.editor_screen.tracks_grid
+        if g.cursor == g.SAVE_ROW:
+            if button in (UP, DOWN):
+                g.move(button)
+                return True
+            if button == A:
+                if L2 in active or R2 in active:
+                    self._a_consumed = True
+                else:
+                    self._tracks_save()
+                return True
+            if button == SELECT:
+                return True
+            return True
+        if button in DPAD:
+            if button in (LEFT, RIGHT):
+                self._tracks_cycle(-1 if button == LEFT else 1)
+            else:
+                g.move(button)
+            return True
+        if button == A:
+            if L2 in active or R2 in active:
+                self._a_consumed = True
+            return True
+        if button == SELECT:
+            return True
+        return False
+
+    def _tracks_cycle(self, delta):
+        g = self.editor_screen.tracks_grid
+        self._midi_ctrl.cycle_track_kind(g.cursor, delta)
+        kinds = self._midi_ctrl.tracks_state()
+        self.editor_screen.set_tracks(kinds)
+        self._tracks_dirty = True
+        self._sync_unsaved()
+
+    def _tracks_save(self):
+        """Guarda los tipos de pista en el robotraca.json de la canción."""
+        self._midi_ctrl.save()
+        self._tracks_dirty = False
+        self._sync_unsaved()
+        self.editor_screen.toast_msg("Pistas guardadas")
 
 
     def _dispatch_chain(self, button, active):
@@ -918,7 +969,7 @@ class Robotracker2App(App):
 
     def _save(self):
         """Guarda la canción (lgptsav.dat) y el robotraca.json (mute de
-        SONG y, si hay, pads/knobs en memoria)."""
+        SONG y, si hay, pads/knobs/pistas en memoria)."""
         ed = self.editor_screen
         try:
             save_project(ed.project)
@@ -927,15 +978,19 @@ class Robotracker2App(App):
         except Exception as exc:                     # noqa: BLE001
             msg = f"Error: {exc}"
         self._midi_ctrl.sync_mute()
-        if self._pads_dirty or self._pots_dirty or self._mute_dirty:
+        if self._pads_dirty or self._pots_dirty or self._tracks_dirty \
+                or self._mute_dirty:
             extra = []
             if self._pads_dirty or self._pots_dirty:
                 extra.append("pads/knobs")
+            if self._tracks_dirty:
+                extra.append("pistas")
             if self._mute_dirty:
                 extra.append("mute")
             self._midi_ctrl.save()
             self._pads_dirty = False
             self._pots_dirty = False
+            self._tracks_dirty = False
             self._mute_dirty = False
             msg += " + " + "/".join(extra)
         self._sync_unsaved()
@@ -1071,7 +1126,9 @@ class Robotracker2App(App):
             ci = ed.chain_grid.chain_index()
             if ci is None:
                 return
-            ok = self.player.play_loop("chain", ed.chain_grid.track, ci)
+            ok = self.player.play_loop(
+                "chain", ed.chain_grid.track, ci,
+                from_step=ed.chain_grid.cursor_step)
         elif ed.current == "phrase":
             # play de la phrase del cursor, en bucle
             pi = ed.phrase_grid.pv.phrase_of(ed.phrase_grid.track) \
@@ -1290,10 +1347,11 @@ class Robotracker2App(App):
     # ------------------------------------------------------------------
     def _session_dirty(self):
         return self.dirty or self._pads_dirty or self._pots_dirty \
-            or self._mute_dirty
+            or self._tracks_dirty or self._mute_dirty
 
     def _sync_unsaved(self):
-        """Asterisco en cabecera si hay cambios de canción, pads o knobs."""
+        """Asterisco en cabecera si hay cambios de canción, pads, knobs o
+        pistas."""
         self.editor_screen.set_unsaved(self._session_dirty())
 
     def _mark_dirty(self):
@@ -1319,13 +1377,15 @@ class Robotracker2App(App):
         self.dirty = False
         self._pads_dirty = False
         self._pots_dirty = False
+        self._tracks_dirty = False
         self._mute_dirty = False
         self.editor_screen.set_play_indicator(False)
         self.editor_screen.enter_song(project, display_name(song_dir.name))
-        # PADS/POTS: estado de esta canción (robotraca.json "pads" y
-        # "pots"/"fx_mix"; sin la clave, vacíos — no hay banco global)
+        # PADS/POTS/TRACKS: estado de esta canción (robotraca.json "pads",
+        # "pots"/"fx_mix" y "tracks"; sin la clave, vacíos / defaults)
         self.editor_screen.pads_grid.set_state(self._midi_ctrl.pads_state())
         self.editor_screen.pots_grid.set_state(self._midi_ctrl.pots_state())
+        self.editor_screen.set_tracks(self._midi_ctrl.tracks_state())
         self._sync_unsaved()
         self.sm.current = "editor"
 

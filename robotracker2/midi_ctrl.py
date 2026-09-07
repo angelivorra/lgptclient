@@ -35,6 +35,7 @@ from pathlib import Path
 from sinte_bridge import EFFECT_PRESETS, _apply_pad_volume, \
     apply_song_config, build_song_pots, load_song_cfg, open_midi_input, \
     parse_button_spec, parse_pot_target, save_song_cfg
+from tracks import cycle_kind, parse_tracks
 
 # Knobs configurables desde la pantalla POTS (los CC del LPD8: pot1/2/5/6).
 POTS_KNOBS = [1, 2, 5, 6]
@@ -180,10 +181,10 @@ class MidiControl:
 
     def save(self):
         """Persiste en el robotraca.json de la canción la configuración en
-        memoria (pads/pad_volume de PADS, pots/fx_mix de POTS y mute de
-        SONG). Hasta que la app llama a esto (A sobre la fila GUARDAR de
-        cada pantalla o Guardar de la canción) los cambios viven solo en
-        self._cfg y en el engine."""
+        memoria (pads/pad_volume de PADS, pots/fx_mix de POTS, tracks de
+        TRACKS y mute de SONG). Hasta que la app llama a esto (A sobre la
+        fila GUARDAR de cada pantalla o Guardar de la canción) los cambios
+        viven solo en self._cfg y en el engine."""
         self._save()
 
     def pads_state(self):
@@ -201,6 +202,19 @@ class MidiControl:
                 name, vol = None, round(self.pad_volume)
             out.append((name, vol))
         return out
+
+    # -- tipos de pista (pantalla TRACKS) -------------------------------
+    def tracks_state(self):
+        """Lista de 8 tipos (drum/bass/...) para SONG/CHAIN/PHRASE/TRACKS."""
+        return parse_tracks(self._cfg)
+
+    def cycle_track_kind(self, track, delta):
+        """Cicla el tipo de la pista `track` (0-7) en memoria."""
+        if self._cfg is None or not 0 <= track < 8:
+            return
+        kinds = parse_tracks(self._cfg)
+        kinds[track] = cycle_kind(kinds[track], delta)
+        self._cfg["tracks"] = kinds
 
     # -- knobs por canción (pantalla POTS) ------------------------------
     def _pot_state(self, pot):

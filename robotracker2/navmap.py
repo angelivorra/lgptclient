@@ -5,10 +5,11 @@ navega con Ctrl+flechas hacia la pantalla adyacente. Diagrama:
 
 EFECTOS PROJECT LIVE      GROOVE
 PADS    SONG    CHAIN     PHRASE    INSTRUMENT
-        CONFIG            TABLE     TABLE
+TRACKS  CONFIG            TABLE     TABLE
 
 PROJECT está encima de SONG y GROOVE encima de PHRASE; CONFIG debajo de SONG;
-LIVE encima de CHAIN (preview del canal robot); PADS a la izquierda de SONG
+TRACKS debajo de PADS (tipo/icono de cada pista); LIVE encima de CHAIN
+(preview del canal robot); PADS a la izquierda de SONG
 (pads sampler por canción) y EFECTOS encima de PADS (efectos de los knobs del
 controlador por canción); PHRASE e INSTRUMENT tienen cada uno su TABLE debajo.
 Cada entrada: clave -> ((col, fila), etiqueta, letra). Fila 0 = arriba.
@@ -24,6 +25,7 @@ SCREENS = {
     "chain":            ((2, 1), "CHAIN",      "C"),
     "phrase":           ((3, 1), "PHRASE",     "P"),
     "instrument":       ((4, 1), "INSTRUMENT", "I"),
+    "tracks":           ((0, 2), "TRACKS",     "N"),
     "config":           ((1, 2), "CONFIG",     "C"),
     "phrase_table":     ((3, 2), "TABLE",      "T"),
     "instrument_table": ((4, 2), "TABLE",      "T"),

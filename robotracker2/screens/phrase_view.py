@@ -26,7 +26,8 @@ que ve el dispositivo real), para ver de un vistazo qué se envía sin tener
 que abrir el navegador. Junto a SCREEN, un **filmstrip** de 16 thumbs
 alineados con los steps (vacío si el step no tiene MDCC). En HIT, un
 icono (bombo / caja / combo) acompaña la etiqueta. Encima de las
-columnas, etiquetas NOTE/INST/FX1/FX2 (HIT/SCREEN en el canal robot).
+columnas, el icono y el nombre del tipo de esa pista, y las etiquetas
+NOTE/INST/FX1/FX2 (HIT/SCREEN en el canal robot).
 """
 
 from kivy.core.image import Image as CoreImage
@@ -39,6 +40,7 @@ from lgpt_model import EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView, note_name_to_byt
 from robots import (HIT_NOTES, ROBOT_INSTR, ROBOT_TRACK, ayuda_preview_path,
                     hit_label, mdcc_unpack, screen_label)
 from screens.hit_icons import draw_hit_icon
+from screens.track_icons import draw_track_icon
 from sinte_bridge import chord_label, cycle_chord, note_byte_to_name
 from theme import (COLOR_ACCENT, COLOR_BEAT, COLOR_BG, COLOR_BORDER, COLOR_EMPTY,
                    COLOR_FX1, COLOR_FX2, COLOR_HEADER_BG, COLOR_HEADER_TXT,
@@ -46,10 +48,12 @@ from theme import (COLOR_ACCENT, COLOR_BEAT, COLOR_BG, COLOR_BORDER, COLOR_EMPTY
                    COLOR_LINENUM, COLOR_LINENUM_CUR, COLOR_NOTE, COLOR_PLAY,
                    COLOR_PLAY_MARK, COLOR_ROW_CURSOR, COLOR_SCREEN, COLOR_SEL,
                    core_label, draw_play_mark)
+from tracks import DEFAULT_TRACKS, track_caption
 
 ROW_H = dp(30)
 HEADER_H = dp(22)
-TOP_PAD = HEADER_H
+TRACK_BAR_H = dp(36)
+TOP_PAD = TRACK_BAR_H + HEADER_H
 LM = dp(36)
 STEP_W = dp(52)
 FONT = dp(17)
@@ -105,6 +109,7 @@ class PhraseGrid(Widget):
         self.sel_anchor = None         # (step, col) extremo fijo de la selección
         self.play_step = None
         self.on_change = on_change
+        self.tracks = list(DEFAULT_TRACKS)
         self._tex = {}
         self._preview_path = None
         self._preview_tex = None
@@ -129,6 +134,12 @@ class PhraseGrid(Widget):
         self.sel_anchor = None
         self._update_preview()
         self._redraw()
+
+    def set_tracks(self, kinds):
+        kinds = list(kinds)
+        if kinds != self.tracks:
+            self.tracks = kinds
+            self._redraw()
 
     # -- miniatura de pantalla (canal de robotas) -----------------------
     def _screen_path(self, step):
@@ -579,9 +590,24 @@ class PhraseGrid(Widget):
     def _draw_hit_icon(self, x, cy, size, note, color):
         draw_hit_icon(x, cy, size, note, color)
 
+    def _draw_track_bar(self, x_step):
+        """Icono + nombre del tipo de esta pista, encima de las columnas."""
+        hy = self.y + self.height - TRACK_BAR_H
+        Color(*COLOR_HEADER_BG)
+        Rectangle(pos=(self.x, hy), size=(self.width, TRACK_BAR_H))
+        kind = (self.tracks[self.track] if 0 <= self.track < len(self.tracks)
+                else DEFAULT_TRACKS[min(self.track, len(DEFAULT_TRACKS) - 1)])
+        s = TRACK_BAR_H * 0.62
+        cx = x_step + s * 0.55
+        cy = hy + TRACK_BAR_H / 2
+        draw_track_icon(cx, cy, s, kind, COLOR_ACCENT, bg=COLOR_HEADER_BG)
+        self._text_left(cx + s * 0.65, hy, self.width,
+                        track_caption(self.track, kind),
+                        COLOR_ACCENT, h=TRACK_BAR_H)
+
     def _draw_headers(self, x_step, xs, cols, block_right):
         """NOTE/INST/FX1/FX2 (o HIT/SCREEN) alineados con las columnas."""
-        hy = self.y + self.height - HEADER_H
+        hy = self.y + self.height - TRACK_BAR_H - HEADER_H
         is_robot = self.track == ROBOT_TRACK
         if is_robot:
             hx, hw = x_step, block_right - x_step
@@ -628,6 +654,7 @@ class PhraseGrid(Widget):
 
             Color(*COLOR_BG)
             Rectangle(pos=self.pos, size=self.size)
+            self._draw_track_bar(x_step)
             self._draw_headers(x_step, xs, cols, block_right)
             for step in range(PHRASE_LEN):
                 y = self.y + self.height - TOP_PAD - (step + 1) * ROW_H

@@ -3,6 +3,7 @@
 Verifica que:
   - En modo chain, solo suena el canal objetivo y la chain se repite en
     bucle (no se detiene al terminar).
+  - El play desde CHAIN arranca en `from_step` (el cursor), no siempre en 00.
   - En modo phrase, solo suena el canal objetivo y la phrase se repite en
     bucle.
   - El resto de canales quedan en silencio.
@@ -106,6 +107,45 @@ def test_chain_loop_restores_song():
     print(f"  restore song OK: {active} canales activos")
 
 
+def test_chain_loop_from_step():
+    """Play desde CHAIN arranca en from_step, no siempre en 00."""
+    engine = Engine(PROJECT)
+    track = 0
+    chain, phrase = _find_playable(engine, track)
+    assert chain is not None
+    # Asegura phrase en el step 4 (puede coincidir con el 0: da igual,
+    # lo que se comprueba es chain_pos al arrancar).
+    engine.project.chains[chain * 16 + 4] = phrase
+    engine.loop_scope = ("chain", track, chain)
+    engine.start(from_step=4)
+    assert engine.playing
+    assert engine.channels[track].playing
+    assert engine.channels[track].chain_pos == 4, \
+        f"debería arrancar en step 4, chain_pos=" \
+        f"{engine.channels[track].chain_pos}"
+    assert engine.channels[track].phrase == phrase
+    print(f"  chain loop from step 4 OK: chain={chain:02X}")
+    engine.start(from_step=0)
+    assert engine.channels[track].chain_pos == 0
+    print("  chain loop from step 0 sigue en 00 OK")
+
+
+def test_chain_loop_from_empty_scans_forward():
+    """Si el cursor cae en un step vacío, arranca en el siguiente con phrase."""
+    engine = Engine(PROJECT)
+    track = 0
+    chain, phrase = _find_playable(engine, track)
+    assert chain is not None
+    engine.project.chains[chain * 16 + 3] = 0xFF
+    engine.project.chains[chain * 16 + 4] = phrase
+    engine.loop_scope = ("chain", track, chain)
+    engine.start(from_step=3)
+    assert engine.channels[track].chain_pos == 4, \
+        f"step vacío 3 debería saltar a 4, chain_pos=" \
+        f"{engine.channels[track].chain_pos}"
+    print("  chain loop from empty step scans forward OK")
+
+
 if __name__ == "__main__":
     print("test_chain_loop:")
     test_chain_loop()
@@ -113,4 +153,8 @@ if __name__ == "__main__":
     test_phrase_loop()
     print("test_chain_loop_restores_song:")
     test_chain_loop_restores_song()
+    print("test_chain_loop_from_step:")
+    test_chain_loop_from_step()
+    print("test_chain_loop_from_empty_scans_forward:")
+    test_chain_loop_from_empty_scans_forward()
     print("TODOS LOS TESTS OK")
