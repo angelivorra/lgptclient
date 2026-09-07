@@ -53,6 +53,46 @@ def _run(app):
         "cambiar de step en CHAIN debe recrear el contexto de PHRASE"
     print("  PHRASE se resetea al cambiar de step en CHAIN OK")
 
+    # Ctrl+derecha desde PHRASE debe abrir el instrumento del step, no el 00
+    bank = [i for i in sorted(ed.project.instrument_bank) if i != 0]
+    assert bank, "la canción debe tener algún instrumento distinto de 00"
+    target = bank[0]
+    g.cursor_step = 0
+    g.pv.set_instr(0, g.track, target)
+    assert g._instr(0) == target
+    ed.goto("instrument")
+    assert ed.instrument_menu.instr_id == target, (
+        f"Ctrl+derecha debe ir al {target:02X} del step, "
+        f"no al {ed.instrument_menu.instr_id:02X}")
+    print(f"  PHRASE -> INSTRUMENT abre el {target:02X} del step OK")
+
+    # A+dcha en INST vacío cicla el banco; Ctrl+dcha abre el puesto, no el 00
+    g.cursor_step = 1
+    g.cursor_col = 1
+    g.pv.set_instr(1, g.track, None)
+    g.edit(RIGHT)                       # vacío + -> primero del banco
+    g.edit(RIGHT)                       # siguiente (el "nuevo")
+    chosen = g._instr(1)
+    assert chosen is not None
+    ed.goto("instrument")
+    assert ed.instrument_menu.instr_id == chosen, (
+        f"tras poner {chosen:02X} en PHRASE debe abrir ese, "
+        f"fue {ed.instrument_menu.instr_id:02X}")
+    print(f"  A+dcha pone {chosen:02X} y Ctrl+dcha abre ese OK")
+
+    # step con `..`: se hereda el instrumento de arriba (no se queda en 00)
+    other = bank[1] if len(bank) > 1 else target
+    g.pv.set_instr(0, g.track, other)
+    g.pv.set_instr(3, g.track, None)
+    g.cursor_step = 3
+    assert g._instr(3) is None
+    assert g.effective_instr(3) == other
+    ed.goto("instrument")
+    assert ed.instrument_menu.instr_id == other, (
+        f"step vacío debe heredar {other:02X}, "
+        f"fue {ed.instrument_menu.instr_id:02X}")
+    print(f"  PHRASE -> INSTRUMENT hereda {other:02X} del step anterior OK")
+
 
 def main():
     from robotracker2 import Robotracker2App  # noqa: E402

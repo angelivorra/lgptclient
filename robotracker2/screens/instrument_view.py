@@ -110,6 +110,12 @@ class InstrumentMenu(Widget):
         return f"{self.instr_id:02X}" if self.instr_ids else "--"
 
     def select_instrument(self, iid):
+        if self.project is not None:
+            self.instr_ids = sorted(self.project.instrument_bank)
+        try:
+            iid = int(iid)
+        except (TypeError, ValueError):
+            return
         if iid in self.instr_ids:
             self.pos_in_ids = self.instr_ids.index(iid)
             self._reset_cursor()

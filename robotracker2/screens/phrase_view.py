@@ -36,7 +36,8 @@ from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
-from lgpt_model import EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView, note_name_to_byte
+from lgpt_model import (EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView, cycle_cell,
+                        inherited_instr, note_name_to_byte)
 from robots import (HIT_NOTES, ROBOT_INSTR, ROBOT_TRACK, ayuda_preview_path,
                     hit_label, mdcc_unpack, screen_label)
 from screens.hit_icons import draw_hit_icon
@@ -201,6 +202,32 @@ class PhraseGrid(Widget):
             return None
         return self.project.instruments[i]
 
+    def effective_instr(self, step=None):
+        """Instrumento del step, o el último definido hacia atrás.
+
+        En LGPT el instrumento se hereda: un step con `..` usa el de la
+        nota anterior. Ctrl+derecha a INSTRUMENT debe abrir ese, no el 00.
+        """
+        if self.pv is None:
+            return None
+        if step is None:
+            step = self.cursor_step
+        return inherited_instr(self.pv, step, self.track)
+
+    def _bank_ids(self):
+        if self.project is None:
+            return []
+        return sorted(self.project.instrument_bank)
+
+    def _default_instr(self, step=None):
+        """Instrumento al pintar una nota o un INST vacío: el heredado,
+        o el primero del banco (suele ser 00)."""
+        iid = self.effective_instr(step)
+        if iid is not None:
+            return iid
+        bank = self._bank_ids()
+        return bank[0] if bank else 0
+
     def _cmd(self, step, which):
         c = self.pv.fx_cmd_at(step, self.track, which)
         return None if c == FX_EMPTY else c
@@ -282,7 +309,7 @@ class PhraseGrid(Widget):
         En el canal de robotas el instrumento es fijo (no hay sample)."""
         if self.pv is None or self.track == ROBOT_TRACK:
             return None
-        iid = self._instr(self.cursor_step)
+        iid = self.effective_instr()
         if iid is None:
             return None
         data = self.project.instrument_bank.get(iid)
@@ -305,12 +332,9 @@ class PhraseGrid(Widget):
         elif kind == "note":
             self._edit_note(step, delta)
         elif kind == "instr":
-            cur = self._instr(step)
-            if cur is None:
-                if delta > 0:
-                    self.pv.set_instr(step, self.track, 0)
-            else:
-                self.pv.set_instr(step, self.track, max(0, min(0xFE, cur + delta)))
+            hop = 1 if abs(delta) == 1 else 16
+            d = hop if delta > 0 else -hop
+            cycle_cell(self.pv, step, self.track, d, col="instr")
         elif kind.endswith("cmd"):
             self._edit_cmd(step, _WHICH[kind], delta)
         else:
@@ -333,7 +357,7 @@ class PhraseGrid(Widget):
                 self.pv.set_note(step, self.track,
                                  note_name_to_byte(f"C-{self.octave}"))
                 if self._instr(step) is None:
-                    self.pv.set_instr(step, self.track, 0)
+                    self.pv.set_instr(step, self.track, self._default_instr(step))
         else:
             self.pv.set_note(step, self.track, max(0, min(MAX_NOTE, cur + delta)))
 
@@ -366,7 +390,7 @@ class PhraseGrid(Widget):
         else:
             self.pv.set_note(step, self.track, note & 0x7F)
             if self._instr(step) is None:
-                self.pv.set_instr(step, self.track, 0)
+                self.pv.set_instr(step, self.track, self._default_instr(step))
         param = min(velocity * 2, 0xFF)
         for which in (1, 2):            # actualizar el VOLM que ya haya
             if self.pv.fx_cmd_at(step, self.track, which) == "VOLM":
@@ -518,7 +542,7 @@ class PhraseGrid(Widget):
             self.pv.set_note(step, self.track,
                              note_name_to_byte(f"C-{self.octave}"))
         elif kind == "instr":
-            self.pv.set_instr(step, self.track, 0)
+            self.pv.set_instr(step, self.track, self._default_instr(step))
         elif kind.endswith("cmd"):
             self.pv.set_fx_cmd(step, self.track, _WHICH[kind],
                                self.fx_commands[0])

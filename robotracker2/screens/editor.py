@@ -367,9 +367,10 @@ class EditorScreen(Screen):
         elif key in ("phrase_table", "instrument_table"):
             self.table_grid.set_context(self.project, self._table_id(key))
         elif key == "instrument":
-            # ir al instrumento del step de PHRASE, si venimos de ahí
+            # ir al instrumento del step de PHRASE (o el heredado hacia
+            # atrás si el step tiene `..`), si hay contexto de phrase
             if self.phrase_grid.pv is not None:
-                iid = self.phrase_grid._instr(self.phrase_grid.cursor_step)
+                iid = self.phrase_grid.effective_instr()
                 if iid is not None:
                     self.instrument_menu.select_instrument(iid)
         elif key == "config":

@@ -135,6 +135,20 @@ def _hex(value: int) -> str | None:
     return None if value == EMPTY else f"{value:02X}"
 
 
+def inherited_instr(view: "PhraseView", row: int, track: int) -> int | None:
+    """Instrumento efectivo del step: el propio, o el último hacia atrás.
+
+    En LGPT un step con instrumento vacío (`FF`) hereda el de la nota
+    anterior. Sirve para abrir INSTRUMENT y para el instrumento por
+    defecto al pintar una nota.
+    """
+    for s in range(row, -1, -1):
+        i = view._index(s, track)
+        if i is not None and view.project.instruments[i] != EMPTY:
+            return int(view.project.instruments[i])
+    return None
+
+
 def find_songs(songs_dir: Path) -> list[Path]:
     """Proyectos LGPT = subdirectorios con lgptsav.dat."""
     songs_dir = Path(songs_dir)
