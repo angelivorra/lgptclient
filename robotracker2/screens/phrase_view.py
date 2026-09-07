@@ -39,7 +39,7 @@ from lgpt_model import EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView, note_name_to_byt
 from robots import (HIT_NOTES, ROBOT_INSTR, ROBOT_TRACK, ayuda_preview_path,
                     hit_label, mdcc_unpack, screen_label)
 from screens.hit_icons import draw_hit_icon
-from sinte_bridge import note_byte_to_name
+from sinte_bridge import chord_label, cycle_chord, note_byte_to_name
 from theme import (COLOR_ACCENT, COLOR_BEAT, COLOR_BG, COLOR_BORDER, COLOR_EMPTY,
                    COLOR_FX1, COLOR_FX2, COLOR_HEADER_BG, COLOR_HEADER_TXT,
                    COLOR_HINT_BG, COLOR_HIT, COLOR_INSTR,
@@ -58,10 +58,9 @@ FONT_HDR = dp(12)
 HINT_H = dp(32)                         # franja inferior del hint de selección
 MAX_NOTE = 131                     # (9+2)*12 - 1
 
-# Comandos FX que se pueden ciclar: solo los que se usan en las canciones de
-# songs/ (no usamos más). Todos de 4 chars (requisito de set_fx_cmd).
+# Comandos FX que se pueden ciclar. Todos de 4 chars (requisito de set_fx_cmd).
 FX_USED = ["VOLM", "KILL", "DLAY", "LEGA", "TABL", "STOP", "MDCC", "MDPG",
-           "PTCH", "RTRG"]
+           "PTCH", "RTRG", "CHRD"]
 
 # (kind, ancho_px) — columnas normales (6) y las del canal de robotas (2).
 COLS = [("note", dp(70)), ("instr", dp(52)),
@@ -89,7 +88,7 @@ class PhraseGrid(Widget):
     def __init__(self, on_change=None, fx_commands=None, on_nav=None,
                  on_pick_screen=None, ayuda_dir=None, **kw):
         super().__init__(**kw)
-        # comandos FX que se pueden ciclar (solo los usados en las canciones)
+        # comandos FX que se pueden ciclar (FX_USED)
         self.fx_commands = list(fx_commands) if fx_commands else list(FX_USED)
         self.on_nav = on_nav           # refresca la cabecera al mover el cursor
         self.on_pick_screen = on_pick_screen   # abre el navegador de images/
@@ -305,9 +304,15 @@ class PhraseGrid(Widget):
             self._edit_cmd(step, _WHICH[kind], delta)
         else:
             which = _WHICH[kind]
-            cur = self.pv.fx_param_at(step, self.track, which)
-            self.pv.set_fx_param(step, self.track, which,
-                                 max(0, min(0xFFFF, cur + delta)))
+            if self._cmd(step, which) == "CHRD":
+                d = 1 if delta > 0 else -1
+                cur = self.pv.fx_param_at(step, self.track, which)
+                self.pv.set_fx_param(step, self.track, which,
+                                     cycle_chord(cur, d))
+            else:
+                cur = self.pv.fx_param_at(step, self.track, which)
+                self.pv.set_fx_param(step, self.track, which,
+                                     max(0, min(0xFFFF, cur + delta)))
         self._changed()
 
     def _edit_note(self, step, delta):
@@ -380,6 +385,9 @@ class PhraseGrid(Widget):
         else:
             self.pv.set_fx_cmd(step, self.track, which,
                                cmds[(cmds.index(cur) + d) % len(cmds)])
+        new = self._cmd(step, which)
+        if new == "CHRD":
+            self.pv.set_fx_param(step, self.track, which, 0)
 
     def delete(self):
         self._set_raw(self.cursor_step, self.cursor_col, None)
@@ -532,7 +540,12 @@ class PhraseGrid(Widget):
             return f"{raw:02X}" if raw is not None else ".."
         if kind.endswith("cmd"):
             return raw.strip().ljust(4, " ") if raw is not None else "----"
-        return f"{raw:04X}" if raw is not None else "...."
+        which = _WHICH[kind]
+        if raw is None:
+            return "...."
+        if self._cmd(step, which) == "CHRD":
+            return chord_label(raw)
+        return f"{raw:04X}"
 
     def _texture(self, text, font_size=FONT):
         key = (text, font_size)

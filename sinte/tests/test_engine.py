@@ -80,6 +80,9 @@ class MidiCollector:
     def program_change(self, channel, program):
         self.events.append(("program_change", channel, program))
 
+    def chord_on(self, channel, notes, velocity):
+        self.events.append(("chord_on", channel, tuple(notes), velocity))
+
 
 def make_engine(tempo="120") -> Engine:
     engine = Engine(make_project(tempo))
@@ -705,6 +708,132 @@ class TestGroove(unittest.TestCase):
         ch = engine.channels[0]
         self.assertEqual(ch.groove, 1)
         self.assertEqual(ch.g_ticks, 3)
+
+
+class TestChrd(unittest.TestCase):
+    """Comando CHRD: acorde sobre la nota de la fila (samples, MIDI, vocoder)."""
+
+    def test_sample_chord_spawns_voices(self):
+        engine = make_engine()
+        note_row(engine.project, 0, note=60)
+        engine.project.cmd1[0] = "CHRD"
+        engine.project.param1[0] = 0          # maj = 4, 7
+        engine._process_tick()
+        notes = [v.note for v in engine.channels[0].voices]
+        self.assertEqual(notes, [60, 64, 67])
+        out = engine.render(512)
+        self.assertGreater(float(np.abs(out).max()), 0.01)
+
+    def test_sin_chrd_sigue_monofonico(self):
+        engine = make_engine()
+        note_row(engine.project, 0, note=60)
+        engine._process_tick()
+        self.assertEqual(len(engine.channels[0].voices), 1)
+        self.assertEqual(engine.channels[0].voice.note, 60)
+
+    def test_kill_corta_el_acorde(self):
+        engine = make_engine()
+        note_row(engine.project, 0, note=60)
+        engine.project.cmd1[0] = "CHRD"
+        engine.project.param1[0] = 1          # min
+        engine.project.cmd2[1] = "KILL"
+        engine.project.param2[1] = 0
+        engine._process_tick()
+        self.assertEqual(len(engine.channels[0].voices), 3)
+        for _ in range(TICKS_PER_STEP):
+            engine._process_tick()
+        engine._process_tick()               # paso 1: KILL
+        self.assertEqual(engine.channels[0].voices, [])
+        self.assertIsNone(engine.channels[0].voice)
+
+    def test_siguiente_nota_corta_el_acorde(self):
+        engine = make_engine()
+        note_row(engine.project, 0, note=60)
+        engine.project.cmd1[0] = "CHRD"
+        engine.project.param1[0] = 0
+        note_row(engine.project, 1, note=62)
+        engine._process_tick()
+        self.assertEqual(len(engine.channels[0].voices), 3)
+        for _ in range(TICKS_PER_STEP):
+            engine._process_tick()
+        engine._process_tick()               # trigger paso 1
+        self.assertEqual(len(engine.channels[0].voices), 1)
+        self.assertEqual(engine.channels[0].voice.note, 62)
+
+    def test_midi_chord_note_ons(self):
+        engine = make_engine()
+        engine.midi_out = MidiCollector()
+        note_row(engine.project, 0, note=60, instr=0x80)
+        engine.project.cmd1[0] = "CHRD"
+        engine.project.param1[0] = 0          # maj
+        engine._process_tick()
+        ons = [e for e in engine.midi_out.events if e[0] == "note_on"]
+        self.assertEqual(
+            [(e[1], e[2]) for e in ons],
+            [(3, 60), (3, 64), (3, 67)])
+
+    def test_midi_chord_note_offs(self):
+        engine = make_engine()
+        engine.midi_out = MidiCollector()
+        note_row(engine.project, 0, note=60, instr=0x80)
+        engine.project.cmd1[0] = "CHRD"
+        engine.project.param1[0] = 0
+        note_row(engine.project, 1, note=62, instr=0x80)
+        engine._process_tick()
+        for _ in range(TICKS_PER_STEP + 1):
+            engine._process_tick()
+        offs = [e for e in engine.midi_out.events if e[0] == "note_off"]
+        self.assertEqual(
+            sorted(e[2] for e in offs),
+            [60, 64, 67])
+        ons = [e for e in engine.midi_out.events if e[0] == "note_on"]
+        self.assertEqual(ons[-1], ("note_on", 3, 62, 127))
+
+    def test_vocoder_chrd_acrd(self):
+        engine = make_engine()
+        engine.midi_out = MidiCollector()
+        engine.channels[0].vocoder_out = True
+        note_row(engine.project, 0, note=60, instr=0x80)
+        engine.project.cmd1[0] = "CHRD"
+        engine.project.param1[0] = 1          # min = 3, 7
+        engine._process_tick()
+        # La raíz va por note_on (NOTA); el acorde completo por ACRD.
+        ons = [e for e in engine.midi_out.events if e[0] == "note_on"]
+        self.assertEqual([(e[1], e[2]) for e in ons], [(3, 60)])
+        chords = [e for e in engine.midi_out.events if e[0] == "chord_on"]
+        self.assertEqual(len(chords), 1)
+        self.assertEqual(chords[0][1], 0)               # canal del tracker
+        self.assertEqual(chords[0][2], (60, 63, 67))
+
+    def test_vocoder_nibbles_siguen_funcionando(self):
+        engine = make_engine()
+        engine.midi_out = MidiCollector()
+        engine.channels[0].vocoder_out = True
+        note_row(engine.project, 0, note=60, instr=0x80)
+        engine.project.param1[0] = 0x0470     # E y G, sin comando CHRD
+        engine._process_tick()
+        chords = [e for e in engine.midi_out.events if e[0] == "chord_on"]
+        self.assertEqual(chords[0][2], (60, 64, 67))
+        self.assertEqual(len(engine.channels[0].midi_notes), 1)
+
+    def test_chrd_no_es_unsupported(self):
+        engine = make_engine()
+        note_row(engine.project, 0)
+        engine.project.cmd1[0] = "CHRD"
+        engine.project.param1[0] = 0
+        engine._process_tick()
+        self.assertNotIn("CHRD", engine.unsupported_cmds)
+
+    def test_volm_aplica_a_todas_las_voces(self):
+        engine = make_engine()
+        note_row(engine.project, 0, note=60)
+        engine.project.cmd1[0] = "CHRD"
+        engine.project.param1[0] = 0
+        engine.project.cmd2[0] = "VOLM"
+        engine.project.param2[0] = 0x0000
+        engine._process_tick()
+        for v in engine.channels[0].voices:
+            self.assertNotEqual(v.vol_target, 255.0)
 
 
 @unittest.skipUnless(SONGS_DIR.is_dir(), "canciones no disponibles")

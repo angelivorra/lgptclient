@@ -15,7 +15,8 @@ Réplica en Python/numpy del comportamiento del reproductor original
     re-lee en cada trigger y en cada bloque de render, así la edición en
     el editor (robotracker2/mixer) se oye al instante, también en la nota
     que está sonando.
-  - Comandos: VOLM, KILL, DLAY, LEGA, TABL, STOP, HOP.
+  - Comandos: VOLM, KILL, DLAY, LEGA, TABL, STOP, HOP, CHRD
+    (acorde sobre la nota de la fila: samples polifónicos, MIDI y vocoder).
   - Tablas (1 fila por tick, 3 columnas de comandos).
   - Instrumentos MIDI (0x80-0x8F) y comandos MDCC/MDPG/MVEL: se emiten a
     un sink MidiOut (puerto MIDI real en el reproductor).
@@ -40,6 +41,7 @@ from typing import Optional
 import numpy as np
 import soundfile as sf
 
+from chords import chord_intervals, expand_chord_notes
 from lgpt_parser import LGPTProject
 
 SAMPLE_RATE = 44100
@@ -269,7 +271,8 @@ class MidiOut:
 # --------------------------------------------------------------------------
 
 class Voice:
-    """Estado de reproducción de un sample en un canal (monofonía por canal).
+    """Estado de reproducción de un sample (una nota). Un canal puede tener
+    varias voces a la vez si la fila lleva CHRD.
 
     Réplica del render de SampleInstrument.cpp: interpolación lineal,
     downsample (cuantización de la posición de lectura), crush con predrive,
@@ -1139,14 +1142,48 @@ class MasterChain:
 class Channel:
     __slots__ = (
         "idx", "song_pos", "chain_pos", "phrase_pos", "chain", "phrase",
-        "playing", "time_to_start", "time_to_live", "voice", "release",
+        "playing", "time_to_start", "time_to_live", "voices", "releases",
         "last_instr", "last_note", "table",
         "cc_vol", "cc_pan", "cc_pitch", "cc_cutoff",
-        "kind", "midi_def", "midi_note", "midi_ticks", "midi_vel",
+        "kind", "midi_def", "midi_notes", "midi_ticks", "midi_vel",
         "groove", "g_pos", "g_ticks",
         "fx_amounts", "fx_objs", "fx_gain", "fx_presence", "fx_mix",
         "vocoder_out",
     )
+
+    @property
+    def voice(self):
+        """Primera voz sample (compat: una nota, o la raíz de un CHRD)."""
+        return self.voices[0] if self.voices else None
+
+    @voice.setter
+    def voice(self, v):
+        if v is None:
+            self.voices.clear()
+        else:
+            self.voices[:] = [v]
+
+    @property
+    def release(self):
+        return self.releases[0] if self.releases else None
+
+    @release.setter
+    def release(self, v):
+        if v is None:
+            self.releases.clear()
+        else:
+            self.releases[:] = [v]
+
+    @property
+    def midi_note(self):
+        return self.midi_notes[0] if self.midi_notes else None
+
+    @midi_note.setter
+    def midi_note(self, n):
+        if n is None:
+            self.midi_notes.clear()
+        else:
+            self.midi_notes[:] = [n]
 
     def __init__(self, idx: int):
         self.idx = idx
@@ -1158,8 +1195,8 @@ class Channel:
         self.playing = False
         self.time_to_start = 0
         self.time_to_live = 0
-        self.voice: Optional[Voice] = None
-        self.release: Optional[Voice] = None   # voz anterior en fundido (declick)
+        self.voices: list[Voice] = []          # voces sample activas (1, o acorde)
+        self.releases: list[Voice] = []        # voces en fundido (declick)
         self.last_instr: Optional[int] = None
         self.last_note = 0
         self.table = TablePlayback()
@@ -1171,7 +1208,7 @@ class Channel:
         # Estado del instrumento MIDI activo en el canal (si lo hay)
         self.kind: Optional[str] = None        # None | "sample" | "midi"
         self.midi_def: Optional[MidiDef] = None
-        self.midi_note: Optional[int] = None   # nota sonando (None = off)
+        self.midi_notes: list[int] = []        # notas MIDI sonando (acorde)
         self.midi_ticks = -1                   # cuenta atrás de note length
         self.midi_vel: Optional[int] = None    # velocity (MVEL)
         # Estado de groove del canal (Groove::ChannelGroove del upstream)
@@ -1392,6 +1429,7 @@ class Engine:
         for ch in self.channels:
             ch.playing = False
             ch.voice = None
+            ch.release = None
             self._midi_stop_note(ch)
             ch.kind = None
             ch.midi_def = None
@@ -1530,37 +1568,9 @@ class Engine:
                     for ch in self.channels:
                         if ch.idx in self.muted:
                             continue
-                        v = ch.voice
-                        if v is not None:
-                            if v.active:
-                                v.cc_vol = 1.0       # vol/pan del controlador
-                                v.cc_pan = None      # van tras el delay
-                                v.cc_pitch = ch.cc_pitch
-                                v.cc_cutoff = ch.cc_cutoff
-                                # Volumen del instrumento en vivo: la voz
-                                # sigue al banco del proyecto (el mismo
-                                # objeto que edita el editor), así bajar/
-                                # subir el Volume del instrumento se oye
-                                # mientras la nota suena.
-                                if v.iid is not None:
-                                    ins = self.project.instrument_bank.get(v.iid)
-                                    if (ins is not None
-                                            and ins["type"] == "Sample"):
-                                        vol = int(
-                                            ins["params"].get("volume", 255)
-                                            or 0)
-                                        v.vol_scale = vol / 255.0
-                                v.render(self._stage[ch.idx], off, n)
-                            if not v.active:
-                                ch.voice = None
-                        r = ch.release      # voz anterior en fundido (declick)
-                        if r is not None:
-                            if r.active:
-                                r.cc_vol = 1.0
-                                r.cc_pan = None
-                                r.render(self._stage[ch.idx], off, n)
-                            if not r.active:
-                                ch.release = None
+                        buf = self._stage[ch.idx]
+                        self._render_voice_list(ch, ch.voices, buf, off, n)
+                        self._render_voice_list(ch, ch.releases, buf, off, n)
                     off += n
                     self.tick_phase -= n
                 if self.tick_phase < 1.0:
@@ -1632,6 +1642,29 @@ class Engine:
             self.current_lyric = ""
             self._lyric_expires_at = None
         return out
+
+    def _render_voice_list(self, ch: Channel, voices: list, buf, off: int,
+                           n: int):
+        """Renderiza una lista de voces (activas o en declick) y descarta
+        las que ya se han apagado. Mutación in-place de `voices`."""
+        still = []
+        for v in voices:
+            if v.active:
+                v.cc_vol = 1.0       # vol/pan del controlador van tras el delay
+                v.cc_pan = None
+                v.cc_pitch = ch.cc_pitch
+                v.cc_cutoff = ch.cc_cutoff
+                # Volumen del instrumento en vivo: la voz sigue al banco
+                # del proyecto (el mismo objeto que edita el editor).
+                if v.iid is not None:
+                    ins = self.project.instrument_bank.get(v.iid)
+                    if ins is not None and ins["type"] == "Sample":
+                        vol = int(ins["params"].get("volume", 255) or 0)
+                        v.vol_scale = vol / 255.0
+                v.render(buf, off, n)
+            if v.active:
+                still.append(v)
+        voices[:] = still
 
     def _write_scope(self, out: np.ndarray):
         """Vuelca la mezcla final (mono) en el anillo del osciloscopio."""
@@ -1782,6 +1815,7 @@ class Engine:
                 self.finished = True
                 for ch in self.channels:
                     ch.voice = None
+                    ch.release = None
                     self._midi_stop_note(ch)
                 self._transport("transport_stop", False)
 
@@ -1987,13 +2021,15 @@ class Engine:
             self._set_phrase_pos(ch, hop if hop >= 0 else 0)
 
     def _cut_voice(self, ch: Channel):
-        """Corta la voz sample actual con declick: la pasa a fundido de
-        salida (ch.release) en vez de silenciarla en seco."""
-        v = ch.voice
-        if v is not None and v.active:
-            v.start_release()
-            ch.release = v          # descarta un release previo (raro: notas < 4 ms)
-        ch.voice = None
+        """Corta las voces sample del canal con declick: las pasa a fundido
+        de salida (ch.releases) en vez de silenciarlas en seco."""
+        for v in ch.voices:
+            if v.active:
+                v.start_release()
+                ch.releases.append(v)
+        ch.voices.clear()
+        if len(ch.releases) > 24:
+            ch.releases[:] = ch.releases[-24:]
 
     def _stop_channel(self, ch: Channel):
         ch.playing = False
@@ -2003,25 +2039,27 @@ class Engine:
     # -- instrumentos MIDI ----------------------------------------------------
 
     def _midi_start_note(self, ch: Channel, mdef: MidiDef, note: int):
-        """Arranca una nota MIDI (MidiInstrument::Start/Render del upstream):
-        primero CC7 con el volumen del instrumento, luego el note on."""
+        self._midi_start_notes(ch, mdef, [note])
+
+    def _midi_start_notes(self, ch: Channel, mdef: MidiDef, notes: list[int]):
+        """Arranca una o más notas MIDI (MidiInstrument::Start/Render del
+        upstream): primero CC7 con el volumen del instrumento, luego los
+        note on. Varias notas = acorde (CHRD)."""
         ch.midi_def = mdef
         if self.midi_out is not None:
             vol = int((mdef.volume + 0.99) / 2)
             self.midi_out.cc(mdef.channel, 7, vol)
             vel = ch.midi_vel if ch.midi_vel is not None else vol
-            self.midi_out.note_on(mdef.channel, note, vel)
-        ch.midi_note = note
+            for note in notes:
+                self.midi_out.note_on(mdef.channel, note, vel)
+        ch.midi_notes = list(notes)
         ch.midi_ticks = mdef.note_length if mdef.note_length > 0 else -1
 
     def _midi_stop_note(self, ch: Channel):
-        if (
-            ch.midi_note is not None
-            and ch.midi_def is not None
-            and self.midi_out is not None
-        ):
-            self.midi_out.note_off(ch.midi_def.channel, ch.midi_note)
-        ch.midi_note = None
+        if ch.midi_notes and ch.midi_def is not None and self.midi_out is not None:
+            for note in ch.midi_notes:
+                self.midi_out.note_off(ch.midi_def.channel, note)
+        ch.midi_notes = []
         ch.midi_ticks = -1
 
     def _get_hop(self, ch: Channel, pos: int) -> int:
@@ -2068,7 +2106,8 @@ class Engine:
         final = (note + t + self.transpose) % 256
         if final >= 128:
             return
-        # Monofonía: corta la voz sample (con declick) y/o la nota MIDI
+        notes = self._chord_notes(row, final)
+        # Corta la(s) voz(es) sample (con declick) y/o las notas MIDI
         self._cut_voice(ch)
         self._midi_stop_note(ch)
         if idef is not None:
@@ -2077,18 +2116,23 @@ class Engine:
             sample = self.bank.get(idef.sample_name)
             if sample is None:
                 return
-            ch.voice = Voice(sample, idef, final, ch.last_instr, self.sr,
-                             self.samples_per_tick)
+            ch.voices = [
+                Voice(sample, idef, n, ch.last_instr, self.sr,
+                      self.samples_per_tick)
+                for n in notes
+            ]
             ch.kind = "sample"
         else:
-            self._midi_start_note(ch, mdef, final)
+            # Vocoder: la raíz sigue yendo por note_on (NOTA); el acorde
+            # completo va por ACRD. Sin vocoder, el MIDI lleva todas las
+            # notas (acorde audible en un synth).
+            midi_notes = [final] if ch.vocoder_out else notes
+            self._midi_start_notes(ch, mdef, midi_notes)
             ch.kind = "midi"
         ch.last_note = final
         if ch.vocoder_out and self.midi_out is not None:
-            notes = [final] + [(final + t) % 128
-                                for t in self._chord_tones(row)]
             vel = ch.midi_vel if ch.midi_vel is not None else 100
-            self.midi_out.chord_on(ch.idx, notes, vel)
+            self.midi_out.chord_on(ch.idx, self._vocoder_notes(row, final), vel)
         if clean:
             table = idef.table if idef is not None else mdef.table
             if table >= 0 and table in self.project.tables:
@@ -2096,12 +2140,38 @@ class Engine:
             else:
                 ch.table.stop()
 
+    def _chrd_intervals(self, row: int) -> tuple[int, ...] | None:
+        """Intervalos de un CHRD en la fila, o None si no hay comando."""
+        for cmd, param in ((self.project.cmd1[row], self.project.param1[row]),
+                           (self.project.cmd2[row], self.project.param2[row])):
+            if cmd == "CHRD":
+                return chord_intervals(param)
+        return None
+
+    def _chord_notes(self, row: int, root: int) -> list[int]:
+        """Notas a disparar en sample/MIDI: acorde CHRD o solo la raíz.
+
+        El encoding antiguo de nibbles en param1/param2 (vocoder) no
+        dispara voces extra de sample/MIDI: solo entra en ACRD."""
+        iv = self._chrd_intervals(row)
+        if iv is not None:
+            return expand_chord_notes(root, iv)
+        return [root]
+
+    def _vocoder_notes(self, row: int, root: int) -> list[int]:
+        """Acorde que se manda al vocoder (ACRD): CHRD si está, si no la
+        raíz más los intervalos en nibbles de param1/param2."""
+        iv = self._chrd_intervals(row)
+        if iv is not None:
+            return expand_chord_notes(root, iv)
+        extras = [(root + t) % 128 for t in self._chord_tones(row)]
+        return [root] + extras
+
     def _chord_tones(self, row: int) -> list[int]:
-        """Notas de acorde codificadas en param1/param2 de una fila: cada
-        nibble hexadecimal distinto de cero (de los 4 de cada param) es un
-        intervalo en semitonos sobre la nota raíz. No depende de qué
-        comando haya en cmd1/cmd2 (normalmente "----"): LGPT guarda el
-        parámetro aunque no haya comando seleccionado."""
+        """Intervalos de acorde codificados en param1/param2: cada nibble
+        hexadecimal distinto de cero es un intervalo en semitonos sobre la
+        nota raíz. No depende de qué comando haya (normalmente "----"):
+        LGPT guarda el parámetro aunque no haya comando seleccionado."""
         tones = []
         for param in (self.project.param1[row], self.project.param2[row]):
             for shift in (12, 8, 4, 0):
@@ -2149,7 +2219,7 @@ class Engine:
             self.playing = False
             self.finished = True
             self._transport("transport_stop", True)   # fin natural -> END
-        elif cmd in ("HOP ", "DLAY"):
+        elif cmd in ("HOP ", "DLAY", "CHRD"):
             pass                    # se procesan en el avance de step/trigger
         elif cmd == "GROV":
             groove = param & 0xFF
@@ -2164,15 +2234,17 @@ class Engine:
             self.unsupported_cmds.add(cmd)
 
     def _instrument_command(self, ch: Channel, cmd: str, param: int):
-        if ch.kind == "sample" and ch.voice is not None:
-            if cmd == "VOLM":
-                ch.voice.set_volm(param)
-            elif cmd == "LEGA":
-                ch.voice.set_lega(param, ch.last_note)
-            elif cmd == "PTCH":
-                ch.voice.set_ptch(param)
-            elif cmd == "PFIN":
-                ch.voice.set_pfin(param)
+        if ch.kind == "sample" and ch.voices:
+            for i, v in enumerate(ch.voices):
+                if cmd == "VOLM":
+                    v.set_volm(param)
+                elif cmd == "LEGA":
+                    if i == 0:          # glide solo de la raíz
+                        v.set_lega(param, ch.last_note)
+                elif cmd == "PTCH":
+                    v.set_ptch(param)
+                elif cmd == "PFIN":
+                    v.set_pfin(param)
         elif ch.kind == "midi" and ch.midi_def is not None:
             # MidiInstrument::ProcessCommand del upstream
             mch = ch.midi_def.channel
@@ -2204,7 +2276,7 @@ class Engine:
     def active_channels(self) -> int:
         return sum(
             1 for ch in self.channels
-            if ch.voice is not None or ch.midi_note is not None
+            if ch.voices or ch.midi_notes
         )
 
     def song_positions(self) -> list[int]:

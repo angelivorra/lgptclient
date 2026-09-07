@@ -30,7 +30,7 @@ NOTE_NAMES = ("C-", "C#", "D-", "D#", "E-", "F-",
 
 # Comandos fx soportados por el engine de sinte (fourcc, 4 chars).
 FX_COMMANDS = ("VOLM", "KILL", "DLAY", "LEGA", "TABL", "STOP",
-               "HOP ", "MDCC", "MDPG", "MVEL")
+               "HOP ", "MDCC", "MDPG", "MVEL", "CHRD")
 FX_EMPTY = "----"
 
 # Límites del formato LGPT

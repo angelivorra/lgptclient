@@ -327,9 +327,9 @@ def apply_song_config(engine, cfg: dict, pad_volume_default: float,
     presence_channels = set(cfg.get("presence", []))
     for ch in engine.channels:
         ch.fx_presence = ch.idx in presence_channels
-    # Pistas cuyo acorde (param1/param2, ver Engine._chord_tones) se
-    # manda al vocoder por el evento ACRD además de/en vez de sonar
-    # localmente (ver Channel.vocoder_out).
+    # Pistas cuyo acorde (CHRD, o param1/param2 en nibbles, ver
+    # Engine._vocoder_notes) se manda al vocoder por el evento ACRD
+    # además de/en vez de sonar localmente (ver Channel.vocoder_out).
     vocoder_channels = set(cfg.get("vocoder", []))
     for ch in engine.channels:
         ch.vocoder_out = ch.idx in vocoder_channels
