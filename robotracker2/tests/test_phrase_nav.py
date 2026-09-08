@@ -66,12 +66,12 @@ def _run(app):
         f"no al {ed.instrument_menu.instr_id:02X}")
     print(f"  PHRASE -> INSTRUMENT abre el {target:02X} del step OK")
 
-    # A+dcha en INST vacío cicla el banco; Ctrl+dcha abre el puesto, no el 00
+    # A+dcha en INST vacío pone 00, luego 01; Ctrl+dcha abre el puesto
     g.cursor_step = 1
     g.cursor_col = 1
     g.pv.set_instr(1, g.track, None)
-    g.edit(RIGHT)                       # vacío + -> primero del banco
-    g.edit(RIGHT)                       # siguiente (el "nuevo")
+    g.edit(RIGHT)                       # vacío + -> 00
+    g.edit(RIGHT)                       # 00 -> 01
     chosen = g._instr(1)
     assert chosen is not None
     ed.goto("instrument")

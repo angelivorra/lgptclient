@@ -11,8 +11,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from lgpt_model import (EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView, _cycle,  # noqa: E402
-                        inherited_instr)
+from lgpt_model import (EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView,  # noqa: E402
+                        inherited_instr, nudge_cell)
 from sinte_bridge import LGPTProject  # noqa: E402
 
 
@@ -65,13 +65,20 @@ def test_inherited_and_select():
         assert bank[bank.index(iid)] == 0x10
         print("  el instrumento del step está en el banco (no cae al 00) OK")
 
-        # A+dcha cicla el banco (00 -> 01 -> 10), no incrementa crudo a 02
-        values = sorted(p.instrument_bank)
-        assert _cycle(values, None, 1) == 0x00
-        assert _cycle(values, 0x00, 1) == 0x01
-        assert _cycle(values, 0x01, 1) == 0x10
-        assert _cycle(values, 0x10, 1) == 0x20
-        print("  A+dcha cicla el banco (00-01-10-20) OK")
+        # A+dcha ±1 hex, A+arr ±0x10. No cicla el banco (01→10).
+        pv.set_instr(0, 0, 0x01)
+        assert nudge_cell(pv, 0, 0, 1, col="instr")
+        assert p.instruments[0] == 0x02
+        pv.set_instr(0, 0, 0x01)
+        assert nudge_cell(pv, 0, 0, 0x10, col="instr")
+        assert p.instruments[0] == 0x11
+        pv.set_instr(0, 0, None)
+        assert nudge_cell(pv, 0, 0, 1, col="instr")
+        assert p.instruments[0] == 0x00
+        pv.set_instr(1, 0, None)
+        assert nudge_cell(pv, 1, 0, 0x10, col="instr")
+        assert p.instruments[1] == 0x10
+        print("  A+dcha ±1 / A+arr ±0x10 hex OK")
 
 
 if __name__ == "__main__":

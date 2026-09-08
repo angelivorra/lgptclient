@@ -36,8 +36,8 @@ from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
-from lgpt_model import (EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView, cycle_cell,
-                        inherited_instr, note_name_to_byte)
+from lgpt_model import (EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView, inherited_instr,
+                        note_name_to_byte, nudge_cell)
 from robots import (HIT_NOTES, ROBOT_INSTR, ROBOT_TRACK, ayuda_preview_path,
                     hit_label, mdcc_unpack, screen_label)
 from screens.hit_icons import draw_hit_icon
@@ -332,9 +332,7 @@ class PhraseGrid(Widget):
         elif kind == "note":
             self._edit_note(step, delta)
         elif kind == "instr":
-            hop = 1 if abs(delta) == 1 else 16
-            d = hop if delta > 0 else -hop
-            cycle_cell(self.pv, step, self.track, d, col="instr")
+            self._edit_instr(step, delta)
         elif kind.endswith("cmd"):
             self._edit_cmd(step, _WHICH[kind], delta)
         else:
@@ -349,6 +347,12 @@ class PhraseGrid(Widget):
                 self.pv.set_fx_param(step, self.track, which,
                                      max(0, min(0xFFFF, cur + delta)))
         self._changed()
+
+    def _edit_instr(self, step, delta):
+        # Hex crudo como param: A+izq/dcha ±1, A+arr/abj ±0x10.
+        # El banco suele estar hueco (00, 01, 10…); ciclarlo hacía que
+        # A+dcha saltara a 10 y A+arr se fuera muchos slots.
+        nudge_cell(self.pv, step, self.track, delta, col="instr")
 
     def _edit_note(self, step, delta):
         cur = self._note(step)

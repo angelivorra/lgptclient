@@ -374,15 +374,21 @@ def nudge_cell(view, row: int, track: int, delta: int,
         return True
     if isinstance(view, PhraseView):
         i = view._index(row, track)
-        if i is None:
-            return False
         p = view.project
         if col == "instr":
-            if p.instruments[i] == EMPTY:
-                return False
-            view.set_instr(row, track,
-                           max(0, min(0xFE, p.instruments[i] + delta)))
+            cur = None if i is None or p.instruments[i] == EMPTY \
+                else p.instruments[i]
+            if cur is None:
+                if delta <= 0:
+                    return False
+                # vacío + A+dcha = 00; vacío + A+arr = 10
+                view.set_instr(row, track,
+                               0 if abs(delta) == 1 else min(0xFE, abs(delta)))
+                return True
+            view.set_instr(row, track, max(0, min(0xFE, cur + delta)))
             return True
+        if i is None:
+            return False
         if col == "note":
             if p.notes[i] == EMPTY:
                 return False
