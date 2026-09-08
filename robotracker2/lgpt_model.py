@@ -73,12 +73,60 @@ FX_EMPTY = "----"
 # Límites del formato LGPT
 MAX_CHAINS = 255
 MAX_PHRASES = 255
+MAX_INSTRUMENTS = 255          # 00..FE; FF es EMPTY
 
 
 def alloc_chain(project: LGPTProject) -> int | None:
     """Primera chain no referenciada por la song."""
     used = {b for b in project.song if b != EMPTY}
     for i in range(MAX_CHAINS):
+        if i not in used:
+            return i
+    return None
+
+
+def referenced_phrases(project: LGPTProject) -> set[int]:
+    """Phrases apuntadas por alguna chain que la song usa (no leftovers
+    de chains que ya no están en la parrilla)."""
+    used_c = {b for b in project.song if b != EMPTY}
+    n = len(project.chains)
+    out = set()
+    for c in used_c:
+        base = c * CHAIN_LEN
+        for s in range(CHAIN_LEN):
+            i = base + s
+            if i >= n:
+                break
+            b = project.chains[i]
+            if b != EMPTY:
+                out.add(b)
+    return out
+
+
+def referenced_instruments(project: LGPTProject) -> set[int]:
+    """Instrumentos apuntados por alguna phrase que la song usa."""
+    n = len(project.instruments)
+    out = set()
+    for ph in referenced_phrases(project):
+        base = ph * PHRASE_LEN
+        for s in range(PHRASE_LEN):
+            i = base + s
+            if i >= n:
+                break
+            b = project.instruments[i]
+            if b != EMPTY:
+                out.add(b)
+    return out
+
+
+def _alloc_id_above(used: set[int], src: int, limit: int) -> int | None:
+    """Primer id en 0..limit-1 que no está en `used`, mayor que `src`
+    (circular). `src` < 0 busca desde 00."""
+    start = 0 if src < 0 else src + 1
+    for i in range(start, limit):
+        if i not in used:
+            return i
+    for i in range(0 if src < 0 else src):
         if i not in used:
             return i
     return None
@@ -105,6 +153,24 @@ def alloc_chain_above(project: LGPTProject, src: int) -> int | None:
         if i not in used:
             return i
     return None
+
+
+def alloc_unreferenced_phrase_above(project: LGPTProject,
+                                    src: int) -> int | None:
+    """Primera phrase no referenciada en la canción, con índice mayor que
+    `src` (búsqueda circular). `src` < 0 busca desde 00. No mira si la
+    phrase tiene notas: solo si alguna chain de la song la apunta."""
+    used = referenced_phrases(project)
+    return _alloc_id_above(used, src, MAX_PHRASES)
+
+
+def alloc_unreferenced_instr_above(project: LGPTProject,
+                                   src: int) -> int | None:
+    """Primer instrumento no referenciado en la canción, mayor que `src`
+    (circular). `src` < 0 busca desde 00. Solo mira IDs en phrases que la
+    song usa, no si el instrumento existe en el banco."""
+    return _alloc_id_above(referenced_instruments(project), src,
+                           MAX_INSTRUMENTS)
 
 
 def alloc_phrase_above(project: LGPTProject, src: int) -> int | None:

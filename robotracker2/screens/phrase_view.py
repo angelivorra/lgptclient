@@ -3,7 +3,9 @@
 Como LGPT, por step: NOTA · INSTRUMENTO · FX1 (cmd+param) · FX2 (cmd+param).
 La phrase es la del canal (track) en el step de la chain desde el que se entró.
 Cursor: arr/abj = step, izq/dcha = campo (nota, instr, fx1cmd, fx1prm, fx2cmd,
-fx2prm). A+dir edita el campo; A copia/pega/valor por defecto; B borra el campo.
+fx2prm). A+dir edita el campo; A copia/pega/valor por defecto; doble A en
+instrumento pone el primer id no usado en la canción y mayor que el actual;
+B borra el campo.
 Editar un hueco crea la chain y la phrase (estilo Piggy), reutilizando
 `PhraseView` del modelo. Portapapeles propio (por campo).
 
@@ -30,6 +32,8 @@ columnas, el icono y el nombre del tipo de esa pista, y las etiquetas
 NOTE/INST/FX1/FX2 (HIT/SCREEN en el canal robot).
 """
 
+import time
+
 from kivy.core.image import Image as CoreImage
 from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
 from kivy.metrics import dp
@@ -37,7 +41,8 @@ from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
 from lgpt_model import (EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView, inherited_instr,
-                        note_name_to_byte, nudge_cell)
+                        alloc_unreferenced_instr_above, note_name_to_byte,
+                        nudge_cell)
 from robots import (HIT_NOTES, ROBOT_INSTR, ROBOT_TRACK, ayuda_preview_path,
                     hit_label, mdcc_unpack, screen_label)
 from screens.hit_icons import draw_hit_icon
@@ -82,6 +87,7 @@ _COL_COLOR = {"note": COLOR_NOTE, "instr": COLOR_INSTR,
 _KIND = {"note": "note", "instr": "instr", "fx1cmd": "cmd", "fx2cmd": "cmd",
          "fx1prm": "prm", "fx2prm": "prm", "hit": "hit", "screen": "screen"}
 _WHICH = {"fx1cmd": 1, "fx1prm": 1, "fx2cmd": 2, "fx2prm": 2}
+_DOUBLE_A_S = 0.4                      # doble A: siguiente instrumento libre
 
 # Etiqueta de cabecera por grupo de columnas (span de índices).
 _HDR_GROUPS = [("NOTE", COLOR_NOTE, 0, 1), ("INST", COLOR_INSTR, 1, 2),
@@ -117,6 +123,7 @@ class PhraseGrid(Widget):
         self._img_cache = {}               # path -> textura (reuso entre steps)
         self._strip_path = [None] * PHRASE_LEN
         self._strip_tex = [None] * PHRASE_LEN
+        self._last_a_tap = 0.0
         self.bind(pos=self._redraw, size=self._redraw)
 
     def _cols(self):
@@ -133,6 +140,7 @@ class PhraseGrid(Widget):
         self.block_clipboard = None
         self.sel_stage = 0
         self.sel_anchor = None
+        self._last_a_tap = 0.0
         self._update_preview()
         self._redraw()
 
@@ -299,6 +307,7 @@ class PhraseGrid(Widget):
             self.cursor_col = max(0, self.cursor_col - 1)
         elif button == RIGHT:
             self.cursor_col = min(len(self._cols()) - 1, self.cursor_col + 1)
+        self._last_a_tap = 0.0
         if self.on_nav:
             self.on_nav()              # actualiza cabecera (nombre del sample)
         self._update_preview()
@@ -519,6 +528,12 @@ class PhraseGrid(Widget):
             if self.on_pick_screen:
                 self.on_pick_screen(step)          # siempre abre el navegador
             return
+        now = time.monotonic()
+        if kind == "instr" and now - self._last_a_tap < _DOUBLE_A_S:
+            self._last_a_tap = now
+            self.assign_next_free_instr()
+            return
+        self._last_a_tap = now
         val = self._get_raw(step, col)
         ckind = _KIND[kind]
         if val is not None:
@@ -530,6 +545,25 @@ class PhraseGrid(Widget):
         else:
             self._set_default(step, col)          # valor por defecto
             self._changed()
+
+    def assign_next_free_instr(self):
+        """Doble A: el step apunta al primer instrumento no usado en la
+        canción y mayor que el actual (circular). No copia el patch."""
+        if self.pv is None or self.track == ROBOT_TRACK:
+            return False
+        kind = self._cols()[self.cursor_col][0]
+        if kind != "instr":
+            return False
+        cur = self._instr(self.cursor_step)
+        src = -1 if cur is None else cur
+        dst = alloc_unreferenced_instr_above(self.project, src)
+        if dst is None or dst == cur:
+            return False
+        self.pv.set_instr(self.cursor_step, self.track, dst)
+        self._changed()
+        if self.on_nav:
+            self.on_nav()
+        return True
 
     def paste_field(self):
         col = self.cursor_col

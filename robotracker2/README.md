@@ -62,7 +62,11 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    está el cursor (nº en la cabecera, y **icono + nombre** de esa pista
    encima de las columnas). 16 steps × 2 columnas: **phrase** y
    **transpose**. Dpad mueve (arr/abj step, izq/dcha columna), **A+dir** edita,
-   **A** copia/pega/00, **B** borra; crear phrase en un hueco crea la chain si
+   **A** copia/pega/00, **doble A** en la columna phrase pone en la celda la
+   primera phrase **no referenciada en la canción** (da igual si tiene notas)
+   con índice mayor que la actual (si no hay por encima, da la vuelta); no
+   copia el contenido, solo cambia el índice. **B** borra; crear phrase en un
+   hueco crea la chain si
    hace falta (estilo Piggy). Selección igual que SONG (**Ctrl+S** cicla
    libre→columnas→todo, **S** copia, **Ctrl+A** con selección **duplica la
    phrase** del step del cursor (columna PHRASE) a la primera phrase libre con
@@ -76,7 +80,9 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    cabecera, y **icono + nombre** de esa pista encima de las columnas). 16 steps × campos **nota · instr · FX1(cmd+param) · FX2(cmd+param)**.
    Dpad mueve (arr/abj step, izq/dcha campo), **A+dir** edita (nota: ±1 semitono
    / ±octava; instr y param: ±1/±0x10; cmd: cicla comandos), **A** copia/pega/def
-   por campo (portapapeles propio), **B** borra el campo. Editar un hueco crea la
+   por campo (portapapeles propio), **doble A** en instrumento pone el primer
+   id **no referenciado en la canción** (da igual si existe en el banco) mayor
+   que el actual (si no hay por encima, da la vuelta), **B** borra el campo. Editar un hueco crea la
    chain y la phrase (estilo Piggy). El ciclado de **comandos FX** solo ofrece los
    usados en las canciones de `songs/` (`FX_USED` en `phrase_view.py`: VOLM, KILL,
    DLAY, LEGA, TABL, STOP, MDCC, MDPG, PTCH, RTRG). Selección multicelda igual que
@@ -223,12 +229,13 @@ propio motor (`Engine.loop_scope` en `../sinte/lgpt_engine.py`): solo se
 arranca ese canal y, al terminar la chain/phrase, vuelve a su step 0.
 
 
-**Mute (SONG, mientras suena)**: con **L2** mantenido, **cada pulsación nueva
-de S** alterna el mute de la pista del cursor (columna atenuada + cabecera en
-rojo) — se puede tocar varias veces seguidas para ir probando; una tecla
-mantenida no repite el toggle sola (se ignora la autorepetición del SO). Lo
-que quede al soltar **L2** es lo que se queda; soltar S no hace nada especial
-por sí sola.
+**Mute (SONG, mientras suena)**: con **L2** (Ctrl izquierdo) mantenido, **cada
+pulsación nueva de S** alterna el mute de la pista del cursor (columna atenuada
++ cabecera en rojo) — se puede tocar varias veces seguidas para ir probando;
+una tecla mantenida no repite el toggle sola (se ignora la autorepetición del
+SO). S sola (sin L2) borra la celda al **soltar**; si S llega antes que Ctrl, o
+Ctrl se suelta y el SO sigue mandando S, el combo se consume y no borra. Lo
+que quede al soltar **L2** es el mute que se queda.
 
 Si hay **cambios sin guardar**, al **salir** o **cargar otra canción** (o cerrar
 la ventana) aparece un diálogo modal (`screens/confirm.py`) con **Guardar /

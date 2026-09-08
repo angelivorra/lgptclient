@@ -125,6 +125,7 @@ class Robotracker2App(App):
         self._ev_pad = None       # GamepadReader evdev (modo Odin) o None
         self.dirty = False
         self._a_consumed = False   # A se usó en un acorde (no disparar tap)
+        self._b_consumed = False   # B/S se usó en un acorde (no borrar al soltar)
         self.dialog = None         # ConfirmDialog activo (o None)
         self.player = None         # reproductor de la canción cargada
         self._song_dir = None      # directorio de la canción cargada
@@ -261,10 +262,12 @@ class Robotracker2App(App):
     def _release(self, button):
         if self.browser is not None:
             self.held.discard(button)
+            self._b_consumed = False
             return
         self.held.discard(button)
         if self.dialog is not None:
             self._a_consumed = False
+            self._b_consumed = False
             return
         # A soltado sin haberse usado en un acorde -> "tap". Pero si se suelta
         # con un hombro (L2/R2) mantenido, no es un tap: es el final de un
@@ -287,6 +290,16 @@ class Robotracker2App(App):
                 elif ed.current == "project":
                     ed.project_menu.activate()  # activar acción
             self._a_consumed = False
+        elif button == B:
+            # S/B: copiar o borrar al soltar, salvo que el pulso haya sido
+            # un combo (L2+S mute, R2+S selección). Si S llega antes que
+            # Ctrl, o Ctrl se suelta y el SO repite S, no debe vaciar la
+            # celda: el hombro consume el pulso.
+            if (not self._b_consumed and self.sm.current == "editor"
+                    and self.editor_screen.current in ("song", "chain",
+                                                       "phrase")):
+                self._b_tap()
+            self._b_consumed = False
 
 
     def _on_request_close(self, *_a, **_k):
@@ -382,6 +395,14 @@ class Robotracker2App(App):
             else:
                 self._toggle_play()
             return True
+        # S ya abajo + hombro: el combo consume B para no borrar al soltar
+        # (S antes que Ctrl, o Ctrl se suelta y el SO repite S).
+        if button in (L2, R2) and B in active:
+            self._b_consumed = True
+            if button == R2 and self._fresh_press:
+                g = self._editor_grid()
+                if g is not None:
+                    g.cycle_selection()
         if ed.current == "pots":
             return self._dispatch_pots(button, active)
         if ed.current == "pads":
@@ -656,6 +677,37 @@ class Robotracker2App(App):
         self.editor_screen.toast_msg("Pistas guardadas")
 
 
+    def _editor_grid(self):
+        """Parrilla de SONG/CHAIN/PHRASE, o None en otras pantallas."""
+        ed = self.editor_screen
+        return {"song": ed.song_grid, "chain": ed.chain_grid,
+                "phrase": ed.phrase_grid}.get(ed.current)
+
+    def _on_b_down(self, active, mute_track=None):
+        """B/S al pulsar: combos (mute, selección). Copiar/borrar va al soltar."""
+        if L2 in active:
+            if (mute_track is not None and self._fresh_press
+                    and self._playing_song()):
+                self._mute_toggle(mute_track)
+            self._b_consumed = True
+        elif R2 in active:
+            if self._fresh_press:
+                g = self._editor_grid()
+                if g is not None:
+                    g.cycle_selection()
+            self._b_consumed = True
+        elif self._fresh_press:
+            self._b_consumed = False
+
+    def _b_tap(self):
+        g = self._editor_grid()
+        if g is None:
+            return
+        if g.has_selection:
+            g.copy_selection()
+        else:
+            g.delete()
+
     def _dispatch_chain(self, button, active):
         g = self.editor_screen.chain_grid
         if button in DPAD:
@@ -678,14 +730,7 @@ class Robotracker2App(App):
                 self._a_consumed = False             # A tap: copiar/pegar/00
             return True
         if button == B:
-            if L2 in active:                         # L2 es navegar: B no hace nada
-                pass
-            elif R2 in active:                       # Ctrl+S: ciclar selección
-                g.cycle_selection()
-            elif g.has_selection:                    # S: copiar selección
-                g.copy_selection()
-            else:                                    # S: borrar celda
-                g.delete()
+            self._on_b_down(active)
             return True
         if button == BACK:
             if g.has_selection:
@@ -725,15 +770,7 @@ class Robotracker2App(App):
                 self._mute_toggle(g.cursor_track)
             return True
         if button == B:
-            if L2 in active:                         # L2(+S): mute (o nada)
-                if self._playing_song() and self._fresh_press:
-                    self._mute_toggle(g.cursor_track)
-            elif R2 in active:                       # Ctrl+S: ciclar selección
-                g.cycle_selection()
-            elif g.has_selection:                    # S: copiar selección
-                g.copy_selection()
-            else:                                    # S: borrar celda
-                g.delete()
+            self._on_b_down(active, mute_track=g.cursor_track)
             return True
 
         if button == BACK:
@@ -763,14 +800,7 @@ class Robotracker2App(App):
                 self._a_consumed = False             # A tap: copiar/pegar/def
             return True
         if button == B:
-            if L2 in active:                         # L2 es navegar: B no hace nada
-                pass
-            elif R2 in active:                       # Ctrl+S: ciclar selección
-                g.cycle_selection()
-            elif g.has_selection:                    # S: copiar selección
-                g.copy_selection()
-            else:                                    # S: borrar campo
-                g.delete()
+            self._on_b_down(active)
             return True
         if button == BACK:
             if g.has_selection:
