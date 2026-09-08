@@ -93,6 +93,29 @@ class TestWriterRoundTrip(unittest.TestCase):
         text = project_to_xml(project)
         self.assertTrue(text.startswith("<LITTLEGPTRACKER>"))
 
+    def test_add_instrument_0_persiste(self):
+        """Un INSTRUMENT nuevo en el banco (p.ej. pista 0 de una canción
+        legacy) se escribe al XML y vuelve al recargar."""
+        song_dir = sorted(d for d in SONGS_DIR.iterdir()
+                          if (d / "lgptsav.dat").exists())[0]
+        project = _load(song_dir)
+        project.instrument_bank.pop(0, None)
+        project.instrument_bank[0] = {
+            "type": "Sample",
+            "params": {"sample": "", "volume": "255", "pan": "127"},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            out = save_project(project, Path(tmp) / "lgptsav.dat",
+                               backup=False)
+            xml = Path(tmp).joinpath("lgptsav.dat").read_text()
+            self.assertIn('INSTRUMENT ID="00" TYPE="Sample"', xml)
+            reloaded = _load(out.parent)
+        self.assertIn(0, reloaded.instrument_bank)
+        self.assertEqual(reloaded.instrument_bank[0]["type"], "Sample")
+        self.assertEqual(reloaded.instrument_bank[0]["params"]["sample"], "")
+        self.assertEqual(reloaded.instrument_bank[0]["params"]["volume"],
+                         "255")
+
 
 if __name__ == "__main__":
     unittest.main()

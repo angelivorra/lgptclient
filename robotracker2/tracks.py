@@ -1,15 +1,19 @@
 """Tipos de pista (nombre + icono) por canción.
 
-Cada canal 0-7 tiene un tipo de `TRACK_KINDS`. Se persiste en el
-robotraca.json como lista de 8 nombres:
+Cada canal 0-8 tiene un tipo de `TRACK_KINDS`. Se persiste en el
+robotraca.json como lista de 9 nombres, en orden de canal LGPT (0-8):
 
-    "tracks": ["drum", "bass", "synth", "synth", "noise", "synth", "vocoder", "robot"]
+    "tracks": ["drum", "bass", "synth", "synth", "noise", "synth",
+               "vocoder", "robot", "synth"]
 
-Sin la clave, se usan `DEFAULT_TRACKS` (mismos 8, con vocoder y robot en
-los canales 7 y 8 como la cabecera histórica de SONG).
+Sin la clave, se usan `DEFAULT_TRACKS` (vocoder y robot en los canales
+6 y 7; la pista extra es el canal 8). En pantalla las columnas/filas no
+van 0..8: la extra se muestra **la primera**, y vocoder/robot al final:
+
+    extra(8), 0, 1, 2, 3, 4, 5, vocoder, robot
 """
 
-from lgpt_model import NUM_TRACKS
+from lgpt_model import EXTRA_TRACK, NUM_TRACKS
 
 TRACK_KINDS = ("drum", "bass", "synth", "noise", "robot", "vocoder")
 
@@ -22,14 +26,36 @@ TRACK_LABELS = {
     "vocoder": "VOCODER",
 }
 
-# Canal 7 = voz/vocoder, canal 8 = robotas (como la cabecera histórica).
+# Canal 6 = voz/vocoder, canal 7 = robotas, canal 8 = pista extra.
 DEFAULT_TRACKS = (
     "drum", "bass", "synth", "synth", "noise", "synth", "vocoder", "robot",
+    "synth",
 )
+
+# Orden visual (SONG de izq a dcha, TRACKS de arriba a abajo): extra
+# primero, vocoder y robot al final.
+TRACK_DISPLAY = (EXTRA_TRACK, 0, 1, 2, 3, 4, 5, 6, 7)
+VOCODER_TRACK = 6
+ROBOT_TRACK = 7
+
+
+def slot_of(track) -> int:
+    """Puesto visual 0-8 del canal LGPT `track`."""
+    try:
+        return TRACK_DISPLAY.index(track)
+    except ValueError:
+        return 0
+
+
+def track_at_slot(slot) -> int:
+    """Canal LGPT del puesto visual `slot` (0-8)."""
+    if 0 <= slot < len(TRACK_DISPLAY):
+        return TRACK_DISPLAY[slot]
+    return TRACK_DISPLAY[0]
 
 
 def parse_tracks(cfg) -> list:
-    """Lista de 8 tipos a partir del robotraca.json (`cfg` o {})."""
+    """Lista de 9 tipos a partir del robotraca.json (`cfg` o {})."""
     raw = (cfg or {}).get("tracks")
     out = list(DEFAULT_TRACKS)
     if isinstance(raw, list):
@@ -59,7 +85,7 @@ def track_label(kind) -> str:
 
 
 def kind_at(kinds, track) -> str:
-    """Tipo de la pista `track` (0-7), con default si falta."""
+    """Tipo de la pista `track` (0-8 LGPT), con default si falta."""
     if kinds and 0 <= track < len(kinds):
         return kinds[track]
     if 0 <= track < len(DEFAULT_TRACKS):
@@ -68,7 +94,7 @@ def kind_at(kinds, track) -> str:
 
 
 def track_caption(track, kind=None, kinds=None) -> str:
-    """Etiqueta '1 DRUM' (track 0-based)."""
+    """Etiqueta '1 SYNTH': número de puesto visual + tipo."""
     if kind is None:
         kind = kind_at(kinds, track)
-    return f"{track + 1} {track_label(kind)}"
+    return f"{slot_of(track) + 1} {track_label(kind)}"

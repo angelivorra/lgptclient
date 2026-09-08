@@ -31,8 +31,9 @@ from kivy.clock import Clock  # noqa: E402
 
 from controls import A, DOWN, L2, LEFT, RIGHT, SELECT, UP  # noqa: E402
 from songs import DEFAULT_SONGS  # noqa: E402
-from tracks import (DEFAULT_TRACKS, cycle_kind, parse_tracks,
-                    track_caption, track_label)  # noqa: E402
+from tracks import (DEFAULT_TRACKS, EXTRA_TRACK, TRACK_DISPLAY, cycle_kind,
+                    parse_tracks, slot_of, track_at_slot, track_caption,
+                    track_label)  # noqa: E402
 
 
 def test_parse_tracks():
@@ -49,8 +50,12 @@ def test_parse_tracks():
     assert cycle_kind("vocoder", 1) == "drum"
     assert cycle_kind("drum", -1) == "vocoder"
     assert track_label("synth") == "SYNTH"
-    assert track_caption(0, "drum") == "1 DRUM"
-    assert track_caption(7, kinds=list(DEFAULT_TRACKS)) == "8 ROBOT"
+    assert TRACK_DISPLAY == (EXTRA_TRACK, 0, 1, 2, 3, 4, 5, 6, 7)
+    assert slot_of(EXTRA_TRACK) == 0 and track_at_slot(0) == EXTRA_TRACK
+    assert slot_of(6) == 7 and track_at_slot(8) == 7
+    assert track_caption(EXTRA_TRACK, "synth") == "1 SYNTH"
+    assert track_caption(0, "drum") == "2 DRUM"
+    assert track_caption(7, kinds=list(DEFAULT_TRACKS)) == "9 ROBOT"
     print("  parse_tracks / cycle_kind OK")
 
 
@@ -92,8 +97,8 @@ def _run(app, song_a, song_b):
 
     # --- IZQ/DCH ciclan el tipo EN MEMORIA -------------------------------
     app._dispatch(RIGHT, {RIGHT})
-    assert g.kinds[0] == "bass", g.kinds[0]
-    assert app.editor_screen.song_grid.tracks[0] == "bass"
+    assert g.kinds[EXTRA_TRACK] == "noise", g.kinds[EXTRA_TRACK]
+    assert app.editor_screen.song_grid.tracks[EXTRA_TRACK] == "noise"
     assert app._tracks_dirty
     assert "tracks" not in _cfg_song(song_a), \
         "sin guardar, el robotraca.json no cambia"
@@ -106,13 +111,13 @@ def _run(app, song_a, song_b):
     print("  SELECT no guarda OK")
 
     # --- fila GUARDAR (A) persiste ---------------------------------------
-    for _ in range(8):
+    for _ in range(9):
         app._dispatch(DOWN, {DOWN})
     assert g.cursor == g.SAVE_ROW, g.cursor
     app._dispatch(A, {A})
     cfg = _cfg_song(song_a)
-    assert cfg["tracks"][0] == "bass", cfg
-    assert cfg["tracks"][1:] == list(DEFAULT_TRACKS[1:])
+    assert cfg["tracks"][EXTRA_TRACK] == "noise", cfg
+    assert cfg["tracks"][:EXTRA_TRACK] == list(DEFAULT_TRACKS[:EXTRA_TRACK])
     assert not app._tracks_dirty
     print("  fila GUARDAR (A) guarda el robotraca.json OK")
 
@@ -121,16 +126,16 @@ def _run(app, song_a, song_b):
     app._dispatch(UP, {UP, L2})          # TRACKS -> PADS
     app._dispatch(RIGHT, {RIGHT, L2})    # PADS -> SONG
     assert app.editor_screen.current == "song"
-    app.editor_screen.song_grid.cursor_track = 0
+    app.editor_screen.song_grid.cursor_track = EXTRA_TRACK
     app._dispatch(RIGHT, {RIGHT, L2})    # SONG -> CHAIN
     assert app.editor_screen.current == "chain"
-    assert "BASS" in app.editor_screen._header_text()
-    assert "1 BASS" in app.editor_screen._header_text()
-    assert app.editor_screen.chain_grid.tracks[0] == "bass"
+    assert "NOISE" in app.editor_screen._header_text()
+    assert "1 NOISE" in app.editor_screen._header_text()
+    assert app.editor_screen.chain_grid.tracks[EXTRA_TRACK] == "noise"
     app._dispatch(RIGHT, {RIGHT, L2})    # CHAIN -> PHRASE
     assert app.editor_screen.current == "phrase"
-    assert "1 BASS" in app.editor_screen._header_text()
-    assert app.editor_screen.phrase_grid.tracks[0] == "bass"
+    assert "1 NOISE" in app.editor_screen._header_text()
+    assert app.editor_screen.phrase_grid.tracks[EXTRA_TRACK] == "noise"
     print("  icono/nombre/número en CHAIN y PHRASE OK")
 
     # --- EFECTOS también ve el tipo del canal ----------------------------
@@ -139,7 +144,7 @@ def _run(app, song_a, song_b):
     app._dispatch(LEFT, {LEFT, L2})      # SONG -> PADS
     app._dispatch(UP, {UP, L2})          # PADS -> EFECTOS
     assert app.editor_screen.current == "pots"
-    assert app.editor_screen.pots_grid.tracks[0] == "bass"
+    assert app.editor_screen.pots_grid.tracks[EXTRA_TRACK] == "noise"
     print("  EFECTOS muestra el tipo de la pista OK")
 
     # --- volver a TRACKS, cambiar y pedir confirmación al cargar B -------
@@ -147,8 +152,8 @@ def _run(app, song_a, song_b):
     app._dispatch(DOWN, {DOWN, L2})      # PADS -> TRACKS
     g = app.editor_screen.tracks_grid
     g.cursor = 0
-    app._dispatch(RIGHT, {RIGHT})        # bass -> synth
-    assert g.kinds[0] == "synth"
+    app._dispatch(RIGHT, {RIGHT})        # noise -> robot
+    assert g.kinds[EXTRA_TRACK] == "robot"
     assert app._tracks_dirty
     app._request_load(song_b)
     assert app.dialog is not None, "pistas sin guardar deben pedir confirmación"
@@ -158,9 +163,9 @@ def _run(app, song_a, song_b):
     assert app.editor_screen.song_grid.tracks == list(DEFAULT_TRACKS)
     print("  confirmación al cambiar con pistas sin guardar OK")
 
-    # --- A conserva lo guardado (bass, no synth) -------------------------
+    # --- A conserva lo guardado (noise, no robot) -------------------------
     app._request_load(song_a)
-    assert app.editor_screen.song_grid.tracks[0] == "bass"
+    assert app.editor_screen.song_grid.tracks[EXTRA_TRACK] == "noise"
     print("  pistas guardadas por canción OK")
 
     # --- Guardar canción también persiste --------------------------------
@@ -168,7 +173,7 @@ def _run(app, song_a, song_b):
     app._dispatch(LEFT, {LEFT, L2})
     app._dispatch(DOWN, {DOWN, L2})
     g = app.editor_screen.tracks_grid
-    g.cursor = 2
+    g.cursor = 3                          # visual 4 = canal LGPT 2 (synth)
     app._dispatch(LEFT, {LEFT})          # synth -> bass
     assert g.kinds[2] == "bass"
     app._save()

@@ -44,7 +44,9 @@ from config import load_config, save_config
 from controls import (A, B, BACK, DOWN, DPAD, L2, LEFT, R2, RIGHT, SELECT,
                       START, UP, GAMEPAD_BUTTONS, hat_to_buttons, key_to_button,
                       trigger_axis_buttons)
-from lgpt_model import EMPTY, compact_instruments, compact_sequencer
+from lgpt_model import (EMPTY, NUM_TRACKS, compact_instruments,
+                        compact_sequencer, ensure_extra_track,
+                        ensure_track_0)
 from midi_ctrl import POTS_KNOBS, MidiControl
 from midi_input import MidiNotesInput, midi_input_names
 from sinte_bridge import save_project
@@ -53,6 +55,7 @@ try:
 except ImportError:
     GamepadReader = None
 from songs import DEFAULT_SONGS, display_name, find_songs, load_project
+from tracks import track_at_slot
 from player import Player
 from robots import ROBOT_TRACK, RobotPlayback, screen_label
 from screens.confirm import ConfirmDialog
@@ -125,7 +128,7 @@ class Robotracker2App(App):
         self.player = None         # reproductor de la canción cargada
         self._song_dir = None      # directorio de la canción cargada
         self._play_start = None    # monotonic() al arrancar (temporizador)
-        self._play_keys = [None] * 8  # (phrase, step) por canal: pulso SONG
+        self._play_keys = [None] * NUM_TRACKS  # (phrase, step) por canal: pulso SONG
         self._robot_play = RobotPlayback()  # SCREEN sostenida + HIT del canal 8
         self._pad_hits = queue.SimpleQueue()  # pads MIDI -> destello en _tick
         self._fresh_press = False  # el botón actual no estaba ya en self.held
@@ -613,7 +616,7 @@ class Robotracker2App(App):
 
     def _tracks_cycle(self, delta):
         g = self.editor_screen.tracks_grid
-        self._midi_ctrl.cycle_track_kind(g.cursor, delta)
+        self._midi_ctrl.cycle_track_kind(track_at_slot(g.cursor), delta)
         kinds = self._midi_ctrl.tracks_state()
         self.editor_screen.set_tracks(kinds)
         self._tracks_dirty = True
@@ -1016,8 +1019,9 @@ class Robotracker2App(App):
 
     def _compact_instruments(self):
         """Compact Instruments: elimina del banco los instrumentos sin
-        referencia (ROBOT_INSTR 0x80 nunca) y, si quedan wavs huérfanos en
-        samples/, pregunta si borrarlos del disco (Sí/No, "No" por defecto)."""
+        referencia (00 y ROBOT_INSTR 0x80 nunca) y, si quedan wavs huérfanos
+        en samples/, pregunta si borrarlos del disco (Sí/No, "No" por
+        defecto)."""
         ed = self.editor_screen
         project = ed.project
         if project is None:
@@ -1285,11 +1289,11 @@ class Robotracker2App(App):
         else:
             ed.set_play_indicator(False)
         if not playing:
-            ed.song_grid.set_play([None] * 8)
+            ed.song_grid.set_play([None] * NUM_TRACKS)
             ed.song_grid.clear_pulse()
             ed.chain_grid.set_play(None)
             ed.phrase_grid.set_play(None)
-            self._play_keys = [None] * 8
+            self._play_keys = [None] * NUM_TRACKS
             if (self._robot_play.playing or self._robot_play.cc is not None
                     or self._robot_play.note is not None
                     or self._robot_play.hit_note is not None):
@@ -1360,6 +1364,10 @@ class Robotracker2App(App):
 
     def load_song(self, song_dir):
         project = load_project(song_dir)
+        # Canciones legacy de LGPT: instrumento 00, chain en canal 0 si
+        # falta, y la novena pista (canal 8, visualmente la primera).
+        ensure_track_0(project)
+        ensure_extra_track(project)
         if self.player is not None:
             self.player.close()
         # Sin banco global de pads: los pads son SOLO por canción

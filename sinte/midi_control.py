@@ -21,7 +21,7 @@ import json
 import queue
 from pathlib import Path
 
-from lgpt_engine import EFFECT_PRESETS, NETCC_CHANNEL
+from lgpt_engine import CHANNEL_COUNT, EFFECT_PRESETS, NETCC_CHANNEL
 
 
 def _pick_port(names: list[str], wanted: str | None, what: str) -> str | None:
@@ -78,7 +78,7 @@ def parse_pot_target(target: str) -> tuple | None:
     """'canales:parametro[:tope]' -> (canales, parametro, escala).
 
     canales: uno o varios separados por coma (`2` o `1,2`), canal tracker
-    0-7; un mismo knob puede así mover varias pistas a la vez (p.ej. la
+    0-8; un mismo knob puede así mover varias pistas a la vez (p.ej. la
     reverb de todos los bajos).
     tope: recorrido máximo del knob en % (100 por defecto). Sirve para dejar
     un efecto en una zona discreta: `1,2:reverb:35` = de 0 a 35%.
@@ -109,7 +109,7 @@ def parse_pot_target(target: str) -> tuple | None:
             ci = int(c)
         except ValueError:
             return None
-        if not 0 <= ci < 8:
+        if not 0 <= ci < CHANNEL_COUNT:
             return None
         chans.append(ci)
     if not chans:

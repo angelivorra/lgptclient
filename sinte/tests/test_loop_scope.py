@@ -24,7 +24,7 @@ def _find_playable(engine, track):
     """Devuelve (chain, phrase) reproducibles del canal `track` que tengan
     al menos una nota (para que el loop suene de verdad)."""
     for pos in range(256):
-        chain = engine.project.song[pos * 8 + track]
+        chain = engine.project.song[pos * CHANNEL_COUNT + track]
         if chain == 0xFF:
             continue
         for step in range(16):

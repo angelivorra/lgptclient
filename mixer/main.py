@@ -142,7 +142,7 @@ class MixScope(Widget):
 
 
 class ChannelStrip(BoxLayout):
-    """Strip de un canal tracker (0-7): toggles M/V/P.
+    """Strip de un canal tracker (0-8): toggles M/V/P.
 
     El área que antes ocupaban los sliders de efectos por canal ahora la
     cubre el osciloscopio único de mezcla (`MixScope`, en `MixerRoot`): los
@@ -160,7 +160,7 @@ class KnobWidget(BoxLayout):
     """Knob virtual + a qué canales afecta + qué efecto/parámetro aplica.
 
     param: "off" | "red" | nombre de efecto/parámetro (valve, acid...,
-    tempo, volume...). canales: lista de canales tracker 0-7 seleccionados.
+    tempo, volume...). canales: lista de canales tracker 0-8 seleccionados.
     modo es derivado (color del knob): off / red / target.
     """
     knob_n = NumericProperty(1)     # 1-8, como en el robotraca.json (potN)

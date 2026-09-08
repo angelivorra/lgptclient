@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from kivy.clock import Clock  # noqa: E402
 
 from controls import L2, R2, RIGHT, START  # noqa: E402
-from lgpt_model import CHAIN_LEN, EMPTY  # noqa: E402
+from lgpt_model import CHAIN_LEN, EMPTY, NUM_TRACKS  # noqa: E402
 from songs import DEFAULT_SONGS  # noqa: E402
 
 
@@ -101,7 +101,7 @@ def _test_live_note_robot(app):
     ed = app.editor_screen
     p = ed.song_grid.view.project
     # phrase 0x21 para el canal 8 (track 7) en la fila 1
-    p.song[1 * 8 + 7] = 0x06
+    p.song[1 * NUM_TRACKS + 7] = 0x06
     p.chains[0x06 * CHAIN_LEN + 0] = 0x21
     pg = PhraseGrid()
     pg.set_context(p, 1, 7, 0)
@@ -207,7 +207,7 @@ def _test_paint(app):
             pass
 
     # el canal toca la phrase editada en el step 3 -> pinta ahí
-    app.player = _Player([_Chan(0x22, 3)] * 8)
+    app.player = _Player([_Chan(0x22, 3)] * NUM_TRACKS)
     app._midi_notes = _FakeMidi([(60, 100), (62, 127)])
     app._paint_midi_notes()
     assert pg._note(3) == 62, "nota pintada en el step del playhead"
@@ -217,7 +217,7 @@ def _test_paint(app):
     print("  _paint_midi_notes pinta en el step del playhead OK")
 
     # el canal toca OTRA phrase -> no pinta nada
-    app.player = _Player([_Chan(0x55, 7)] * 8)
+    app.player = _Player([_Chan(0x55, 7)] * NUM_TRACKS)
     app._midi_notes = _FakeMidi([(70, 80)])
     app._paint_midi_notes()
     assert pg._note(7) is None, "no pinta si la phrase que suena no es la editada"
@@ -225,7 +225,7 @@ def _test_paint(app):
     print("  _paint_midi_notes ignora si suena otra phrase OK")
 
     # sin play -> no pinta
-    app.player = _Player([_Chan(0x22, 5)] * 8)
+    app.player = _Player([_Chan(0x22, 5)] * NUM_TRACKS)
     app.player.playing = False
     app._midi_notes = _FakeMidi([(72, 80)])
     app._paint_midi_notes()

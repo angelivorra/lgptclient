@@ -91,9 +91,9 @@
         background_normal: ""
         background_color: (0.3, 0.75, 0.35, 1) if root.modo == "target" else ((0.85, 0.6, 0.12, 1) if root.modo == "red" else (0.2, 0.2, 0.23, 1))
         on_text: app.on_knob_param(root.knob_n, self.text)
-    # a qué canales afecta (1-8)
+    # a qué canales afecta (1-9)
     GridLayout:
-        cols: 8
+        cols: 9
         size_hint_y: None
         height: 22
         spacing: 1
@@ -163,6 +163,14 @@
             background_down: ""
             background_color: (0.3, 0.55, 0.8, 1) if self.state == "down" else (0.22, 0.22, 0.25, 1)
             on_release: app.on_knob_canal(root.knob_n, 7, self.state == "down")
+        ToggleButton:
+            text: "9"
+            font_size: '10sp'
+            state: "down" if 8 in root.canales else "normal"
+            background_normal: ""
+            background_down: ""
+            background_color: (0.3, 0.55, 0.8, 1) if self.state == "down" else (0.22, 0.22, 0.25, 1)
+            on_release: app.on_knob_canal(root.knob_n, 8, self.state == "down")
     # mezcla dry/wet del efecto (0-100%, 100 = igual que sin esto): solo
     # tiene sentido si el knob apunta a un efecto (no off/red/tempo/...)
     BoxLayout:
@@ -305,12 +313,14 @@
             background_color: 0.25, 0.25, 0.28, 1
             on_release: app.actualizar_todas()
 
-    # -- fila central: 8 channel strips (altura fija: solo nombre/pos/M-V-P) --
+    # -- fila central: 9 channel strips (altura fija: solo nombre/pos/M-V-P) --
     BoxLayout:
         id: strips
         size_hint_y: None
         height: 90
         spacing: 4
+        ChannelStrip:
+            canal: 8
         ChannelStrip:
             canal: 0
         ChannelStrip:

@@ -8,8 +8,11 @@ LGPTProject y escribe XML plano. El lector del upstream (y
 comprimido LZ77, así que no hace falta comprimir para que el archivo siga
 abriéndose en LGPT y en sinte.
 
-Los nodos que robotracker no edita (TABLES, GROOVES, INSTRUMENTBANK, MIXER)
-se conservan tal cual del árbol original parseado.
+Los nodos que robotracker no edita (TABLES, GROOVES, MIXER) se conservan
+tal cual del árbol original parseado. INSTRUMENTBANK sí se sincroniza con
+el banco en memoria: actualiza PARAM existentes, quita los INSTRUMENT que
+ya no están (Compact Instruments) y **añade** los IDs nuevos (pista 0
+creada al cargar una canción legacy, u otros inyectados en memoria).
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ import struct
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from lgpt_parser import LGPTProject
+from lgpt_parser import LGPTProject, collapse_song_for_disk
 
 # tag XML -> atributo de LGPTProject con el contenido del buffer
 _BYTE_BUFFERS = {
@@ -32,8 +35,55 @@ _BYTE_BUFFERS = {
 _FOURCC_BUFFERS = {"COMMAND1": "cmd1", "COMMAND2": "cmd2"}
 _SHORT_BUFFERS = {"PARAM1": "param1", "PARAM2": "param2"}
 
+# Orden de PARAM al crear un INSTRUMENT nuevo (el de las canciones LGPT).
+# Las claves que no están aquí se añaden al final, ordenadas.
+_SAMPLE_PARAM_ORDER = (
+    "sample", "volume", "interpol", "crush", "crushdrive", "downsample",
+    "root note", "fine tune", "pan", "filter cut", "filter res",
+    "filter type", "filter mode", "attenuate", "start", "loopmode",
+    "slices", "loopstart", "end", "table", "table automation",
+    "feedback tune", "feedback mix", "print fx", "pad with silence",
+    "effect amount",
+)
+_MIDI_PARAM_ORDER = (
+    "channel", "note length", "volume", "table", "table automation",
+)
+
+
+def _param_order(itype: str, params: dict) -> list[str]:
+    preferred = _MIDI_PARAM_ORDER if itype == "Midi" else _SAMPLE_PARAM_ORDER
+    seen = set()
+    out = []
+    for name in preferred:
+        if name in params:
+            out.append(name)
+            seen.add(name)
+    for name in sorted(params):
+        if name not in seen:
+            out.append(name)
+    return out
+
+
+def _write_instrument_node(parent: ET.Element, iid: int, data: dict) -> None:
+    itype = data.get("type", "Sample")
+    node = ET.SubElement(parent, "INSTRUMENT",
+                         {"ID": f"{iid:02X}", "TYPE": itype})
+    params = data.get("params") or {}
+    for name in _param_order(itype, params):
+        ET.SubElement(node, "PARAM",
+                      {"NAME": name, "VALUE": str(params[name])})
+
+
+def _instrument_id(node: ET.Element) -> int | None:
+    try:
+        return int(node.get("ID"), 16)
+    except (TypeError, ValueError):
+        return None
+
 
 def _encode_buffer(project: LGPTProject, tag: str) -> bytes:
+    if tag == "SONG":
+        return collapse_song_for_disk(project.song)
     if tag in _BYTE_BUFFERS:
         return bytes(getattr(project, _BYTE_BUFFERS[tag]))
     if tag in _FOURCC_BUFFERS:
@@ -93,14 +143,19 @@ def project_to_xml(project: LGPTProject) -> str:
                 ET.SubElement(pn, "DATA").text = b"".join(
                     struct.pack("<H", p) for p in t[pk]).hex().upper()
 
-    # INSTRUMENTBANK: actualiza el VALUE de cada PARAM en sitio desde
-    # project.instrument_bank (preserva estructura y params no editados).
+    # INSTRUMENTBANK: sincroniza con project.instrument_bank.
+    # 1) actualiza VALUE de cada PARAM existente
+    # 2) quita los INSTRUMENT cuyo ID ya no está en el banco (si no, el
+    #    parser los resucita al guardar+recargar, p.ej. Compact Instruments)
+    # 3) añade los IDs del banco que no tenían nodo (pista 0 de canciones
+    #    legacy, u otros creados en memoria)
     bank_node = root.find("INSTRUMENTBANK")
+    if bank_node is None and project.instrument_bank:
+        bank_node = ET.SubElement(root, "INSTRUMENTBANK")
     if bank_node is not None:
         for instr in bank_node.findall("INSTRUMENT"):
-            try:
-                iid = int(instr.get("ID"), 16)
-            except (TypeError, ValueError):
+            iid = _instrument_id(instr)
+            if iid is None:
                 continue
             data = project.instrument_bank.get(iid)
             if not data:
@@ -110,17 +165,25 @@ def project_to_xml(project: LGPTProject) -> str:
                 if name in data["params"]:
                     param.set("VALUE", str(data["params"][name]))
 
-    # quitar los INSTRUMENT cuyo ID ya no está en el banco: si no, sus
-    # nodos quedan con los valores viejos y el parser los resucita al
-    # guardar+recargar (p. ej. tras Compact Instruments).
-    if bank_node is not None:
         for instr in list(bank_node.findall("INSTRUMENT")):
-            try:
-                iid = int(instr.get("ID"), 16)
-            except (TypeError, ValueError):
-                continue
-            if iid not in project.instrument_bank:
+            iid = _instrument_id(instr)
+            if iid is not None and iid not in project.instrument_bank:
                 bank_node.remove(instr)
+
+        existing = {_instrument_id(instr)
+                    for instr in bank_node.findall("INSTRUMENT")}
+        existing.discard(None)
+        for iid in sorted(project.instrument_bank):
+            if iid not in existing:
+                _write_instrument_node(bank_node, iid,
+                                       project.instrument_bank[iid])
+
+        nodes = list(bank_node.findall("INSTRUMENT"))
+        nodes.sort(key=lambda n: _instrument_id(n) if _instrument_id(n)
+                   is not None else 0xFFFF)
+        for n in nodes:
+            bank_node.remove(n)
+            bank_node.append(n)
 
     ET.indent(root, space="    ")
     return ET.tostring(root, encoding="unicode")

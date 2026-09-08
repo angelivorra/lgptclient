@@ -4,7 +4,7 @@ Cuadrícula 2×2 de knobs (POT 1/2 arriba, 5/6 abajo — los del LPD8) más
 GUARDAR. El arco y la aguja siguen el **CC en vivo** del controlador
 (0-127); el campo % sigue siendo la mezcla dry/wet (`fx_mix`).
 
-- CANAL: canal al que afecta (1-8; en el robotraca.json se guarda 0-7),
+- CANAL: canal al que afecta (1-9; en el robotraca.json se guarda 0-8),
   con el icono y el nombre del tipo de esa pista. Si el JSON trae varios
   ("1,2:acid"), se muestra el primero y al editar queda en uno solo.
 - EFECTO: "off" + los de EFFECT_PRESETS. "off" deja el knob sin target.
@@ -32,7 +32,7 @@ from tracks import DEFAULT_TRACKS, kind_at, track_caption
 POT_NOS = [1, 2, 5, 6]              # knobs configurables del controlador
 EFFECT_CYCLE = ["off", *EFFECT_PRESETS]
 COL_HINTS = (
-    "A+dir: cambia CANAL (1–8)",
+    "A+dir: cambia CANAL (1–9)",
     "A+dir: cambia EFECTO · A: lista",
     "A+izq/dcha: % ±1 · A+arr/abj: % ±10",
 )

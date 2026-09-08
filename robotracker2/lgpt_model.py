@@ -5,7 +5,7 @@ SONG da una chain por canal y fila, y cada step de la chain apunta a una
 phrase global de 16 steps. Las tres vistas reusan el mismo widget de
 editor (length/num_tracks/cell + set_* para editar):
 
-- `SongView`: 256 filas × 8 canales de índices de chain.
+- `SongView`: 256 filas × 9 canales de índices de chain.
 - `ChainView`: los 16 steps de la chain de cada canal en una fila de song.
 - `PhraseView`: los 16 steps de la phrase de cada canal en un step de chain.
 
@@ -16,14 +16,51 @@ cosa de `lgpt_writer.save_project` (en sinte).
 from dataclasses import dataclass
 from pathlib import Path
 
-from sinte_bridge import LGPTProject, note_byte_to_name
+from sinte_bridge import (CHANNEL_COUNT, EXTRA_TRACK, LGPTProject,
+                          expand_song, note_byte_to_name)
 from robots import ROBOT_INSTR
+
+# Instrumento 00: las canciones nuevas de LGPT lo traen; las legacy a
+# veces no (p.ej. lgpt_abduccion arranca en 10). El engine usa 00 como
+# last_instr por defecto, y robotracker2 no tiene UI de creación.
+INSTR_0 = 0
+
+# Params de un Sample vacío, alineados con lo que escribe LGPT en el XML
+# para que el roundtrip abra igual en el tracker original.
+SAMPLE_INSTR_DEFAULTS = {
+    "sample": "",
+    "volume": "255",
+    "interpol": "linear",
+    "crush": "16",
+    "crushdrive": "255",
+    "downsample": "0",
+    "root note": "60",
+    "fine tune": "127",
+    "pan": "127",
+    "filter cut": "255",
+    "filter res": "0",
+    "filter type": "0",
+    "filter mode": "original",
+    "attenuate": "255",
+    "start": "0",
+    "loopmode": "none",
+    "slices": "1",
+    "loopstart": "0",
+    "end": "0",
+    "table": "-1",
+    "table automation": "false",
+    "feedback tune": "176",
+    "feedback mix": "0",
+    "print fx": "none",
+    "pad with silence": "0",
+    "effect amount": "0",
+}
 
 EMPTY = 0xFF
 SONG_ROWS = 256
 CHAIN_LEN = 16
 PHRASE_LEN = 16
-NUM_TRACKS = 8
+NUM_TRACKS = CHANNEL_COUNT
 
 NOTE_NAMES = ("C-", "C#", "D-", "D#", "E-", "F-",
               "F#", "G-", "G#", "A-", "A#", "B-")
@@ -162,6 +199,61 @@ def load_project(project_dir: Path) -> LGPTProject:
     return project
 
 
+def _ensure_width(project: LGPTProject):
+    """El buffer SONG en memoria siempre tiene NUM_TRACKS columnas."""
+    project.song = expand_song(project.song)
+
+
+def ensure_track_0(project: LGPTProject) -> bool:
+    """Crea la pista/canal 0 si la canción legacy no lo trae.
+
+    - Instrumento 00 (Sample vacío) si no está en el banco: sin él las
+      notas que heredan `last_instr=0` quedan mudas, y no hay UI para
+      crear instrumentos.
+    - Chain en SONG fila 0 / canal 0 si la columna entera está vacía, para
+      poder entrar en CHAIN/PHRASE de esa pista sin crearla a mano.
+
+    Devuelve True si ha creado algo (en memoria; el writer lo persiste
+    al guardar). No marca dirty: las canciones legacy se parchean cada
+    carga hasta el primer save, sin diálogo de cambios al salir.
+    """
+    _ensure_width(project)
+    created = False
+    if INSTR_0 not in project.instrument_bank:
+        project.instrument_bank[INSTR_0] = {
+            "type": "Sample",
+            "params": dict(SAMPLE_INSTR_DEFAULTS),
+        }
+        created = True
+    col_used = any(
+        project.song[row * NUM_TRACKS + INSTR_0] != EMPTY
+        for row in range(min(SONG_ROWS, len(project.song) // NUM_TRACKS))
+    )
+    if not col_used and project.song:
+        if SongView(project).new_chain(0, INSTR_0) is not None:
+            created = True
+    return created
+
+
+def ensure_extra_track(project: LGPTProject) -> bool:
+    """Crea la novena pista (canal 8) si la columna está vacía.
+
+    Es la pista extra de robotracker (visualmente la primera). Las
+    canciones LGPT de 8 canales llegan sin ella: se asigna una chain
+    vacía en la fila 0 para poder entrar en CHAIN/PHRASE. No marca dirty.
+    """
+    _ensure_width(project)
+    created = False
+    col_used = any(
+        project.song[row * NUM_TRACKS + EXTRA_TRACK] != EMPTY
+        for row in range(min(SONG_ROWS, len(project.song) // NUM_TRACKS))
+    )
+    if not col_used and project.song:
+        if SongView(project).new_chain(0, EXTRA_TRACK) is not None:
+            created = True
+    return created
+
+
 def note_name_to_byte(name: str) -> int:
     """"C-4" -> byte de nota LGPT (inverso de note_byte_to_name)."""
     semi = NOTE_NAMES.index(name[:2])
@@ -184,6 +276,7 @@ def compact_sequencer(project: LGPTProject) -> tuple[int, int]:
     borra in-place (SIN renumerar) las chains que la song no usa y las
     phrases que ninguna chain usada referencia. No toca tables/grooves.
     Devuelve (n_chains, n_phrases) — lo que tenía contenido y se vacía."""
+    _ensure_width(project)
     used_c = set(used_chains(project))
     used_p = {project.chains[c * CHAIN_LEN + s]
               for c in used_c for s in range(CHAIN_LEN)
@@ -229,16 +322,18 @@ def compact_sequencer(project: LGPTProject) -> tuple[int, int]:
 def compact_instruments(project: LGPTProject) -> tuple[int, list[str]]:
     """Compact Instruments, fiel al `Project::PurgeInstruments` original:
     elimina del banco los instrumentos que NINGUNA phrase referencia (se
-    miran TODAS las frases, también las de chains no usadas). ROBOT_INSTR
-    (0x80, canal de robotas) nunca se elimina: robotracker2 no tiene UI de
-    creación de instrumentos y perderlo dejaría el canal mudo para siempre.
+    miran TODAS las frases, también las de chains no usadas). INSTR_0 (00)
+    y ROBOT_INSTR (0x80, canal de robotas) nunca se eliminan: robotracker2
+    no tiene UI de creación de instrumentos y perderlos dejaría la pista 0
+    o el canal de robotas mudo para siempre.
     Devuelve (n_eliminados, wavs_sin_usar) — los .wav de <song>/samples/ que
     ningún instrumento Sample restante referencia (para el borrado opcional
     del disco)."""
+    _ensure_width(project)
     used = {b for b in project.instruments if b != EMPTY}
     n = 0
     for iid in list(project.instrument_bank.keys()):
-        if iid == ROBOT_INSTR or iid in used:
+        if iid in (INSTR_0, ROBOT_INSTR) or iid in used:
             continue
         del project.instrument_bank[iid]
         n += 1
@@ -418,13 +513,14 @@ def cycle_cell(view, row: int, track: int, delta: int, col: str | None = None,
 
 
 class SongView:
-    """Parrilla song completa: 256 filas × 8 canales de chain index."""
+    """Parrilla song completa: 256 filas × 9 canales de chain index."""
 
     length = SONG_ROWS
     num_tracks = NUM_TRACKS
     editable_cols = ("note",)
 
     def __init__(self, project: LGPTProject):
+        _ensure_width(project)
         self.project = project
 
     def chain_at(self, row: int, track: int) -> int:
@@ -459,6 +555,7 @@ class ChainView:
     editable_cols = ("note",)
 
     def __init__(self, project: LGPTProject, song_row: int = 0):
+        _ensure_width(project)
         self.project = project
         self.song_row = song_row
 
@@ -527,6 +624,7 @@ class PhraseView:
 
     def __init__(self, project: LGPTProject, song_row: int = 0,
                  chain_step: int = 0):
+        _ensure_width(project)
         self.project = project
         self.song_row = song_row
         self.chain_step = chain_step

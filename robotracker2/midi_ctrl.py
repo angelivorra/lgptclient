@@ -35,7 +35,8 @@ from pathlib import Path
 from sinte_bridge import EFFECT_PRESETS, _apply_pad_volume, \
     apply_song_config, build_song_pots, load_song_cfg, open_midi_input, \
     parse_button_spec, parse_pot_target, save_song_cfg
-from tracks import cycle_kind, parse_tracks
+from tracks import cycle_kind, parse_tracks, slot_of, track_at_slot
+from lgpt_model import NUM_TRACKS
 
 # Knobs configurables desde la pantalla POTS (los CC del LPD8: pot1/2/5/6).
 POTS_KNOBS = [1, 2, 5, 6]
@@ -205,12 +206,12 @@ class MidiControl:
 
     # -- tipos de pista (pantalla TRACKS) -------------------------------
     def tracks_state(self):
-        """Lista de 8 tipos (drum/bass/...) para SONG/CHAIN/PHRASE/TRACKS."""
+        """Lista de tipos (drum/bass/...) para SONG/CHAIN/PHRASE/TRACKS."""
         return parse_tracks(self._cfg)
 
     def cycle_track_kind(self, track, delta):
-        """Cicla el tipo de la pista `track` (0-7) en memoria."""
-        if self._cfg is None or not 0 <= track < 8:
+        """Cicla el tipo de la pista `track` (0-8) en memoria."""
+        if self._cfg is None or not 0 <= track < NUM_TRACKS:
             return
         kinds = parse_tracks(self._cfg)
         kinds[track] = cycle_kind(kinds[track], delta)
@@ -246,19 +247,22 @@ class MidiControl:
 
     def pots_state(self):
         """[(canal, efecto, pct)] de los knobs 1/2/5/6 para la pantalla
-        POTS (canal 1-8 o None; efecto de EFFECT_PRESETS o None; pct = el
+        POTS (canal 1-9 o None; efecto de EFFECT_PRESETS o None; pct = el
         "fx_mix" de ese canal/efecto, 100 si no hay)."""
         return [self._pot_state(pot) for pot in POTS_KNOBS]
 
     def set_pot_canal(self, pot, delta):
-        """Canal del knob `pot` +/- (cicla 1-8; None empieza en 1 u 8). En
-        memoria ("pots" del robotraca.json como "canal-1:efecto"); si aún
-        no hay efecto elegido, el canal queda en el borrador hasta elegirlo."""
+        """Canal del knob `pot` +/- (cicla en orden visual; None empieza
+        en la primera o la última pista). En memoria ("pots" del
+        robotraca.json como "canal-1:efecto"); si aún no hay efecto
+        elegido, el canal queda en el borrador hasta elegirlo."""
         canal, efecto, _pct = self._pot_state(pot)
+        n = NUM_TRACKS
         if canal is None:
-            canal = 1 if delta > 0 else 8
+            slot = 0 if delta > 0 else n - 1
         else:
-            canal = ((canal - 1 + delta) % 8) + 1
+            slot = (slot_of(canal - 1) + delta) % n
+        canal = track_at_slot(slot) + 1
         self._set_pot(pot, canal, efecto)
 
     def set_pot_efecto(self, pot, delta):

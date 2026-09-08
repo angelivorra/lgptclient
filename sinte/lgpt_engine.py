@@ -42,10 +42,9 @@ import numpy as np
 import soundfile as sf
 
 from chords import chord_intervals, expand_chord_notes
-from lgpt_parser import LGPTProject
+from lgpt_parser import CHANNEL_COUNT, LGPTProject, expand_song
 
 SAMPLE_RATE = 44100
-CHANNEL_COUNT = 8
 MAX_PADS = 8                # pads de sampler (ver wavs_dir/pads.json)
 NETCC_CHANNEL = 9           # canal virtual para CC de pots_red (ver _apply_netcc)
 TICKS_PER_STEP = 6          # AUDIO_SLICES_PER_STEP del upstream
@@ -1249,6 +1248,7 @@ class Engine:
             project = LGPTProject(Path(project))
         if project.root is None:
             project.load()
+        project.song = expand_song(project.song)
         self.project = project
         # Letra sincronizada al ritmo (ver _instrument_command, MDCC
         # control=2): "banco de textos" ya usado por
@@ -2000,13 +2000,13 @@ class Engine:
 
         loop_back = True
         if pos < 256:
-            data = song[pos * 8 + ch.idx]
+            data = song[pos * CHANNEL_COUNT + ch.idx]
             loop_back = data == 0xFF or chains[data * 16] == 0xFF
         if loop_back:
             # Vuelve al principio del bloque contiguo actual (loop de sección)
             pos -= 1
             while pos >= 0:
-                data = song[pos * 8 + ch.idx]
+                data = song[pos * CHANNEL_COUNT + ch.idx]
                 if data == 0xFF or chains[data * 16] == 0xFF:
                     break
                 pos -= 1
@@ -2017,12 +2017,12 @@ class Engine:
             self._stop_channel(ch)
 
     def _is_playable(self, pos: int, ci: int) -> bool:
-        chain = self.project.song[pos * 8 + ci]
+        chain = self.project.song[pos * CHANNEL_COUNT + ci]
         return chain != 0xFF and self.project.chains[chain * 16] != 0xFF
 
     def _set_song_pos(self, ch: Channel, pos: int, chain_pos: int, hop: int):
         ch.song_pos = pos
-        ch.chain = self.project.song[pos * 8 + ch.idx]
+        ch.chain = self.project.song[pos * CHANNEL_COUNT + ch.idx]
         self._set_chain_pos(ch, chain_pos, hop)
 
     def _set_chain_pos(self, ch: Channel, pos: int, hop: int):

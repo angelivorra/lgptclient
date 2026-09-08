@@ -1,9 +1,10 @@
 """Pantalla TRACKS: tipo (icono + nombre) de cada pista, por canción.
 
-Ocho filas (canales 1-8) más GUARDAR. Cada pista elige un tipo de
-`TRACK_KINDS` (drum / bass / synth / noise / robot / vocoder): el icono
-y el nombre van juntos. Se persiste en la clave "tracks" del
-robotraca.json; vive en memoria hasta la fila GUARDAR o Guardar canción.
+Nueve filas (la extra primero, vocoder y robot al final) más GUARDAR.
+Cada pista elige un tipo de `TRACK_KINDS` (drum / bass / synth / noise /
+robot / vocoder): el icono y el nombre van juntos. Se persiste en la
+clave "tracks" del robotraca.json; vive en memoria hasta la fila GUARDAR
+o Guardar canción.
 
 Controles (los resuelve la app en `_dispatch_tracks`):
 
@@ -22,7 +23,7 @@ from screens.track_icons import draw_track_icon
 from theme import (COLOR_ACCENT, COLOR_BG, COLOR_HINT, COLOR_HINT_BG,
                    COLOR_NAME, COLOR_OK, COLOR_ROW_CURSOR, COLOR_SONG_TRACK,
                    core_label)
-from tracks import DEFAULT_TRACKS, TRACK_KINDS, track_caption
+from tracks import DEFAULT_TRACKS, TRACK_KINDS, track_at_slot, track_caption
 
 ROW_H = dp(44)
 FONT = dp(18)
@@ -58,9 +59,10 @@ class TracksGrid(Widget):
         """Cicla el tipo de la pista del cursor. False en la fila GUARDAR."""
         if not 0 <= self.cursor < NUM_TRACKS:
             return False
-        i = TRACK_KINDS.index(self.kinds[self.cursor]) \
-            if self.kinds[self.cursor] in TRACK_KINDS else 0
-        self.kinds[self.cursor] = TRACK_KINDS[(i + delta) % len(TRACK_KINDS)]
+        t = track_at_slot(self.cursor)
+        i = TRACK_KINDS.index(self.kinds[t]) \
+            if self.kinds[t] in TRACK_KINDS else 0
+        self.kinds[t] = TRACK_KINDS[(i + delta) % len(TRACK_KINDS)]
         self._redraw()
         return True
 
@@ -99,8 +101,9 @@ class TracksGrid(Widget):
             avail = top - ROW_H - HINT_H - dp(8)
             row_h = min(ROW_H, max(dp(28), avail / (NUM_TRACKS + 1)))
             y = top - ROW_H - row_h
-            for t in range(NUM_TRACKS):
-                selected = t == self.cursor
+            for slot in range(NUM_TRACKS):
+                t = track_at_slot(slot)
+                selected = slot == self.cursor
                 if selected:
                     Color(*COLOR_ROW_CURSOR)
                     Rectangle(pos=(x0, y), size=(w, row_h))
@@ -112,10 +115,10 @@ class TracksGrid(Widget):
                     RoundedRectangle(pos=(x0 + dp(6), y + dp(7)),
                                      size=(w - dp(12), row_h - dp(14)),
                                      radius=[dp(4)])
-                Color(*COLOR_SONG_TRACK[t])
+                Color(*COLOR_SONG_TRACK[slot % len(COLOR_SONG_TRACK)])
                 Rectangle(pos=(x0, y + dp(6)), size=(dp(4), row_h - dp(12)))
                 ink = COLOR_ACCENT if selected else COLOR_NAME
-                kind = self.kinds[t]
+                kind = self.kinds[t] if t < len(self.kinds) else DEFAULT_TRACKS[t]
                 s = row_h * 0.62
                 draw_track_icon(x0 + dp(28) + s / 2, y + row_h / 2, s, kind,
                                 ink, bg=COLOR_ROW_CURSOR if selected
