@@ -44,6 +44,11 @@ KEYBOARD_KEYCODES = {
     305: L2,            # Ctrl izquierdo = L2 (mute)
 }
 
+# Intro no es un botón LGPT: en PC, Ctrl+Intro alterna pantalla completa.
+KEY_ENTER = 13
+KEY_KP_ENTER = 271          # Intro del teclado numérico
+KEY_ENTERS = frozenset({KEY_ENTER, KEY_KP_ENTER})
+
 
 def key_to_button(keycode, codepoint=None):
     """Traduce un evento de teclado a un botón lógico (o None). Se resuelve por

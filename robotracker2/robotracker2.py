@@ -41,9 +41,9 @@ from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.screenmanager import ScreenManager, NoTransition
 
 from config import load_config, save_config
-from controls import (A, B, BACK, DOWN, DPAD, L2, LEFT, R2, RIGHT, SELECT,
-                      START, UP, GAMEPAD_BUTTONS, hat_to_buttons, key_to_button,
-                      trigger_axis_buttons)
+from controls import (A, B, BACK, DOWN, DPAD, KEY_ENTERS, L2, LEFT, R2,
+                      RIGHT, SELECT, START, UP, GAMEPAD_BUTTONS,
+                      hat_to_buttons, key_to_button, trigger_axis_buttons)
 from lgpt_model import (EMPTY, NUM_TRACKS, compact_instruments,
                         compact_sequencer, ensure_extra_track,
                         ensure_track_0)
@@ -120,6 +120,7 @@ class Robotracker2App(App):
         self._mute_dirty = False   # mute de canales sin guardar (robotraca)
         self.fullscreen = fullscreen
         self.held = set()          # botones lógicos pulsados ahora
+        self._pc_keys = set()     # teclas PC no-LGPT (p.ej. Intro) pulsadas
         self._trig_buttons = set()  # gatillos (ejes) actualmente "pulsados"
         self._ev_pad = None       # GamepadReader evdev (modo Odin) o None
         self.dirty = False
@@ -201,7 +202,12 @@ class Robotracker2App(App):
     # ------------------------------------------------------------------
     # Entrada -> botones lógicos
     # ------------------------------------------------------------------
-    def _on_key_down(self, _win, key, _scancode, codepoint, _modifiers):
+    def _on_key_down(self, _win, key, _scancode, codepoint, modifiers):
+        if self._pc_ctrl_enter(key, modifiers):
+            if key not in self._pc_keys:
+                self._pc_keys.add(key)
+                self._toggle_fullscreen()
+            return True
         button = key_to_button(key, codepoint)
         if button is None:
             return False
@@ -213,10 +219,30 @@ class Robotracker2App(App):
         return self._dispatch(button, set(self.held))
 
     def _on_key_up(self, _win, key, *_):
+        if key in KEY_ENTERS:
+            self._pc_keys.discard(key)
+            return False
         button = key_to_button(key)
         if button is not None:
             self._release(button)
         return False
+
+    def _pc_ctrl_enter(self, key, modifiers):
+        """Ctrl+Intro en PC (no en la Odin: ya va a pantalla completa)."""
+        if os.environ.get("ROBOTRACKER2_EVDEV_GAMEPAD"):
+            return False
+        if key not in KEY_ENTERS:
+            return False
+        mods = modifiers or ()
+        return L2 in self.held or R2 in self.held or "ctrl" in mods
+
+    def _toggle_fullscreen(self):
+        if Window.fullscreen:
+            Window.fullscreen = False
+            self.fullscreen = False
+        else:
+            Window.fullscreen = "auto"
+            self.fullscreen = True
 
     def _on_joy_button_down(self, _win, _stick, buttonid):
         button = GAMEPAD_BUTTONS.get(buttonid)

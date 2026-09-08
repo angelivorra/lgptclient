@@ -246,7 +246,8 @@ pantalla, B = borrar, START = play, BACK = volver) es fija.
 - **PC (teclado)**: flechas = dpad, `A` = A, `S` = B, **`Ctrl` izquierdo = L2**
   (navegar entre pantallas con dpad; mute con S), **`Ctrl` derecho = R2**
   (selección: cut/paste, ciclar selección), `Espacio` = START, `Esc` = BACK,
-  `Supr/Retroceso` = B. **R2+START** (Ctrl derecho + Espacio) alterna el
+  `Supr/Retroceso` = B. **Ctrl+Intro** alterna pantalla completa.
+  **R2+START** (Ctrl derecho + Espacio) alterna el
   **pintado MIDI en vivo** en PHRASE (ver arriba).
 - **Odin 2 Portal (gamepad)**: ROCKNIX (InputPlumber) oculta el mando a SDL;
   **toda la entrada la lee la app por evdev** del DualSense virtual de
@@ -383,8 +384,9 @@ cd /home/angel/git/lgptclient
 robotracker2/.venv/bin/python robotracker2/robotracker2.py [--songs RUTA]
 ```
 
-En **PC arranca en ventana** (1280×720). Con `--fullscreen` (o
-`ROBOTRACKER2_FULLSCREEN=1`) va a pantalla completa; así lo lanza la Odin.
+En **PC arranca en ventana** (1280×720). **Ctrl+Intro** alterna pantalla
+completa (también `--fullscreen` o `ROBOTRACKER2_FULLSCREEN=1`; así lo
+lanza la Odin).
 
 ## Odin 2 Portal (ROCKNIX)
 
