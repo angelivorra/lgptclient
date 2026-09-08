@@ -66,7 +66,7 @@ NOTE_NAMES = ("C-", "C#", "D-", "D#", "E-", "F-",
               "F#", "G-", "G#", "A-", "A#", "B-")
 
 # Comandos fx soportados por el engine de sinte (fourcc, 4 chars).
-FX_COMMANDS = ("VOLM", "KILL", "DLAY", "LEGA", "TABL", "STOP",
+FX_COMMANDS = ("VOLM", "KILL", "DLAY", "LEGA", "SLID", "TABL", "STOP",
                "HOP ", "MDCC", "MDPG", "MVEL", "CHRD")
 FX_EMPTY = "----"
 

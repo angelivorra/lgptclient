@@ -5,7 +5,8 @@ cabecera del editor (navmap).
 Sin app para el historial (SampleBrowser es autónomo): entrar por A en
 dos carpetas y volver/avanzar con las flechas debe recordar el camino y
 la posición del cursor en cada carpeta; una rama nueva mata el historial
-"hacia delante". Los indicadores del ImageBrowser se comprueban por sus
+"hacia delante". Al reabrir, `start_cwd` restaura la última carpeta.
+Los indicadores del ImageBrowser se comprueban por sus
 flags de scroll (`_scroll_flags`, lo que enciende/apaga los triángulos),
 y el dispatch izq/dcha de la app no debe romper ImageBrowser.
 """
@@ -103,6 +104,33 @@ def _browser_sueltos():
         b3.activate()
         assert loaded == ["hit.wav"], loaded
         print("  A sobre un wav carga (sin doble-tap) OK")
+
+        # reabrir en la última carpeta (start_cwd) y cursor
+        (root / "drums").mkdir()
+        (root / "drums" / "kick.wav").write_bytes(b"x")
+        (root / "other").mkdir()
+        b4 = SampleBrowser(root, on_load=None, on_close=None,
+                           start_cwd=root / "drums")
+        assert b4.cwd.name == "drums", b4.cwd
+        assert [p.name for p in b4.entries] == ["kick.wav"], b4.entries
+        print("  start_cwd abre en esa carpeta OK")
+
+        b5 = SampleBrowser(root, on_load=None, on_close=None,
+                           start_cwd=root / "nope")
+        assert b5.cwd == root, b5.cwd
+        print("  start_cwd inexistente cae a la raíz OK")
+
+        b6 = SampleBrowser(root / "drums", on_load=None, on_close=None,
+                           start_cwd=root / "other")
+        assert b6.cwd == root / "drums", b6.cwd
+        print("  start_cwd fuera del root se ignora OK")
+
+        # dos wavs: restaurar el cursor en el segundo
+        (root / "drums" / "snare.wav").write_bytes(b"x")
+        b7 = SampleBrowser(root / "drums", on_load=None, on_close=None,
+                           start_index=1)
+        assert b7.selected().name == "snare.wav", b7.selected()
+        print("  start_index restaura el cursor OK")
 
 
 def _indicadores_screens():
@@ -269,6 +297,15 @@ def _dispatch_flechas(app):
         app._dispatch_browser(RIGHT)     # delante
         assert app.browser.cwd.name == "d"
         print("  dispatch: flechas en el navegador de samples OK")
+
+        # la app recuerda la carpeta al cerrar y la restaura al reabrir
+        app._browser_cwd.clear()
+        app._remember_sample_browser()
+        kw = app._sample_browser_start(tmp)
+        assert kw["start_cwd"].name == "d", kw
+        b_reopen = SampleBrowser(tmp, on_load=None, on_close=None, **kw)
+        assert b_reopen.cwd.name == "d", b_reopen.cwd
+        print("  reabrir conserva la última carpeta OK")
 
 
 def main():

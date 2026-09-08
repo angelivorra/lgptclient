@@ -1,9 +1,10 @@
-"""Entrada MIDI de notas para pintar en vivo en la phrase.
+"""Entrada MIDI de notas para pintar en vivo en la phrase y preview.
 
-Envuelve `mido.open_input` en un hilo daemon propio: los `note_on` llegan a
-una cola y la app los drena desde su hilo principal (Kivy Clock), así no hay
-acceso cruzado a la UI ni bloqueos, y no se depende del hilo interno que cada
-backend de mido pueda (o no) arrancar al usar callback.
+Envuelve `mido.open_input` en un hilo daemon propio: los `note_on` /
+`note_off` llegan a una cola y la app los drena desde su hilo principal
+(Kivy Clock), así no hay acceso cruzado a la UI ni bloqueos, y no se
+depende del hilo interno que cada backend de mido pueda (o no) arrancar
+al usar callback.
 """
 
 import queue
@@ -21,12 +22,31 @@ def midi_input_names() -> list[str]:
         return []
 
 
+def midi_note_event(msg):
+    """Convierte un mensaje mido en `("on", nota, vel)` / `("off", nota, 0)`.
+
+    `note_on` con velocity 0 es note off (running status). El resto de
+    tipos (CC, program change, …) se ignoran.
+    """
+    typ = getattr(msg, "type", None)
+    if typ == "note_on":
+        note = int(msg.note) & 0x7F
+        vel = int(msg.velocity) & 0x7F
+        if vel > 0:
+            return ("on", note, vel)
+        return ("off", note, 0)
+    if typ == "note_off":
+        return ("off", int(msg.note) & 0x7F, 0)
+    return None
+
+
 class MidiNotesInput:
-    """Cola de notas MIDI (note_on) desde la interfaz configurada.
+    """Cola de notas MIDI desde la interfaz configurada.
 
     `open_port` arranca un hilo daemon que lee el puerto sin bloquear
-    (`iter_pending`) y encola `(nota, velocity)`. `poll` drena la cola desde
-    el hilo principal. `close` corta, para el hilo y limpia lo pendiente.
+    (`iter_pending`) y encola `("on", nota, vel)` / `("off", nota, 0)`.
+    `poll` drena la cola desde el hilo principal. `close` corta, para el
+    hilo y limpia lo pendiente.
     """
 
     def __init__(self):
@@ -63,14 +83,15 @@ class MidiNotesInput:
                 for msg in port.iter_pending():
                     if self._stop.is_set():
                         return
-                    if msg.type == "note_on" and msg.velocity > 0:
-                        self._queue.put((msg.note & 0x7F, msg.velocity & 0x7F))
+                    ev = midi_note_event(msg)
+                    if ev is not None:
+                        self._queue.put(ev)
             except Exception:               # noqa: BLE001
                 return                      # puerto roto/cerrado
             self._stop.wait(POLL_SLEEP)
 
-    def poll(self) -> list[tuple[int, int]]:
-        """Drena la cola: devuelve las notas pendientes (nota, velocity)."""
+    def poll(self) -> list[tuple[str, int, int]]:
+        """Drena la cola: eventos `("on", nota, vel)` / `("off", nota, 0)`."""
         notes = []
         while True:
             try:

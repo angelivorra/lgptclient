@@ -15,8 +15,9 @@ Réplica en Python/numpy del comportamiento del reproductor original
     re-lee en cada trigger y en cada bloque de render, así la edición en
     el editor (robotracker2/mixer) se oye al instante, también en la nota
     que está sonando.
-  - Comandos: VOLM, KILL, DLAY, LEGA, TABL, STOP, HOP, CHRD
+  - Comandos: VOLM, KILL, DLAY, LEGA, SLID, TABL, STOP, HOP, CHRD
     (acorde sobre la nota de la fila: samples polifónicos, MIDI y vocoder).
+    SLID desliza el pitch hasta una nota destino en N steps de phrase.
   - Tablas (1 fila por tick, 3 columnas de comandos).
   - Instrumentos MIDI (0x80-0x8F) y comandos MDCC/MDPG/MVEL: se emiten a
     un sink MidiOut (puerto MIDI real en el reproductor).
@@ -49,6 +50,22 @@ MAX_PADS = 8                # pads de sampler (ver wavs_dir/pads.json)
 NETCC_CHANNEL = 9           # canal virtual para CC de pots_red (ver _apply_netcc)
 TICKS_PER_STEP = 6          # AUDIO_SLICES_PER_STEP del upstream
 KRATE = 100                 # KRATE_SAMPLE_COUNT del upstream
+SLID_STEPS_MAX = 16         # duración máxima del slide (steps de phrase)
+
+
+def slid_pack(note: int, steps: int) -> int:
+    """Param de SLID: byte alto = nota destino 0-127, bajo = steps 1-16."""
+    return ((int(note) & 0x7F) << 8) | max(1, min(SLID_STEPS_MAX, int(steps)))
+
+
+def slid_unpack(param: int) -> tuple[int, int]:
+    note = (int(param) >> 8) & 0x7F
+    steps = int(param) & 0xFF
+    if steps < 1:
+        steps = 1
+    elif steps > SLID_STEPS_MAX:
+        steps = SLID_STEPS_MAX
+    return note, steps
 # Anti-click: micro-rampa al cortar una voz (nota nueva) o al saltar el
 # volumen de golpe (VOLM con velocidad 0). No es un efecto: solo evita el
 # chasquido del salto brusco de amplitud. ~4 ms es inaudible como fundido.
@@ -408,6 +425,30 @@ class Voice:
         else:
             step = 1.0 + 0.5 / ss
             self.lega_step = step if target > init else 1.0 / step
+
+    def set_slid(self, value: int):
+        """SLID nntt: desliza el pitch hasta la nota nn en tt steps.
+
+        A diferencia de LEGA (velocidad de glide fija), aquí tt es la
+        duración: el ratio llega a la nota destino en exactamente ese
+        número de steps de phrase. Se reusa la rampa LEGA (un glide a la
+        vez). Reaplicar el mismo SLID en ticks siguientes no reinicia.
+        """
+        dest, steps = slid_unpack(value)
+        target = 2.0 ** ((dest - self.note) / 12.0)
+        already = abs(self.lega_target - target) < 1e-9
+        if already and (self.lega_step is not None
+                        or abs(self.lega_ratio - target) < 1e-9):
+            return
+        init = max(float(self.lega_ratio), 1e-12)
+        self.lega_target = target
+        if abs(init - target) < 1e-9:
+            self.lega_ratio = target
+            self.lega_step = None
+            return
+        n_samples = steps * TICKS_PER_STEP * self._samples_per_tick
+        updates = max(1.0, n_samples / float(KRATE))
+        self.lega_step = (target / init) ** (1.0 / updates)
 
     def set_ptch(self, value: int):
         """PTCH ssnn: transpone el sample nn semitonos (con signo) rampando
@@ -1356,6 +1397,11 @@ class Engine:
         self.pad_voice: Optional[Voice] = None
         self.pad_volume_default = 0.6       # volumen por defecto (0-1)
         self.pad_volume_map: dict[int, float] = {}   # por pad (índice)
+        # Preview del editor (teclado MIDI en INSTRUMENT): suena directo,
+        # como los pads, sin delay ni FX de canal. Polifónico por nota.
+        self.preview_voices: dict[int, Voice] = {}
+        self.preview_releases: list[Voice] = []
+        self.preview_midi: dict[int, MidiDef] = {}
         if self.wavs_dir:
             self._load_pad_samples(self.wavs_dir)
 
@@ -1533,6 +1579,7 @@ class Engine:
         o salir)."""
         for ch in self.channels:
             self._midi_stop_note(ch)
+        self._preview_all_off()
 
     def push_event(self, *event):
         """Encola un evento externo (MIDI, teclado). Thread-safe."""
@@ -1643,6 +1690,7 @@ class Engine:
                 pv.render(out, 0, frames)
             if not pv.active:
                 self.pad_voice = None
+        self._render_preview(out, frames)
         if self.master_chain is not None:
             self.master_chain.apply(out)
         np.clip(out, -1.0, 1.0, out=out)
@@ -1811,6 +1859,12 @@ class Engine:
                 self._apply_netcc(ev[1], ev[2])
             elif kind == "trigger":
                 self._trigger_pad(ev[1])
+            elif kind == "preview_on":
+                self._preview_note_on(ev[1], ev[2], ev[3])
+            elif kind == "preview_off":
+                self._preview_note_off(ev[1])
+            elif kind == "preview_off_all":
+                self._preview_all_off()
             elif kind == "mute":
                 # mute en vivo (app mixer): mismo efecto que el campo "mute"
                 # del robotraca.json al cargar la canción
@@ -2215,6 +2269,71 @@ class Engine:
         self.pad_voice = Voice(Sample(sample, sr), idef, 60, None, self.sr,
                                self.samples_per_tick)
 
+    def _preview_note_on(self, iid: int, note: int, vel: int):
+        """Dispara una nota del instrumento `iid` (teclado MIDI en el editor).
+
+        Polifónico: cada MIDI note number tiene su voz. Re-pulsar la misma
+        nota corta la anterior con declick. Sample suena local; Midi sale
+        por `midi_out` si hay puerto."""
+        note = int(note) & 0x7F
+        vel = max(1, min(127, int(vel)))
+        self._preview_note_off(note)
+        bank = self.project.instrument_bank.get(int(iid))
+        if bank is None:
+            return
+        if bank.get("type") == "Sample":
+            idef = parse_instrument(int(iid), bank["params"])
+            sample = self.bank.get(idef.sample_name)
+            if sample is None:
+                return
+            v = Voice(sample, idef, note, int(iid), self.sr,
+                      self.samples_per_tick)
+            # vel 127 -> volumen del instrumento; escala como VOLM (vel*2)
+            v.vol_cur = v.vol_target = float(min(255, vel * 2))
+            self.preview_voices[note] = v
+        elif bank.get("type") == "Midi":
+            mdef = parse_midi_instrument(int(iid), bank["params"])
+            if self.midi_out is not None:
+                vol = int((mdef.volume + 0.99) / 2)
+                self.midi_out.cc(mdef.channel, 7, vol)
+                self.midi_out.note_on(mdef.channel, note, vel)
+            self.preview_midi[note] = mdef
+
+    def _preview_note_off(self, note: int):
+        note = int(note) & 0x7F
+        v = self.preview_voices.pop(note, None)
+        if v is not None:
+            v.start_release()
+            self.preview_releases.append(v)
+            if len(self.preview_releases) > 24:
+                self.preview_releases[:] = self.preview_releases[-24:]
+        mdef = self.preview_midi.pop(note, None)
+        if mdef is not None and self.midi_out is not None:
+            self.midi_out.note_off(mdef.channel, note)
+
+    def _preview_all_off(self):
+        for n in list(self.preview_voices):
+            self._preview_note_off(n)
+        for n in list(self.preview_midi):
+            self._preview_note_off(n)
+
+    def _render_preview(self, out: np.ndarray, frames: int):
+        dead = []
+        for n, v in self.preview_voices.items():
+            if v.active:
+                v.render(out, 0, frames)
+            if not v.active:
+                dead.append(n)
+        for n in dead:
+            self.preview_voices.pop(n, None)
+        still = []
+        for v in self.preview_releases:
+            if v.active:
+                v.render(out, 0, frames)
+            if v.active:
+                still.append(v)
+        self.preview_releases = still
+
     def _process_row_commands(self, ch: Channel):
         if not ch.playing or ch.phrase == 0xFF:
             return
@@ -2244,7 +2363,8 @@ class Engine:
                     self._set_groove(c, groove)
             else:
                 self._set_groove(ch, groove)
-        elif cmd in ("VOLM", "LEGA", "PTCH", "PFIN", "MDCC", "MDPG", "MVEL"):
+        elif cmd in ("VOLM", "LEGA", "SLID", "PTCH", "PFIN", "MDCC", "MDPG",
+                     "MVEL"):
             self._instrument_command(ch, cmd, param)
         else:
             self.unsupported_cmds.add(cmd)
@@ -2257,6 +2377,9 @@ class Engine:
                 elif cmd == "LEGA":
                     if i == 0:          # glide solo de la raíz
                         v.set_lega(param, ch.last_note)
+                elif cmd == "SLID":
+                    if i == 0:
+                        v.set_slid(param)
                 elif cmd == "PTCH":
                     v.set_ptch(param)
                 elif cmd == "PFIN":

@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from kivy.clock import Clock  # noqa: E402
 
-from controls import RIGHT  # noqa: E402
+from controls import A, B, DOWN, RIGHT, UP  # noqa: E402
 from screens.phrase_view import FX_USED  # noqa: E402
 
 
@@ -42,6 +42,66 @@ def _run(app):
     assert pg._prm(0, 1) == 1
     assert pg._field_text(0, 3).strip() == "min"
     print("  CHRD cicla tipos maj/min en PHRASE OK")
+
+    # A+arr/abj sobre el comando abre la lista con explicación
+    pg.cursor_col = 2
+    pg.edit(UP)
+    assert pg.fx_picker is not None, "A+arr abre el picker de FX"
+    assert pg.fx_commands[pg.fx_picker] == "CHRD", pg.fx_commands[pg.fx_picker]
+    pg.fx_picker_move(-1)                   # CHRD -> SLID
+    assert pg.fx_commands[pg.fx_picker] == "SLID"
+    pg.apply_fx_picker()
+    assert pg.fx_picker is None
+    assert pg._cmd(0, 1) == "SLID", pg._cmd(0, 1)
+    print("  picker de FX: A+arr abre, A elige OK")
+
+    pg.edit(DOWN)
+    assert pg.fx_picker is not None
+    before = pg._cmd(0, 1)
+    pg.close_fx_picker()
+    assert pg.fx_picker is None
+    assert pg._cmd(0, 1) == before, "B/cancelar no cambia el comando"
+    print("  picker de FX: cancelar no cambia el comando OK")
+
+    # A+izq/dcha sigue ciclando sin abrir la lista
+    pg.edit(RIGHT)
+    assert pg.fx_picker is None
+    assert pg._cmd(0, 1) == "CHRD", pg._cmd(0, 1)
+    print("  A+dcha cicla FX sin abrir el picker OK")
+
+    # dispatch: A+arr abre; arr/abj mueve; A aplica; B cierra
+    pg.edit(RIGHT)                          # CHRD -> VOLM (wrap)
+    assert pg._cmd(0, 1) == FX_USED[0]
+    app._dispatch(UP, {UP, A})
+    assert pg.fx_picker == 0, pg.fx_picker
+    app._dispatch(DOWN, {DOWN})
+    assert pg.fx_commands[pg.fx_picker] == FX_USED[1]
+    app._dispatch(A, {A})
+    assert pg.fx_picker is None
+    assert pg._cmd(0, 1) == FX_USED[1]
+    app._dispatch(UP, {UP, A})
+    app._dispatch(B, {B})
+    assert pg.fx_picker is None
+    assert pg._cmd(0, 1) == FX_USED[1]
+    print("  dispatch A+arr / A / B del picker OK")
+
+    # SLID: param visible como "nota steps"; A+izq/dcha nota, A+arr/abj tiempo
+    from sinte_bridge import note_byte_to_name, slid_pack, slid_unpack
+    pg.pv.set_fx_cmd(0, t, 1, "SLID")
+    pg.pv.set_fx_param(0, t, 1, slid_pack(72, 4))
+    pg.cursor_col = 3                       # fx1prm
+    assert pg._field_text(0, 3) == f"{note_byte_to_name(72)} 04", \
+        pg._field_text(0, 3)
+    pg.edit(RIGHT)                          # nota +1
+    note, steps = slid_unpack(pg._prm(0, 1))
+    assert note == 73 and steps == 4, (note, steps)
+    pg.edit(UP)                             # tiempo +1
+    note, steps = slid_unpack(pg._prm(0, 1))
+    assert note == 73 and steps == 5, (note, steps)
+    pg.edit(DOWN)
+    note, steps = slid_unpack(pg._prm(0, 1))
+    assert steps == 4
+    print("  SLID muestra nota+tiempo y se edita por ejes OK")
 
 
 def main():

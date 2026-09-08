@@ -5,8 +5,9 @@ Arr/abj mueve; al pasar por un .wav se **previsualiza**; **A** (`activate()`)
 entra en la carpeta o **carga** el sample (copia a la canción y lo asigna);
 **B/Cancelar** sube de carpeta (o cierra en la raíz). Las flechas izq/dcha
 van **atrás/adelante por el historial de carpetas** con memoria, recordando
-la posición del cursor en cada carpeta. Si falla la preview, `on_toast`
-muestra el error (la app pasa el toast del editor).
+la posición del cursor en cada carpeta. Al reabrir se restaura la última
+carpeta (`start_cwd`). Si falla la preview, `on_toast` muestra el error
+(la app pasa el toast del editor).
 """
 
 from pathlib import Path
@@ -28,10 +29,11 @@ ACTIONS = [("A", "Elegir"), ("B", "Cancelar")]
 
 
 class SampleBrowser(Widget):
-    def __init__(self, root, on_load=None, on_close=None, on_toast=None, **kw):
+    def __init__(self, root, on_load=None, on_close=None, on_toast=None,
+                 start_cwd=None, start_index=0, start_top_idx=0, **kw):
         super().__init__(**kw)
         self.root = Path(root)
-        self.cwd = self.root
+        self.cwd = self._valid_cwd(start_cwd)
         self.on_load = on_load
         self.on_close = on_close
         self.on_toast = on_toast
@@ -42,10 +44,34 @@ class SampleBrowser(Widget):
         self._fwd = []      # historial hacia delante (para la flecha dcha)
         self._tex = {}
         self.bind(pos=self._redraw, size=self._redraw)
-        self._scan()
+        self._scan(preview=False)
+        if self.entries:
+            self.index = min(max(0, start_index), len(self.entries) - 1)
+            self.top_idx = max(0, min(start_top_idx,
+                                      max(0, len(self.entries) - 1)))
+            self._ensure_visible()
+        self._preview_selection()
+        self._redraw()
+
+    def _valid_cwd(self, start_cwd):
+        """Carpeta inicial si sigue existiendo y cuelga de `root`; si no, raíz."""
+        if start_cwd is None:
+            return self.root
+        path = Path(start_cwd)
+        if not path.is_dir():
+            return self.root
+        try:
+            path.relative_to(self.root)
+            return path
+        except ValueError:
+            try:
+                path.resolve().relative_to(self.root.resolve())
+                return path
+            except (ValueError, OSError):
+                return self.root
 
     # -- navegación de carpetas ----------------------------------------
-    def _scan(self):
+    def _scan(self, preview=True):
         try:
             items = list(self.cwd.iterdir())
         except OSError:
@@ -58,7 +84,8 @@ class SampleBrowser(Widget):
         self.entries = dirs + wavs
         self.index = 0
         self.top_idx = 0
-        self._preview_selection()
+        if preview:
+            self._preview_selection()
         self._redraw()
 
     def selected(self):

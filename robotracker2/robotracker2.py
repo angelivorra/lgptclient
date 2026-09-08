@@ -112,6 +112,9 @@ class Robotracker2App(App):
         self.images_dir = Path(images_dir)
         self.ayuda_dir = Path(ayuda_dir)
         self.browser = None        # SampleBrowser/ImageBrowser activo (o None)
+        # Última carpeta (y cursor) del SampleBrowser, por raíz: al reabrir
+        # INSTRUMENT/PADS se vuelve a la carpeta en la que estábamos.
+        self._browser_cwd = {}
         self._screen_step = None   # step de PHRASE que se está editando
         self._pads_pad = None      # pad (1-4) al que apunta el navegador PADS
         self._pads_dirty = False   # pads de la canción sin guardar (memoria)
@@ -137,6 +140,9 @@ class Robotracker2App(App):
         self.midi_live = False     # pintado MIDI en vivo en PHRASE (R2+START)
         self._midi_notes = MidiNotesInput()
         self._midi_ctrl = None     # controlador MIDI (botones+knobs, mixer)
+        self._instr_preview = False   # teclado MIDI suena en INSTRUMENT
+        self._preview_held = {}       # nota -> vel (teclas aún pulsadas)
+        self._midi_notes_retry = 0.0  # monotonic: reintento de abrir puerto
 
     def build(self):
         setup_window(self.fullscreen)
@@ -386,7 +392,18 @@ class Robotracker2App(App):
     def _dispatch_editor(self, button, active):
         ed = self.editor_screen
         # Navegación entre pantallas (global en el editor): L2 (Ctrl izq) + dpad.
+        # En INSTRUMENT, con el foco en el ID del instrumento el mismo combo
+        # recorre el banco (izq/dcha ±1, arr/abj ±16). En cualquier otro
+        # campo (el nombre del sample, volumen, …) vuelve a cambiar de
+        # pantalla: Ctrl+izq a PHRASE, Ctrl+abj a TABLE.
         if button in DPAD and L2 in active:
+            if (ed.current == "instrument"
+                    and ed.instrument_menu.field_key() == "__instr__"):
+                d = 1 if button in (RIGHT, UP) else -1
+                ed.instrument_menu.cycle_instrument(
+                    d, coarse=button in (UP, DOWN))
+                self._retrigger_preview()
+                return True
             ed.navigate(*NAV_DELTA[button])
             return True
         if button == START:                 # play/stop (global en el editor)
@@ -608,7 +625,8 @@ class Robotracker2App(App):
         self._open_browser(SampleBrowser(
             root, on_load=self._pads_sample_loaded,
             on_close=self._close_browser,
-            on_toast=self.editor_screen.toast_msg))
+            on_toast=self.editor_screen.toast_msg,
+            **self._sample_browser_start(root)))
 
     def _pads_sample_loaded(self, path):
         # El WAV ya está en la biblioteca de pads: se referencia por su
@@ -783,6 +801,23 @@ class Robotracker2App(App):
 
     def _dispatch_phrase(self, button, active):
         g = self.editor_screen.phrase_grid
+        if g.fx_picker is not None:
+            # Lista de FX (A+arr/abj sobre el comando): arr/abj mueve,
+            # A elige, B/BACK cierra. El resto no hace nada.
+            if button in (UP, DOWN, LEFT, RIGHT):
+                g.fx_picker_move(1 if button in (DOWN, RIGHT) else -1)
+                return True
+            if button == A:
+                if L2 in active or R2 in active:
+                    self._a_consumed = True
+                else:
+                    g.apply_fx_picker()
+                    self._a_consumed = True
+                return True
+            if button in (B, BACK):
+                g.close_fx_picker()
+                return True
+            return True
         if button in DPAD:
             if A in active:
                 g.edit(button)                       # A+dir: editar campo
@@ -864,8 +899,11 @@ class Robotracker2App(App):
         m = self.editor_screen.instrument_menu
         if button in DPAD:
             if A in active:
+                was = m.instr_id
                 m.edit(button)     # A+arr/abj paso grande, A+izq/dcha fino
                 self._a_consumed = True
+                if m.instr_id != was:
+                    self._retrigger_preview()
             else:
                 m.move(button)     # arr/abj fila, izq/dcha pareja (solo foco)
             return True
@@ -892,13 +930,36 @@ class Robotracker2App(App):
                                                           w.size))
         self.root_layout.add_widget(self.browser)
 
+    @staticmethod
+    def _browser_root_key(root):
+        try:
+            return str(Path(root).resolve())
+        except OSError:
+            return str(Path(root))
+
+    def _sample_browser_start(self, root):
+        """kwargs para reabrir el navegador en la última carpeta de esa raíz."""
+        last = self._browser_cwd.get(self._browser_root_key(root))
+        if last is None:
+            return {}
+        cwd, index, top_idx = last
+        return {"start_cwd": cwd, "start_index": index,
+                "start_top_idx": top_idx}
+
+    def _remember_sample_browser(self):
+        b = self.browser
+        if isinstance(b, SampleBrowser):
+            self._browser_cwd[self._browser_root_key(b.root)] = (
+                b.cwd, b.index, b.top_idx)
+
     def _open_sample_browser(self):
         # biblioteca si existe; si no, los samples de la propia canción
         root = self.samples_dir if self.samples_dir.is_dir() \
             else self.editor_screen.project.dir / "samples"
         self._open_browser(SampleBrowser(root, on_load=self._load_sample,
                                          on_close=self._close_browser,
-                                         on_toast=self.editor_screen.toast_msg))
+                                         on_toast=self.editor_screen.toast_msg,
+                                         **self._sample_browser_start(root)))
 
     def _dispatch_browser(self, button):
         b = self.browser
@@ -920,6 +981,7 @@ class Robotracker2App(App):
 
     def _close_browser(self):
         if self.browser is not None:
+            self._remember_sample_browser()
             self.browser.cleanup()
             self.root_layout.remove_widget(self.browser)
             self.browser = None
@@ -1004,6 +1066,11 @@ class Robotracker2App(App):
         """Persiste la configuración global (interfaces MIDI) al cambiar."""
         if self.midi_live:        # la interfaz puede haber cambiado: apaga
             self._set_midi_live(False)   # el modo (el usuario lo re-arma)
+        # Preview en INSTRUMENT: el puerto de notas puede haber cambiado.
+        # Se cierra; _tick lo reabre si seguimos en esa pantalla.
+        if self._instr_preview:
+            self._midi_notes.close()
+            self._midi_notes_retry = 0.0
         # La interfaz de control puede haber cambiado: reabrir (barato;
         # los knobs/botones siguen la lista del engine por referencia).
         if self._midi_ctrl is not None:
@@ -1292,16 +1359,18 @@ class Robotracker2App(App):
     def _set_midi_live(self, on):
         self.midi_live = on
         self.editor_screen.set_midi_live(on)
-        if not on:
+        if not on and not self._instr_preview:
             self._midi_notes.close()
 
-    def _paint_midi_notes(self):
+    def _paint_midi_notes(self, events=None):
         """Pinta en la phrase del playhead las notas MIDI pendientes.
 
         Solo cuando: modo vivo activo, hay play, se está en PHRASE, y la
         phrase que suena es la que se está editando (si se navegó a otra
         phrase distinta de la que toca el canal, no se pinta nada)."""
-        notes = self._midi_notes.poll()
+        if events is None:
+            events = self._midi_notes.poll()
+        notes = [(n, v) for kind, n, v in events if kind == "on"]
         if not notes:
             return
         if self.player is None or not self.player.playing:
@@ -1321,12 +1390,77 @@ class Robotracker2App(App):
         for note, vel in notes:
             g.live_note(step, note, vel)
 
+    def _sync_instrument_preview(self, on):
+        """Abre/cierra el puerto de notas y corta voces al entrar/salir
+        de INSTRUMENT."""
+        if on:
+            self._instr_preview = True
+            now = time.monotonic()
+            if not self._midi_notes.active and now >= self._midi_notes_retry:
+                self._open_midi_notes_if_needed()
+                self._midi_notes_retry = now + 1.0
+            return
+        if not self._instr_preview:
+            return
+        self._instr_preview = False
+        self._preview_held.clear()
+        self._instrument_preview_panic()
+        if not self.midi_live:
+            self._midi_notes.close()
+
+    def _open_midi_notes_if_needed(self):
+        if self._midi_notes.active:
+            return
+        port = self.config.get("midi_notes")
+        if not port:
+            return
+        if port not in midi_input_names():
+            return
+        self._midi_notes.open_port(port)
+
+    def _preview_midi_notes(self, events):
+        """Las notas del teclado MIDI suenan con el instrumento actual."""
+        if not events or self.player is None:
+            return
+        self.player._ensure_stream()
+        iid = self.editor_screen.instrument_menu.instr_id
+        eng = self.player.engine
+        for kind, note, vel in events:
+            if kind == "on":
+                self._preview_held[note] = vel
+                eng.push_event("preview_on", iid, note, vel)
+            else:
+                self._preview_held.pop(note, None)
+                eng.push_event("preview_off", note)
+
+    def _instrument_preview_panic(self):
+        if self.player is not None:
+            self.player.engine.push_event("preview_off_all")
+
+    def _retrigger_preview(self):
+        """Al cambiar de instrumento, las teclas aún pulsadas suenan con
+        el nuevo (y se cortan las voces del anterior)."""
+        if not self._instr_preview or self.player is None:
+            return
+        eng = self.player.engine
+        eng.push_event("preview_off_all")
+        iid = self.editor_screen.instrument_menu.instr_id
+        for note, vel in self._preview_held.items():
+            eng.push_event("preview_on", iid, note, vel)
+
     def _tick(self, dt):
         for accion in self._midi_ctrl.drain():
             self._midi_action(accion)
-        if self.midi_live:
-            self._paint_midi_notes()
         ed = self.editor_screen
+        on_instr = (self.sm.current == "editor" and ed.current == "instrument")
+        self._sync_instrument_preview(on_instr)
+        midi_events = []
+        if self.midi_live or on_instr:
+            midi_events = self._midi_notes.poll()
+        if on_instr:
+            self._preview_midi_notes(midi_events)
+        elif self.midi_live:
+            self._paint_midi_notes(midi_events)
         p = self.player
         while True:
             try:

@@ -21,8 +21,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from kivy.clock import Clock  # noqa: E402
 
+from types import SimpleNamespace
+
 from controls import L2, R2, RIGHT, START  # noqa: E402
 from lgpt_model import CHAIN_LEN, EMPTY, NUM_TRACKS  # noqa: E402
+from midi_input import midi_note_event  # noqa: E402
 from songs import DEFAULT_SONGS  # noqa: E402
 
 
@@ -177,7 +180,7 @@ def _test_paint(app):
     pg = _goto_phrase(app, 2, 0x07, 0x22)
     t = pg.track
     assert pg.pv.phrase_of(t) == 0x22
-    for step in (3, 5, 7):
+    for step in range(16):
         _clear_step(pg, step, t)
 
     class _Chan:
@@ -195,6 +198,9 @@ def _test_paint(app):
             self.playing = True
             self.engine = _Eng(chans)
 
+        def close(self):
+            pass
+
     class _FakeMidi:
         def __init__(self, notes):
             self._notes = notes
@@ -208,7 +214,7 @@ def _test_paint(app):
 
     # el canal toca la phrase editada en el step 3 -> pinta ahí
     app.player = _Player([_Chan(0x22, 3)] * NUM_TRACKS)
-    app._midi_notes = _FakeMidi([(60, 100), (62, 127)])
+    app._midi_notes = _FakeMidi([("on", 60, 100), ("on", 62, 127)])
     app._paint_midi_notes()
     assert pg._note(3) == 62, "nota pintada en el step del playhead"
     assert pg._instr(3) == 0
@@ -218,7 +224,7 @@ def _test_paint(app):
 
     # el canal toca OTRA phrase -> no pinta nada
     app.player = _Player([_Chan(0x55, 7)] * NUM_TRACKS)
-    app._midi_notes = _FakeMidi([(70, 80)])
+    app._midi_notes = _FakeMidi([("on", 70, 80)])
     app._paint_midi_notes()
     assert pg._note(7) is None, "no pinta si la phrase que suena no es la editada"
     assert pg._note(3) == 62, "los datos previos no cambian"
@@ -227,10 +233,22 @@ def _test_paint(app):
     # sin play -> no pinta
     app.player = _Player([_Chan(0x22, 5)] * NUM_TRACKS)
     app.player.playing = False
-    app._midi_notes = _FakeMidi([(72, 80)])
+    app._midi_notes = _FakeMidi([("on", 72, 80)])
     app._paint_midi_notes()
     assert pg._note(5) is None, "sin play no se pinta"
     print("  _paint_midi_notes sin play no pinta OK")
+
+
+def _test_midi_note_event():
+    on = SimpleNamespace(type="note_on", note=60, velocity=100)
+    assert midi_note_event(on) == ("on", 60, 100)
+    off = SimpleNamespace(type="note_off", note=61, velocity=40)
+    assert midi_note_event(off) == ("off", 61, 0)
+    zero = SimpleNamespace(type="note_on", note=62, velocity=0)
+    assert midi_note_event(zero) == ("off", 62, 0)
+    cc = SimpleNamespace(type="control_change", note=0, velocity=0)
+    assert midi_note_event(cc) is None
+    print("  midi_note_event on/off/vel0 OK")
 
 
 def _run(app):
@@ -239,6 +257,7 @@ def _run(app):
     app._request_load(songs[0])
     assert app.editor_screen.current == "song"
 
+    _test_midi_note_event()
     _test_live_note(app)
     _test_live_note_robot(app)
     _test_toggle(app)

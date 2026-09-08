@@ -836,7 +836,122 @@ class TestChrd(unittest.TestCase):
             self.assertNotEqual(v.vol_target, 255.0)
 
 
-@unittest.skipUnless(SONGS_DIR.is_dir(), "canciones no disponibles")
+class TestSlid(unittest.TestCase):
+    def test_pack_unpack(self):
+        from lgpt_engine import slid_pack, slid_unpack
+        self.assertEqual(slid_unpack(slid_pack(72, 4)), (72, 4))
+        self.assertEqual(slid_unpack(slid_pack(0, 0)), (0, 1))
+        self.assertEqual(slid_unpack(slid_pack(200, 99)), (72, 16))  # 200&0x7F=72
+
+    def test_no_es_unsupported(self):
+        from lgpt_engine import slid_pack
+        engine = make_engine()
+        note_row(engine.project, 0, note=60)
+        engine.project.cmd1[0] = "SLID"
+        engine.project.param1[0] = slid_pack(72, 1)
+        engine._process_tick()
+        self.assertNotIn("SLID", engine.unsupported_cmds)
+
+    def test_llega_a_la_nota_destino(self):
+        from lgpt_engine import slid_pack
+        engine = make_engine("120")
+        note_row(engine.project, 0, note=60)
+        engine.project.cmd1[0] = "SLID"
+        engine.project.param1[0] = slid_pack(72, 1)   # +12 semitonos en 1 step
+        engine.start()
+        engine._process_tick()
+        v = engine.channels[0].voice
+        self.assertIsNotNone(v)
+        self.assertAlmostEqual(v.lega_ratio, 1.0, places=2)
+        samples = int(math.ceil(engine.samples_per_tick * TICKS_PER_STEP)) + 64
+        rendered = 0
+        while rendered < samples:
+            engine.render(512)
+            rendered += 512
+        self.assertAlmostEqual(v.lega_ratio, 2.0, places=2)
+
+    def test_sin_nota_nueva_desliza_la_voz(self):
+        """Step 0 dispara; step 1 solo SLID (sin nota) mueve la misma voz."""
+        from lgpt_engine import slid_pack
+        engine = make_engine("120")
+        note_row(engine.project, 0, note=60)
+        engine.project.cmd1[1] = "SLID"
+        engine.project.param1[1] = slid_pack(72, 1)
+        engine.start()
+        samples_per_step = engine.samples_per_tick * TICKS_PER_STEP
+        rendered = 0
+        while rendered < math.ceil(samples_per_step) + 1:
+            engine.render(512)
+            rendered += 512
+        self.assertEqual(engine.channels[0].phrase_pos, 1)
+        v = engine.channels[0].voice
+        self.assertIsNotNone(v)
+        self.assertEqual(v.note, 60)
+        rendered = 0
+        while rendered < math.ceil(samples_per_step) + 64:
+            engine.render(512)
+            rendered += 512
+        self.assertAlmostEqual(v.lega_ratio, 2.0, places=2)
+
+
+class TestPreview(unittest.TestCase):
+    """Notas del teclado MIDI sobre el instrumento del editor."""
+
+    def test_sample_suena_y_calla(self):
+        engine = make_engine()
+        engine.playing = False
+        engine.push_event("preview_on", 0, 60, 100)
+        out = engine.render(512)
+        self.assertGreater(float(np.abs(out).max()), 0.01)
+        self.assertIn(60, engine.preview_voices)
+        engine.push_event("preview_off", 60)
+        # declick (~4 ms a 44100 ≈ 176 samples): varios bloques hasta silencio
+        for _ in range(8):
+            engine.render(512)
+        self.assertNotIn(60, engine.preview_voices)
+        self.assertEqual(engine.preview_releases, [])
+
+    def test_polifonia_dos_notas(self):
+        engine = make_engine()
+        engine.playing = False
+        engine.push_event("preview_on", 0, 60, 100)
+        engine.push_event("preview_on", 0, 64, 100)
+        engine.render(64)
+        self.assertEqual(set(engine.preview_voices), {60, 64})
+        engine.push_event("preview_off", 60)
+        engine.render(64)
+        self.assertNotIn(60, engine.preview_voices)
+        self.assertIn(64, engine.preview_voices)
+
+    def test_midi_note_on_off(self):
+        engine = make_engine()
+        engine.playing = False
+        engine.midi_out = MidiCollector()
+        engine.push_event("preview_on", 0x80, 67, 90)
+        engine.render(64)
+        self.assertEqual(
+            engine.midi_out.events,
+            [("cc", 3, 7, 127), ("note_on", 3, 67, 90)])
+        engine.push_event("preview_off", 67)
+        engine.render(64)
+        self.assertIn(("note_off", 3, 67), engine.midi_out.events)
+
+    def test_off_all_y_instrumento_inexistente(self):
+        engine = make_engine()
+        engine.playing = False
+        engine.push_event("preview_on", 0, 60, 100)
+        engine.render(64)
+        self.assertTrue(engine.preview_voices)
+        engine.push_event("preview_off_all")
+        engine.render(512)
+        for _ in range(8):
+            engine.render(512)
+        self.assertEqual(engine.preview_voices, {})
+        engine.push_event("preview_on", 99, 60, 100)  # iid que no existe
+        engine.render(64)
+        self.assertEqual(engine.preview_voices, {})
+
+
 class TestRealSongs(unittest.TestCase):
     def test_render_all_songs(self):
         for name in SONGS:

@@ -37,6 +37,7 @@ ENUMS = {
 # Layout por secciones. Cada item: ("hdr", texto) o ("row", [slots]).
 # slot = (clave, etiqueta, tipo, *args). tipos:
 #   instr | sample | note | enum | int(min,max) | hex | midich
+# hex (start/end del loop): el máximo es el final del sample, no 0xFFFFFF.
 SAMPLE_LAYOUT = [
     ("row", [("__instr__", "Instrument", "instr")]),
     ("hdr", "SAMPLE"),
@@ -161,6 +162,8 @@ class InstrumentMenu(Widget):
             if len(layout[self.row_idx][1]) == 2:
                 self.slot = 1 - self.slot
         self._ensure_visible()
+        if self.on_nav:
+            self.on_nav()
         self._redraw()
 
     def edit(self, button):
@@ -170,17 +173,47 @@ class InstrumentMenu(Widget):
                          coarse=button in (UP, DOWN))
             self._redraw()
 
+    def cycle_instrument(self, d, coarse=False):
+        """Cambia al instrumento vecino del banco (wrap).
+
+        `d` es el signo (+1 / -1); con `coarse` el paso es 16, si no 1.
+        Conserva el campo con el foco si existe en el layout nuevo
+        (Sample vs Midi); si no, vuelve al selector de instrumento.
+        """
+        if not self.instr_ids:
+            return
+        keep = None
+        try:
+            keep = self.field_key()
+        except (IndexError, TypeError):
+            pass
+        step = 16 if coarse else 1
+        self.pos_in_ids = (self.pos_in_ids + d * step) % len(self.instr_ids)
+        self._wave_key = None
+        layout = self._layout()
+        found = False
+        if keep is not None:
+            for i, it in enumerate(layout):
+                if it[0] != "row":
+                    continue
+                for s, sl in enumerate(it[1]):
+                    if sl[0] == keep:
+                        self.row_idx, self.slot = i, s
+                        found = True
+                        break
+                if found:
+                    break
+        if not found:
+            self._reset_cursor()
+        self._ensure_visible()
+        if self.on_nav:
+            self.on_nav()
+        self._redraw()
+
     def _adjust(self, d, coarse):
         key, _label, typ, *args = self._layout()[self.row_idx][1][self.slot]
         if typ == "instr":
-            if self.instr_ids:
-                step = 16 if coarse else 1
-                self.pos_in_ids = (self.pos_in_ids + d * step) % len(
-                    self.instr_ids)
-                self._reset_cursor()
-                self._wave_key = None
-                if self.on_nav:
-                    self.on_nav()
+            self.cycle_instrument(d, coarse)
             return
         if typ == "sample":
             return                                   # el sample se elige con A
@@ -197,7 +230,10 @@ class InstrumentMenu(Widget):
             params[key] = str(max(0, min(127, cur + d * (12 if coarse else 1))))
         elif typ == "hex":
             cur = int(params.get(key, "0") or 0)
-            params[key] = str(max(0, min(0xFFFFFF,
+            hi = self._sample_n()
+            if hi is None:
+                hi = 0xFFFFFF
+            params[key] = str(max(0, min(hi,
                                          cur + d * (0x1000 if coarse else 1))))
         elif typ == "midich":
             cur = int(params.get(key, "0") or 0)
@@ -218,9 +254,13 @@ class InstrumentMenu(Widget):
         params = self._params()
         if params:
             params["sample"] = name
+            params["loopmode"] = "none"
+            params["start"] = "0"
+            self._wave_key = None
+            n = self._sample_n()
+            params["end"] = str(n if n is not None else 0)
             if self.on_change:
                 self.on_change()
-            self._wave_key = None
             self._redraw()
 
     # -- scroll ---------------------------------------------------------
@@ -340,6 +380,28 @@ class InstrumentMenu(Widget):
             return int(self._params().get(key, default) or default)
         except (TypeError, ValueError):
             return default
+
+    def _sample_n(self):
+        """Frames del WAV del instrumento, o None si no hay sample legible.
+
+        El máximo de start/end del loop es este valor (el final del sample),
+        no 0xFFFFFF.
+        """
+        if self._is_midi() or not self.instr_ids or self.project is None:
+            return None
+        name = self._params().get("sample") or ""
+        if not name:
+            return None
+        key = (str(self.project.dir), name)
+        if key == self._wave_key and self._wave is not None:
+            return int(self._wave[2])
+        path = Path(self.project.dir) / "samples" / name
+        if not path.is_file():
+            return None
+        try:
+            return int(sf.info(str(path)).frames)
+        except Exception:                          # noqa: BLE001
+            return None
 
     def _ensure_wave(self):
         if self._is_midi() or not self.instr_ids:
