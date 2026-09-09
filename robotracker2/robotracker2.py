@@ -48,7 +48,7 @@ from lgpt_model import (EMPTY, NUM_TRACKS, compact_instruments,
                         compact_sequencer, ensure_extra_track,
                         ensure_track_0)
 from midi_ctrl import POTS_KNOBS, MidiControl
-from midi_input import MidiNotesInput, midi_input_names
+from midi_input import MidiNotesInput, midi_input_names, resolve_midi_port
 from sinte_bridge import save_project
 try:
     from evdev_triggers import GamepadReader  # entrada evdev (Odin)
@@ -142,7 +142,8 @@ class Robotracker2App(App):
         self._midi_ctrl = None     # controlador MIDI (botones+knobs, mixer)
         self._instr_preview = False   # teclado MIDI suena en INSTRUMENT
         self._preview_held = {}       # nota -> vel (teclas aún pulsadas)
-        self._midi_notes_retry = 0.0  # monotonic: reintento de abrir puerto
+        self._midi_ports_retry = 0.0  # hotplug: LPK25/LPD8 en cualquier USB
+        self._midi_hotplug = True     # tests lo apagan (sin puertos reales)
 
     def build(self):
         setup_window(self.fullscreen)
@@ -1066,11 +1067,9 @@ class Robotracker2App(App):
         """Persiste la configuración global (interfaces MIDI) al cambiar."""
         if self.midi_live:        # la interfaz puede haber cambiado: apaga
             self._set_midi_live(False)   # el modo (el usuario lo re-arma)
-        # Preview en INSTRUMENT: el puerto de notas puede haber cambiado.
-        # Se cierra; _tick lo reabre si seguimos en esa pantalla.
-        if self._instr_preview:
-            self._midi_notes.close()
-            self._midi_notes_retry = 0.0
+        # Preview / hotplug: el puerto de notas puede haber cambiado.
+        self._midi_notes.close()
+        self._midi_ports_retry = 0.0
         # La interfaz de control puede haber cambiado: reabrir (barato;
         # los knobs/botones siguen la lista del engine por referencia).
         if self._midi_ctrl is not None:
@@ -1347,10 +1346,10 @@ class Robotracker2App(App):
         if not port:
             ed.toast_msg("Configura 'MIDI Notas' en CONFIG")
             return
-        if port not in midi_input_names():
+        if resolve_midi_port(midi_input_names(), port) is None:
             ed.toast_msg("Interfaz MIDI Notas no disponible")
             return
-        if not self._midi_notes.open_port(port):
+        if not self._midi_notes.active and not self._midi_notes.open_port(port):
             ed.toast_msg(f"Error MIDI: {self._midi_notes.error}")
             return
         self._set_midi_live(True)
@@ -1359,8 +1358,6 @@ class Robotracker2App(App):
     def _set_midi_live(self, on):
         self.midi_live = on
         self.editor_screen.set_midi_live(on)
-        if not on and not self._instr_preview:
-            self._midi_notes.close()
 
     def _paint_midi_notes(self, events=None):
         """Pinta en la phrase del playhead las notas MIDI pendientes.
@@ -1391,32 +1388,55 @@ class Robotracker2App(App):
             g.live_note(step, note, vel)
 
     def _sync_instrument_preview(self, on):
-        """Abre/cierra el puerto de notas y corta voces al entrar/salir
-        de INSTRUMENT."""
+        """Corta voces al salir de INSTRUMENT. El puerto lo mantiene
+        `_ensure_midi_ports` (hotplug)."""
         if on:
             self._instr_preview = True
-            now = time.monotonic()
-            if not self._midi_notes.active and now >= self._midi_notes_retry:
-                self._open_midi_notes_if_needed()
-                self._midi_notes_retry = now + 1.0
             return
         if not self._instr_preview:
             return
         self._instr_preview = False
         self._preview_held.clear()
         self._instrument_preview_panic()
-        if not self.midi_live:
-            self._midi_notes.close()
 
-    def _open_midi_notes_if_needed(self):
-        if self._midi_notes.active:
+    def _ensure_midi_ports(self):
+        """Reconexión en caliente: LPK25/LPD8 en cualquier puerto USB y
+        enchufados después de arrancar. El id ALSA (`16:0`) no cuenta.
+        Como el player (`_ensure_midi_input`): cada ~1 s, sin spam."""
+        if not self._midi_hotplug:
             return
-        port = self.config.get("midi_notes")
-        if not port:
+        now = time.monotonic()
+        if now < self._midi_ports_retry:
             return
-        if port not in midi_input_names():
-            return
-        self._midi_notes.open_port(port)
+        self._midi_ports_retry = now + 1.0
+        names = midi_input_names()
+        wanted_n = self.config.get("midi_notes")
+        wanted_c = self.config.get("midi_control")
+
+        if self._midi_ctrl is not None and wanted_c:
+            ok = resolve_midi_port(names, wanted_c) is not None
+            if self._midi_ctrl.active and not ok:
+                self._midi_ctrl.close()
+            elif not self._midi_ctrl.active and ok:
+                if self._midi_ctrl.open(wanted_c):
+                    self._midi_toast("MIDI Control: conectado")
+
+        if wanted_n:
+            ok = resolve_midi_port(names, wanted_n) is not None
+            if self._midi_notes.active and not ok:
+                self._midi_notes.close()
+            elif not self._midi_notes.active and ok:
+                if self._midi_notes.open_port(wanted_n):
+                    self._midi_toast("MIDI Notas: conectado")
+
+        ed = self.editor_screen
+        if self.sm.current == "editor" and ed.current == "config":
+            ed.config_menu._refresh_ports()
+            ed.config_menu._redraw()
+
+    def _midi_toast(self, msg):
+        if self.sm.current == "editor":
+            self.editor_screen.toast_msg(msg)
 
     def _preview_midi_notes(self, events):
         """Las notas del teclado MIDI suenan con el instrumento actual."""
@@ -1449,6 +1469,7 @@ class Robotracker2App(App):
             eng.push_event("preview_on", iid, note, vel)
 
     def _tick(self, dt):
+        self._ensure_midi_ports()
         for accion in self._midi_ctrl.drain():
             self._midi_action(accion)
         ed = self.editor_screen

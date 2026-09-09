@@ -76,6 +76,7 @@ def _run(app, song_a, song_b):
 
     assert isinstance(app, Robotracker2App)
     app._midi_ctrl.close()
+    app._midi_hotplug = False
 
     # --- canción A sin "tracks": defaults --------------------------------
     app._request_load(song_a)

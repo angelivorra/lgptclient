@@ -8,13 +8,15 @@ disponibles, A+izq/dcha salta al primero/último):
 No pueden ser la misma interfaz. La selección se persiste en
 `robotracker2/config.json` (módulo `config`). Si una interfaz guardada ya no
 existe al arrancar, se conserva en el fichero pero se muestra "(no
-disponible)" y se avisa con un toast.
+disponible)" y se avisa con un toast. El id de cliente ALSA (`16:0`) se
+ignora: el LPK25 en otro puerto USB sigue contando como el mismo.
 """
 
 from kivy.graphics import Color, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
+from midi_input import midi_input_names, resolve_midi_port
 from theme import COLOR_ACCENT, COLOR_BG, COLOR_ERROR, COLOR_ITEM, \
     COLOR_MISSING, COLOR_VALUE, core_label
 
@@ -50,16 +52,16 @@ class ConfigMenu(Widget):
 
     def _refresh_ports(self):
         """Enumera los puertos MIDI de entrada y detecta cuáles de los
-        guardados ya no existen."""
-        try:
-            import mido
-            self._ports = mido.get_input_names()
-        except Exception:                       # noqa: BLE001
-            self._ports = []
+        guardados ya no existen (el id ALSA `16:0` no cuenta: cambia de
+        puerto USB)."""
+        self._ports = midi_input_names()
+        self._update_missing()
+
+    def _update_missing(self):
         self._missing = set()
         for key, _label in FIELDS:
             saved = self.cfg.get(key)
-            if saved and saved not in self._ports:
+            if saved and resolve_midi_port(self._ports, saved) is None:
                 self._missing.add(key)
 
     def _display(self, key, label):

@@ -83,6 +83,7 @@ def _e2e(app, song):
 
     assert isinstance(app, Robotracker2App)
     app._midi_ctrl.close()      # sin puertos reales en los tests
+    app._midi_hotplug = False
     app._request_load(song)
     ed = app.editor_screen
     assert ed.current == "song"

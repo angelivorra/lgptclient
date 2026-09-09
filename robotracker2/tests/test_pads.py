@@ -69,6 +69,7 @@ def _run(app, song_a, song_b, pads_dir):
 
     assert isinstance(app, Robotracker2App)
     app._midi_ctrl.close()      # sin puertos reales en los tests
+    app._midi_hotplug = False
 
     # --- cargar la canción A: sin "pads" -> pads VACÍOS ------------------
     app._request_load(song_a)

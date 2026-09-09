@@ -108,6 +108,7 @@ def _run(app, song):
 
     assert isinstance(app, Robotracker2App)
     app._midi_ctrl.close()
+    app._midi_hotplug = False
     app._request_load(song)
     p = app.editor_screen.project
     assert INSTR_0 in p.instrument_bank, "al cargar se crea el instrumento 00"

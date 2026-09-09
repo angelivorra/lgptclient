@@ -124,19 +124,28 @@ def _test_toggle(app):
     app.config["midi_notes"] = "PuertoTest"
 
     class _FakeMidi:
-        def __init__(self):
+        def __init__(self, events=None):
             self.opened = None
             self.closed = 0
+            self._active = False
+            self._events = events or []
+            self.error = None
+
+        @property
+        def active(self):
+            return self._active
 
         def open_port(self, name):
             self.opened = name
+            self._active = True
             return True
 
         def close(self):
             self.closed += 1
+            self._active = False
 
         def poll(self):
-            return []
+            return self._events
 
     app._midi_notes = _FakeMidi()
     r2mod.midi_input_names = lambda: ["PuertoTest"]
@@ -149,12 +158,12 @@ def _test_toggle(app):
     assert app._midi_notes.opened == "PuertoTest"
     print("  R2+START activa MIDI live OK")
 
-    # R2+START -> OFF
+    # R2+START -> OFF (el puerto se queda abierto: hotplug / preview)
     app._fresh_press = True
     app._dispatch(START, {START, R2})
     assert not app.midi_live, "R2+START debe desactivar el modo"
     assert ed.live_ind.text == "", "el indicador se oculta"
-    assert app._midi_notes.closed >= 1, "el puerto se cierra"
+    assert app._midi_notes.active, "el puerto no se cierra al apagar live"
     print("  R2+START desactiva MIDI live OK")
 
     # sin interfaz configurada: aviso y no activa
@@ -173,6 +182,17 @@ def _test_toggle(app):
     assert not app.midi_live
     assert "no disponible" in ed.toast.text, "aviso de interfaz no disponible"
     print("  interfaz no disponible avisa OK")
+
+    # el id ALSA cambia de puerto USB: sigue siendo el LPK25
+    app.config["midi_notes"] = "LPK25:LPK25 MIDI 1 16:0"
+    r2mod.midi_input_names = lambda: ["LPK25:LPK25 MIDI 1 24:0"]
+    app._midi_notes = _FakeMidi()
+    app._fresh_press = True
+    app._dispatch(START, {START, R2})
+    assert app.midi_live, "el LPK25 debe cogerse con otro client ALSA"
+    assert app._midi_notes.opened == "LPK25:LPK25 MIDI 1 16:0"
+    app._set_midi_live(False)
+    print("  LPK25 con otro puerto USB / id ALSA OK")
 
 
 def _test_paint(app):
@@ -204,13 +224,22 @@ def _test_paint(app):
     class _FakeMidi:
         def __init__(self, notes):
             self._notes = notes
+            self._active = True
+
+        @property
+        def active(self):
+            return self._active
 
         def poll(self):
             notes, self._notes = self._notes, []
             return notes
 
         def close(self):
-            pass
+            self._active = False
+
+        def open_port(self, name):
+            self._active = True
+            return True
 
     # el canal toca la phrase editada en el step 3 -> pinta ahí
     app.player = _Player([_Chan(0x22, 3)] * NUM_TRACKS)
@@ -251,7 +280,65 @@ def _test_midi_note_event():
     print("  midi_note_event on/off/vel0 OK")
 
 
+def _test_hotplug(app):
+    """Enchufar el LPK25 a posteriori (otro id ALSA) lo abre solo."""
+    import robotracker2 as r2mod
+
+    fake = type("N", (), {})()
+    fake.opened = None
+    fake.closed = 0
+    fake._active = False
+    fake.error = None
+
+    def open_port(name):
+        fake.opened = name
+        fake._active = True
+        return True
+
+    def close():
+        fake.closed += 1
+        fake._active = False
+
+    fake.open_port = open_port
+    fake.close = close
+    fake.poll = lambda: []
+    type(fake).active = property(lambda self: fake._active)
+
+    orig_notes = app.config.get("midi_notes")
+    orig_ctrl = app.config.get("midi_control")
+    app._midi_notes = fake
+    app._midi_hotplug = True
+    app._midi_ports_retry = 0.0
+    app.config["midi_notes"] = "LPK25:LPK25 MIDI 1 16:0"
+    app.config["midi_control"] = None
+
+    r2mod.midi_input_names = lambda: []
+    app._ensure_midi_ports()
+    assert fake.opened is None, "sin teclado no abre"
+    print("  hotplug sin LPK25 no abre OK")
+
+    app._midi_ports_retry = 0.0
+    r2mod.midi_input_names = lambda: ["LPK25:LPK25 MIDI 1 24:0"]
+    app._ensure_midi_ports()
+    assert fake.opened == "LPK25:LPK25 MIDI 1 16:0", fake.opened
+    assert fake._active
+    print("  hotplug enciende el LPK25 con otro id ALSA OK")
+
+    app._midi_ports_retry = 0.0
+    r2mod.midi_input_names = lambda: []
+    app._ensure_midi_ports()
+    assert fake.closed >= 1, "al desenchufar cierra"
+    print("  hotplug cierra al desenchufar OK")
+
+    app._midi_hotplug = False
+    app.config["midi_notes"] = orig_notes
+    app.config["midi_control"] = orig_ctrl
+
+
 def _run(app):
+    app._midi_hotplug = False
+    app._midi_notes.close()
+    app._midi_ctrl.close()
     songs = app.load_screen.songs
     assert songs, "debe haber canciones"
     app._request_load(songs[0])
@@ -260,6 +347,7 @@ def _run(app):
     _test_midi_note_event()
     _test_live_note(app)
     _test_live_note_robot(app)
+    _test_hotplug(app)
     _test_toggle(app)
     _test_paint(app)
 

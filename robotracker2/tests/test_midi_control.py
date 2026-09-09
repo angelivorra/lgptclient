@@ -462,6 +462,7 @@ def _run(app):
 
     assert isinstance(app, Robotracker2App)
     app._midi_ctrl.close()      # sin puertos reales en los tests
+    app._midi_hotplug = False
 
     songs = app.load_screen.songs
     assert songs, "debe haber canciones"

@@ -13,6 +13,39 @@ import threading
 POLL_SLEEP = 0.005      # 5 ms entre lecturas del puerto
 
 
+def midi_port_base(name: str) -> str:
+    """Quita el `client:port` ALSA final (`16:0`), que cambia de puerto USB."""
+    if not name:
+        return name
+    head, sep, tail = name.rpartition(" ")
+    if not sep or ":" not in tail:
+        return name
+    a, _, b = tail.partition(":")
+    if a.isdigit() and b.isdigit():
+        return head
+    return name
+
+
+def resolve_midi_port(names: list[str], wanted: str | None) -> str | None:
+    """Elige un puerto por nombre parcial, ignorando el id de cliente ALSA.
+
+    `wanted` puede ser el nombre completo guardado (`LPK25:LPK25 MIDI 1 16:0`)
+    o el de otro arranque/puerto USB (`… 24:0`): ambos resuelven al dispositivo
+    que esté enchufado ahora. None/vacío no elige nada (sin auto).
+    """
+    if not names or not wanted:
+        return None
+    wanted_l = wanted.lower()
+    base_l = midi_port_base(wanted).lower()
+    for n in names:
+        nl = n.lower()
+        if wanted_l in nl or base_l in nl:
+            return n
+        if midi_port_base(n).lower() == base_l:
+            return n
+    return None
+
+
 def midi_input_names() -> list[str]:
     """Puertos MIDI de entrada disponibles (vacío si mido/rtmidi falla)."""
     try:
@@ -58,14 +91,20 @@ class MidiNotesInput:
 
     @property
     def active(self) -> bool:
-        return self._port is not None
+        t = self._thread
+        return self._port is not None and t is not None and t.is_alive()
 
     def open_port(self, port_name: str) -> bool:
-        """Abre la interfaz `port_name` y arranca el hilo de lectura."""
+        """Abre la interfaz `port_name` (nombre parcial / id ALSA distinto
+        vale) y arranca el hilo de lectura."""
         self.close()
         try:
             import mido
-            port = mido.open_input(port_name)
+            chosen = resolve_midi_port(mido.get_input_names(), port_name)
+            if chosen is None:
+                self.error = "no disponible"
+                return False
+            port = mido.open_input(chosen)
         except Exception as exc:            # noqa: BLE001
             self.error = str(exc)
             return False
