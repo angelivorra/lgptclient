@@ -5,7 +5,9 @@ cabecera del editor (navmap).
 Sin app para el historial (SampleBrowser es autónomo): entrar por A en
 dos carpetas y volver/avanzar con las flechas debe recordar el camino y
 la posición del cursor en cada carpeta; una rama nueva mata el historial
-"hacia delante". Al reabrir, `start_cwd` restaura la última carpeta.
+"hacia delante". B (Cancelar) sube al padre y deja el cursor en la
+carpeta de la que salimos. Al reabrir, `start_cwd` restaura la última
+carpeta.
 Los indicadores del ImageBrowser se comprueban por sus
 flags de scroll (`_scroll_flags`, lo que enciende/apaga los triángulos),
 y el dispatch izq/dcha de la app no debe romper ImageBrowser.
@@ -80,12 +82,27 @@ def _browser_sueltos():
         assert not b._fwd, "entrar por A debe limpiar el historial delante"
         print("  rama nueva limpia el historial hacia delante OK")
 
-        # B sube un nivel y la flecha delante puede volver a bajar
+        # B sube un nivel, deja el cursor en esa carpeta, y la flecha
+        # delante puede volver a bajar
         b.back()                         # B -> A
         assert b.cwd.name == "A"
+        assert b.selected().name == "B", b.selected()
         b.go_forward()                   # A -> B
         assert b.cwd.name == "B"
         print("  B sube y la flecha delante vuelve a bajar OK")
+
+        # B (Cancelar): cursor en la carpeta de la que salimos, para
+        # bajar a la siguiente hermana y recorrerlas todas
+        b.back()                         # B -> A, cursor en B
+        assert b.cwd.name == "A" and b.selected().name == "B"
+        b.move(DOWN)                     # siguiente hermana
+        assert b.selected().name == "C"
+        b.activate()
+        assert b.cwd.name == "C"
+        b.back()                         # C -> A, cursor en C (no en B)
+        assert b.cwd.name == "A" and b.selected().name == "C", \
+            (b.index, b.selected())
+        print("  B sube y deja el cursor en esa carpeta OK")
 
         # sin historial, las flechas no hacen nada (browser recién abierto)
         b2 = SampleBrowser(root, on_load=None, on_close=None)
