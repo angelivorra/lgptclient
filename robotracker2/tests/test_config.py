@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import load_config, save_config, DEFAULTS  # noqa: E402
+from midi_input import midi_port_base, resolve_midi_port  # noqa: E402
 
 
 def test_roundtrip():
@@ -66,16 +67,58 @@ def test_same_interface_rejected():
 
 
 
+def test_resolve_alsa_client_id():
+    saved = "LPK25:LPK25 MIDI 1 16:0"
+    live = ["LPD8 mk2:LPD8 mk2 MIDI 1 20:0", "LPK25:LPK25 MIDI 1 24:0"]
+    assert midi_port_base(saved) == "LPK25:LPK25 MIDI 1"
+    assert resolve_midi_port(live, saved) == "LPK25:LPK25 MIDI 1 24:0"
+    assert resolve_midi_port(live, "LPK25") == live[1]
+    assert resolve_midi_port([], saved) is None
+    assert resolve_midi_port(live, None) is None
+    assert resolve_midi_port(live, "Interfaz Fantasma") is None
+    print("  resolve ALSA client id OK")
+
+
+def test_open_port_resolves_alsa_id():
+    from unittest.mock import MagicMock, patch
+
+    from midi_input import MidiNotesInput  # noqa: E402
+
+    fake_port = MagicMock()
+    fake_port.iter_pending.return_value = []
+    with patch("mido.get_input_names",
+               return_value=["LPK25:LPK25 MIDI 1 24:0"]), \
+         patch("mido.open_input", return_value=fake_port) as oi:
+        inp = MidiNotesInput()
+        assert inp.open_port("LPK25:LPK25 MIDI 1 16:0")
+        oi.assert_called_once_with("LPK25:LPK25 MIDI 1 24:0")
+        assert inp.active
+        inp.close()
+        assert not inp.active
+    print("  open_port resolves ALSA id OK")
+
+
 def test_missing_interface_detected():
     from screens.config_view import ConfigMenu  # noqa: E402
 
     cfg = {"midi_notes": "Interfaz Fantasma", "midi_control": None}
     menu = ConfigMenu(cfg=cfg)
     menu._ports = ["A", "B"]
-    menu._refresh_ports()
+    menu._update_missing()
     assert "midi_notes" in menu._missing
     assert "midi_control" not in menu._missing
     print("  missing-interface detected OK")
+
+
+def test_lpk25_other_usb_not_missing():
+    from screens.config_view import ConfigMenu  # noqa: E402
+
+    cfg = {"midi_notes": "LPK25:LPK25 MIDI 1 16:0", "midi_control": None}
+    menu = ConfigMenu(cfg=cfg)
+    menu._ports = ["LPK25:LPK25 MIDI 1 24:0"]
+    menu._update_missing()
+    assert "midi_notes" not in menu._missing
+    print("  LPK25 another USB not missing OK")
 
 
 if __name__ == "__main__":
@@ -87,6 +130,12 @@ if __name__ == "__main__":
     test_midi_ports()
     print("test_same_interface_rejected:")
     test_same_interface_rejected()
+    print("test_resolve_alsa_client_id:")
+    test_resolve_alsa_client_id()
+    print("test_open_port_resolves_alsa_id:")
+    test_open_port_resolves_alsa_id()
     print("test_missing_interface_detected:")
     test_missing_interface_detected()
+    print("test_lpk25_other_usb_not_missing:")
+    test_lpk25_other_usb_not_missing()
     print("TODOS LOS TESTS OK")

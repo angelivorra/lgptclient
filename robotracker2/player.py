@@ -64,14 +64,16 @@ class Player:
             eng.push_event("play")
         return True
 
-    def play_loop(self, kind, track, idx):
+    def play_loop(self, kind, track, idx, from_step=0):
         """Reproduce solo una chain o phrase (`kind` = "chain" | "phrase")
-        del canal `track` en bucle, ignorando el resto de la canción."""
+        del canal `track` en bucle, ignorando el resto de la canción.
+        `from_step` es el step de la chain desde el que arranca (el cursor);
+        al terminar vuelve al 0. En phrase se ignora."""
         if not self._ensure_stream():
             return False
         eng = self.engine
         eng.loop_scope = (kind, track, idx)
-        eng.start()
+        eng.start(from_step=from_step)
         self._started = True
         return True
 

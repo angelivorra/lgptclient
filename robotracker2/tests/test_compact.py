@@ -133,17 +133,19 @@ def _unitarios(tmp: Path):
         ROBOT_INSTR: {"type": "Midi", "params": {"channel": "8"}},
     }
     n, unused = compact_instruments(p)
-    assert n == 2, n                    # 0x03 y 0x81, no ROBOT_INSTR
+    assert n == 2, n                    # 0x03 y 0x81, no ROBOT_INSTR ni 00
     assert 0x01 in p.instrument_bank and 0x02 in p.instrument_bank
     assert 0x03 not in p.instrument_bank
     assert 0x81 not in p.instrument_bank
     assert ROBOT_INSTR in p.instrument_bank
     # a.wav/b.wav referenciados por los Sample restantes; c/zzz no
     assert unused == ["c.wav", "zzz.wav"], unused
-    # ROBOT_INSTR sin referencias tampoco se popea (guarda de robotracker2)
+    # ROBOT_INSTR e INSTR_0 sin referencias tampoco se popean
     p.instruments[:] = bytes([EMPTY]) * len(p.instruments)
+    p.instrument_bank[0] = {"type": "Sample", "params": {"sample": ""}}
     n, _ = compact_instruments(p)
     assert ROBOT_INSTR in p.instrument_bank
+    assert 0 in p.instrument_bank
     print("  compact_instruments unitario OK")
 
     # --- samples/ ausente: no rompe -------------------------------------
@@ -160,6 +162,7 @@ def _e2e(app, song):
 
     assert isinstance(app, Robotracker2App)
     app._midi_ctrl.close()      # sin puertos reales en los tests
+    app._midi_hotplug = False
     app._request_load(song)
     assert app.editor_screen.current == "song"
     p = app.editor_screen.project
@@ -224,6 +227,7 @@ def _e2e(app, song):
     assert x not in p.instrument_bank, "instrumento sin uso popedo"
     if robot_ya:
         assert ROBOT_INSTR in p.instrument_bank, "0x80 nunca se popea"
+    assert 0 in p.instrument_bank, "00 nunca se popea"
     assert x not in app.editor_screen.instrument_menu.instr_ids
     assert app.dialog is not None, "wav huérfano -> diálogo Sí/No"
     assert app.dialog.index == 1        # "No" por defecto (opción segura)

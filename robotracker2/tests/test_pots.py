@@ -55,6 +55,7 @@ def _run(app, song_a, song_b):
 
     assert isinstance(app, Robotracker2App)
     app._midi_ctrl.close()      # sin puertos reales en los tests
+    app._midi_hotplug = False
 
     # --- cargar la canción A: "pots" + "fx_mix" -------------------------
     app._request_load(song_a)

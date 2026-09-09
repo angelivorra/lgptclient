@@ -3,7 +3,10 @@
 Como LGPT, por step: NOTA · INSTRUMENTO · FX1 (cmd+param) · FX2 (cmd+param).
 La phrase es la del canal (track) en el step de la chain desde el que se entró.
 Cursor: arr/abj = step, izq/dcha = campo (nota, instr, fx1cmd, fx1prm, fx2cmd,
-fx2prm). A+dir edita el campo; A copia/pega/valor por defecto; B borra el campo.
+fx2prm). A+dir edita el campo; en un comando FX, A+izq/dcha cicla y
+A+arr/abj abre la lista con una mini explicación. A copia/pega/valor por
+defecto; doble A en instrumento pone el primer id no usado en la canción
+y mayor que el actual; B borra el campo.
 Editar un hueco crea la chain y la phrase (estilo Piggy), reutilizando
 `PhraseView` del modelo. Portapapeles propio (por campo).
 
@@ -26,8 +29,11 @@ que ve el dispositivo real), para ver de un vistazo qué se envía sin tener
 que abrir el navegador. Junto a SCREEN, un **filmstrip** de 16 thumbs
 alineados con los steps (vacío si el step no tiene MDCC). En HIT, un
 icono (bombo / caja / combo) acompaña la etiqueta. Encima de las
-columnas, etiquetas NOTE/INST/FX1/FX2 (HIT/SCREEN en el canal robot).
+columnas, el icono y el nombre del tipo de esa pista, y las etiquetas
+NOTE/INST/FX1/FX2 (HIT/SCREEN en el canal robot).
 """
+
+import time
 
 from kivy.core.image import Image as CoreImage
 from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
@@ -35,21 +41,27 @@ from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
-from lgpt_model import EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView, note_name_to_byte
+from lgpt_model import (EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView, inherited_instr,
+                        alloc_unreferenced_instr_above, note_name_to_byte,
+                        nudge_cell)
 from robots import (HIT_NOTES, ROBOT_INSTR, ROBOT_TRACK, ayuda_preview_path,
                     hit_label, mdcc_unpack, screen_label)
 from screens.hit_icons import draw_hit_icon
-from sinte_bridge import note_byte_to_name
+from screens.track_icons import draw_track_icon
+from sinte_bridge import (chord_label, cycle_chord, note_byte_to_name,
+                          slid_pack, slid_unpack)
 from theme import (COLOR_ACCENT, COLOR_BEAT, COLOR_BG, COLOR_BORDER, COLOR_EMPTY,
                    COLOR_FX1, COLOR_FX2, COLOR_HEADER_BG, COLOR_HEADER_TXT,
-                   COLOR_HINT_BG, COLOR_HIT, COLOR_INSTR,
-                   COLOR_LINENUM, COLOR_LINENUM_CUR, COLOR_NOTE, COLOR_PLAY,
-                   COLOR_PLAY_MARK, COLOR_ROW_CURSOR, COLOR_SCREEN, COLOR_SEL,
-                   core_label, draw_play_mark)
+                   COLOR_HINT, COLOR_HINT_BG, COLOR_HIT, COLOR_INSTR,
+                   COLOR_LINENUM, COLOR_LINENUM_CUR, COLOR_NAME, COLOR_NOTE,
+                   COLOR_PLAY, COLOR_PLAY_MARK, COLOR_ROW_CURSOR, COLOR_SCREEN,
+                   COLOR_SCRIM, COLOR_SEL, core_label, draw_play_mark)
+from tracks import DEFAULT_TRACKS, track_caption
 
 ROW_H = dp(30)
 HEADER_H = dp(22)
-TOP_PAD = HEADER_H
+TRACK_BAR_H = dp(36)
+TOP_PAD = TRACK_BAR_H + HEADER_H
 LM = dp(36)
 STEP_W = dp(52)
 FONT = dp(17)
@@ -58,15 +70,29 @@ FONT_HDR = dp(12)
 HINT_H = dp(32)                         # franja inferior del hint de selección
 MAX_NOTE = 131                     # (9+2)*12 - 1
 
-# Comandos FX que se pueden ciclar: solo los que se usan en las canciones de
-# songs/ (no usamos más). Todos de 4 chars (requisito de set_fx_cmd).
+# Comandos FX que se pueden ciclar. Todos de 4 chars (requisito de set_fx_cmd).
 FX_USED = ["VOLM", "KILL", "DLAY", "LEGA", "TABL", "STOP", "MDCC", "MDPG",
-           "PTCH", "RTRG"]
+           "PTCH", "RTRG", "SLID", "CHRD"]
+FX_HELP = {
+    "VOLM": "volumen de la nota",
+    "KILL": "corta la nota (ticks)",
+    "DLAY": "retrasa el disparo",
+    "LEGA": "glide entre notas",
+    "TABL": "lanza una tabla",
+    "STOP": "para la canción",
+    "MDCC": "CC MIDI / pantalla",
+    "MDPG": "cambio de programa MIDI",
+    "PTCH": "transpone (semitonos)",
+    "RTRG": "repite la nota",
+    "SLID": "slide a nota destino",
+    "CHRD": "acorde sobre la nota",
+}
+PICK_ROW_H = dp(34)
 
 # (kind, ancho_px) — columnas normales (6) y las del canal de robotas (2).
 COLS = [("note", dp(70)), ("instr", dp(52)),
-        ("fx1cmd", dp(74)), ("fx1prm", dp(74)),
-        ("fx2cmd", dp(74)), ("fx2prm", dp(74))]
+        ("fx1cmd", dp(74)), ("fx1prm", dp(100)),
+        ("fx2cmd", dp(74)), ("fx2prm", dp(100))]
 ROBOT_COLS = [("hit", dp(148)), ("screen", dp(150))]
 
 _HIT_NOTE_LIST = [note for _label, note in HIT_NOTES]
@@ -78,6 +104,7 @@ _COL_COLOR = {"note": COLOR_NOTE, "instr": COLOR_INSTR,
 _KIND = {"note": "note", "instr": "instr", "fx1cmd": "cmd", "fx2cmd": "cmd",
          "fx1prm": "prm", "fx2prm": "prm", "hit": "hit", "screen": "screen"}
 _WHICH = {"fx1cmd": 1, "fx1prm": 1, "fx2cmd": 2, "fx2prm": 2}
+_DOUBLE_A_S = 0.4                      # doble A: siguiente instrumento libre
 
 # Etiqueta de cabecera por grupo de columnas (span de índices).
 _HDR_GROUPS = [("NOTE", COLOR_NOTE, 0, 1), ("INST", COLOR_INSTR, 1, 2),
@@ -89,7 +116,7 @@ class PhraseGrid(Widget):
     def __init__(self, on_change=None, fx_commands=None, on_nav=None,
                  on_pick_screen=None, ayuda_dir=None, **kw):
         super().__init__(**kw)
-        # comandos FX que se pueden ciclar (solo los usados en las canciones)
+        # comandos FX que se pueden ciclar (FX_USED)
         self.fx_commands = list(fx_commands) if fx_commands else list(FX_USED)
         self.on_nav = on_nav           # refresca la cabecera al mover el cursor
         self.on_pick_screen = on_pick_screen   # abre el navegador de images/
@@ -106,12 +133,15 @@ class PhraseGrid(Widget):
         self.sel_anchor = None         # (step, col) extremo fijo de la selección
         self.play_step = None
         self.on_change = on_change
+        self.tracks = list(DEFAULT_TRACKS)
         self._tex = {}
         self._preview_path = None
         self._preview_tex = None
         self._img_cache = {}               # path -> textura (reuso entre steps)
         self._strip_path = [None] * PHRASE_LEN
         self._strip_tex = [None] * PHRASE_LEN
+        self._last_a_tap = 0.0
+        self.fx_picker = None          # índice en fx_commands, o None
         self.bind(pos=self._redraw, size=self._redraw)
 
     def _cols(self):
@@ -128,8 +158,16 @@ class PhraseGrid(Widget):
         self.block_clipboard = None
         self.sel_stage = 0
         self.sel_anchor = None
+        self._last_a_tap = 0.0
+        self.fx_picker = None
         self._update_preview()
         self._redraw()
+
+    def set_tracks(self, kinds):
+        kinds = list(kinds)
+        if kinds != self.tracks:
+            self.tracks = kinds
+            self._redraw()
 
     # -- miniatura de pantalla (canal de robotas) -----------------------
     def _screen_path(self, step):
@@ -190,6 +228,32 @@ class PhraseGrid(Widget):
         if i is None or self.project.instruments[i] == EMPTY:
             return None
         return self.project.instruments[i]
+
+    def effective_instr(self, step=None):
+        """Instrumento del step, o el último definido hacia atrás.
+
+        En LGPT el instrumento se hereda: un step con `..` usa el de la
+        nota anterior. Ctrl+derecha a INSTRUMENT debe abrir ese, no el 00.
+        """
+        if self.pv is None:
+            return None
+        if step is None:
+            step = self.cursor_step
+        return inherited_instr(self.pv, step, self.track)
+
+    def _bank_ids(self):
+        if self.project is None:
+            return []
+        return sorted(self.project.instrument_bank)
+
+    def _default_instr(self, step=None):
+        """Instrumento al pintar una nota o un INST vacío: el heredado,
+        o el primero del banco (suele ser 00)."""
+        iid = self.effective_instr(step)
+        if iid is not None:
+            return iid
+        bank = self._bank_ids()
+        return bank[0] if bank else 0
 
     def _cmd(self, step, which):
         c = self.pv.fx_cmd_at(step, self.track, which)
@@ -262,6 +326,7 @@ class PhraseGrid(Widget):
             self.cursor_col = max(0, self.cursor_col - 1)
         elif button == RIGHT:
             self.cursor_col = min(len(self._cols()) - 1, self.cursor_col + 1)
+        self._last_a_tap = 0.0
         if self.on_nav:
             self.on_nav()              # actualiza cabecera (nombre del sample)
         self._update_preview()
@@ -272,7 +337,7 @@ class PhraseGrid(Widget):
         En el canal de robotas el instrumento es fijo (no hay sample)."""
         if self.pv is None or self.track == ROBOT_TRACK:
             return None
-        iid = self._instr(self.cursor_step)
+        iid = self.effective_instr()
         if iid is None:
             return None
         data = self.project.instrument_bank.get(iid)
@@ -295,20 +360,32 @@ class PhraseGrid(Widget):
         elif kind == "note":
             self._edit_note(step, delta)
         elif kind == "instr":
-            cur = self._instr(step)
-            if cur is None:
-                if delta > 0:
-                    self.pv.set_instr(step, self.track, 0)
-            else:
-                self.pv.set_instr(step, self.track, max(0, min(0xFE, cur + delta)))
+            self._edit_instr(step, delta)
         elif kind.endswith("cmd"):
+            if button in (UP, DOWN):
+                self.open_fx_picker()
+                return
             self._edit_cmd(step, _WHICH[kind], delta)
         else:
             which = _WHICH[kind]
-            cur = self.pv.fx_param_at(step, self.track, which)
-            self.pv.set_fx_param(step, self.track, which,
-                                 max(0, min(0xFFFF, cur + delta)))
+            if self._cmd(step, which) == "CHRD":
+                d = 1 if delta > 0 else -1
+                cur = self.pv.fx_param_at(step, self.track, which)
+                self.pv.set_fx_param(step, self.track, which,
+                                     cycle_chord(cur, d))
+            elif self._cmd(step, which) == "SLID":
+                self._edit_slid(step, which, button)
+            else:
+                cur = self.pv.fx_param_at(step, self.track, which)
+                self.pv.set_fx_param(step, self.track, which,
+                                     max(0, min(0xFFFF, cur + delta)))
         self._changed()
+
+    def _edit_instr(self, step, delta):
+        # Hex crudo como param: A+izq/dcha ±1, A+arr/abj ±0x10.
+        # El banco suele estar hueco (00, 01, 10…); ciclarlo hacía que
+        # A+dcha saltara a 10 y A+arr se fuera muchos slots.
+        nudge_cell(self.pv, step, self.track, delta, col="instr")
 
     def _edit_note(self, step, delta):
         cur = self._note(step)
@@ -317,7 +394,7 @@ class PhraseGrid(Widget):
                 self.pv.set_note(step, self.track,
                                  note_name_to_byte(f"C-{self.octave}"))
                 if self._instr(step) is None:
-                    self.pv.set_instr(step, self.track, 0)
+                    self.pv.set_instr(step, self.track, self._default_instr(step))
         else:
             self.pv.set_note(step, self.track, max(0, min(MAX_NOTE, cur + delta)))
 
@@ -350,7 +427,7 @@ class PhraseGrid(Widget):
         else:
             self.pv.set_note(step, self.track, note & 0x7F)
             if self._instr(step) is None:
-                self.pv.set_instr(step, self.track, 0)
+                self.pv.set_instr(step, self.track, self._default_instr(step))
         param = min(velocity * 2, 0xFF)
         for which in (1, 2):            # actualizar el VOLM que ya haya
             if self.pv.fx_cmd_at(step, self.track, which) == "VOLM":
@@ -380,6 +457,67 @@ class PhraseGrid(Widget):
         else:
             self.pv.set_fx_cmd(step, self.track, which,
                                cmds[(cmds.index(cur) + d) % len(cmds)])
+        new = self._cmd(step, which)
+        if new == "CHRD":
+            self.pv.set_fx_param(step, self.track, which, 0)
+        elif new == "SLID":
+            self.pv.set_fx_param(step, self.track, which,
+                                 self._slid_default_param(step))
+
+    def _slid_default_param(self, step):
+        src = self._note(step)
+        dest = 72 if src is None else min(127, src + 12)
+        return slid_pack(dest, 4)
+
+    def _edit_slid(self, step, which, button):
+        """A+izq/dcha: nota destino ±1. A+arr/abj: duración en steps ±1."""
+        note, steps = slid_unpack(self.pv.fx_param_at(step, self.track, which))
+        if button in (LEFT, RIGHT):
+            note = max(0, min(127, note + (1 if button == RIGHT else -1)))
+        else:
+            steps = max(1, min(16, steps + (1 if button == UP else -1)))
+        self.pv.set_fx_param(step, self.track, which, slid_pack(note, steps))
+
+    def open_fx_picker(self):
+        """Lista de comandos FX con mini explicación (A+arr/abj sobre cmd)."""
+        kind = self._cols()[self.cursor_col][0]
+        if not kind.endswith("cmd"):
+            return
+        cmds = self.fx_commands
+        cur = self._cmd(self.cursor_step, _WHICH[kind])
+        self.fx_picker = cmds.index(cur) if cur in cmds else 0
+        self._redraw()
+
+    def fx_picker_move(self, delta):
+        if self.fx_picker is None or not self.fx_commands:
+            return
+        n = len(self.fx_commands)
+        self.fx_picker = max(0, min(n - 1, self.fx_picker + delta))
+        self._redraw()
+
+    def apply_fx_picker(self):
+        if self.fx_picker is None:
+            return
+        kind = self._cols()[self.cursor_col][0]
+        if not kind.endswith("cmd"):
+            self.close_fx_picker()
+            return
+        cmd = self.fx_commands[self.fx_picker]
+        which = _WHICH[kind]
+        prev = self._cmd(self.cursor_step, which)
+        self.pv.set_fx_cmd(self.cursor_step, self.track, which, cmd)
+        if cmd == "CHRD" and prev != "CHRD":
+            self.pv.set_fx_param(self.cursor_step, self.track, which, 0)
+        elif cmd == "SLID" and prev != "SLID":
+            self.pv.set_fx_param(self.cursor_step, self.track, which,
+                                 self._slid_default_param(self.cursor_step))
+        self.fx_picker = None
+        self._changed()
+
+    def close_fx_picker(self):
+        if self.fx_picker is not None:
+            self.fx_picker = None
+            self._redraw()
 
     def delete(self):
         self._set_raw(self.cursor_step, self.cursor_col, None)
@@ -472,6 +610,12 @@ class PhraseGrid(Widget):
             if self.on_pick_screen:
                 self.on_pick_screen(step)          # siempre abre el navegador
             return
+        now = time.monotonic()
+        if kind == "instr" and now - self._last_a_tap < _DOUBLE_A_S:
+            self._last_a_tap = now
+            self.assign_next_free_instr()
+            return
+        self._last_a_tap = now
         val = self._get_raw(step, col)
         ckind = _KIND[kind]
         if val is not None:
@@ -483,6 +627,25 @@ class PhraseGrid(Widget):
         else:
             self._set_default(step, col)          # valor por defecto
             self._changed()
+
+    def assign_next_free_instr(self):
+        """Doble A: el step apunta al primer instrumento no usado en la
+        canción y mayor que el actual (circular). No copia el patch."""
+        if self.pv is None or self.track == ROBOT_TRACK:
+            return False
+        kind = self._cols()[self.cursor_col][0]
+        if kind != "instr":
+            return False
+        cur = self._instr(self.cursor_step)
+        src = -1 if cur is None else cur
+        dst = alloc_unreferenced_instr_above(self.project, src)
+        if dst is None or dst == cur:
+            return False
+        self.pv.set_instr(self.cursor_step, self.track, dst)
+        self._changed()
+        if self.on_nav:
+            self.on_nav()
+        return True
 
     def paste_field(self):
         col = self.cursor_col
@@ -499,10 +662,13 @@ class PhraseGrid(Widget):
             self.pv.set_note(step, self.track,
                              note_name_to_byte(f"C-{self.octave}"))
         elif kind == "instr":
-            self.pv.set_instr(step, self.track, 0)
+            self.pv.set_instr(step, self.track, self._default_instr(step))
         elif kind.endswith("cmd"):
             self.pv.set_fx_cmd(step, self.track, _WHICH[kind],
                                self.fx_commands[0])
+        elif self._cmd(step, _WHICH[kind]) == "SLID":
+            self.pv.set_fx_param(step, self.track, _WHICH[kind],
+                                 self._slid_default_param(step))
         else:
             self.pv.set_fx_param(step, self.track, _WHICH[kind], 0)
 
@@ -532,7 +698,15 @@ class PhraseGrid(Widget):
             return f"{raw:02X}" if raw is not None else ".."
         if kind.endswith("cmd"):
             return raw.strip().ljust(4, " ") if raw is not None else "----"
-        return f"{raw:04X}" if raw is not None else "...."
+        which = _WHICH[kind]
+        if raw is None:
+            return "...."
+        if self._cmd(step, which) == "CHRD":
+            return chord_label(raw)
+        if self._cmd(step, which) == "SLID":
+            note, steps = slid_unpack(raw)
+            return f"{note_byte_to_name(note)} {steps:02d}"
+        return f"{raw:04X}"
 
     def _texture(self, text, font_size=FONT):
         key = (text, font_size)
@@ -566,9 +740,24 @@ class PhraseGrid(Widget):
     def _draw_hit_icon(self, x, cy, size, note, color):
         draw_hit_icon(x, cy, size, note, color)
 
+    def _draw_track_bar(self, x_step):
+        """Icono + nombre del tipo de esta pista, encima de las columnas."""
+        hy = self.y + self.height - TRACK_BAR_H
+        Color(*COLOR_HEADER_BG)
+        Rectangle(pos=(self.x, hy), size=(self.width, TRACK_BAR_H))
+        kind = (self.tracks[self.track] if 0 <= self.track < len(self.tracks)
+                else DEFAULT_TRACKS[min(self.track, len(DEFAULT_TRACKS) - 1)])
+        s = TRACK_BAR_H * 0.62
+        cx = x_step + s * 0.55
+        cy = hy + TRACK_BAR_H / 2
+        draw_track_icon(cx, cy, s, kind, COLOR_ACCENT, bg=COLOR_HEADER_BG)
+        self._text_left(cx + s * 0.65, hy, self.width,
+                        track_caption(self.track, kind),
+                        COLOR_ACCENT, h=TRACK_BAR_H)
+
     def _draw_headers(self, x_step, xs, cols, block_right):
         """NOTE/INST/FX1/FX2 (o HIT/SCREEN) alineados con las columnas."""
-        hy = self.y + self.height - HEADER_H
+        hy = self.y + self.height - TRACK_BAR_H - HEADER_H
         is_robot = self.track == ROBOT_TRACK
         if is_robot:
             hx, hw = x_step, block_right - x_step
@@ -615,6 +804,7 @@ class PhraseGrid(Widget):
 
             Color(*COLOR_BG)
             Rectangle(pos=self.pos, size=self.size)
+            self._draw_track_bar(x_step)
             self._draw_headers(x_step, xs, cols, block_right)
             for step in range(PHRASE_LEN):
                 y = self.y + self.height - TOP_PAD - (step + 1) * ROW_H
@@ -680,6 +870,9 @@ class PhraseGrid(Widget):
                                 hint, COLOR_ACCENT, h=HINT_H,
                                 font_size=FONT_SMALL)
 
+            if self.fx_picker is not None:
+                self._draw_fx_picker()
+
     def _draw_thumb(self, step, tx, y, size):
         """Celda del filmstrip alineada con el step (vacía si no hay SCREEN)."""
         pad = dp(3)
@@ -718,3 +911,49 @@ class PhraseGrid(Widget):
                       pos=(px + (pw - dw) / 2, py + (ph - dh) / 2))
         Color(*COLOR_BORDER)
         Line(rectangle=(px, py, pw, ph), width=1.2)
+
+    def _draw_fx_picker(self):
+        """Overlay: comandos FX + mini explicación. Arr/abj mueve, A elige."""
+        cmds = self.fx_commands
+        n = len(cmds)
+        pw = min(self.width - dp(40), dp(560))
+        ph = (n + 2) * PICK_ROW_H
+        px = self.x + (self.width - pw) / 2
+        py = self.y + (self.height - ph) / 2
+        Color(*COLOR_SCRIM)
+        Rectangle(pos=self.pos, size=self.size)
+        Color(*COLOR_ROW_CURSOR)
+        Rectangle(pos=(px, py), size=(pw, ph))
+        Color(*COLOR_ACCENT)
+        RoundedRectangle(pos=(px + dp(3), py + dp(3)),
+                         size=(pw - dp(6), ph - dp(6)), radius=[dp(8)])
+        Color(*COLOR_ROW_CURSOR)
+        RoundedRectangle(pos=(px + dp(7), py + dp(7)),
+                         size=(pw - dp(14), ph - dp(14)), radius=[dp(6)])
+        self._text(px, py + (n + 1) * PICK_ROW_H, pw, "EFECTO",
+                   COLOR_ACCENT, h=PICK_ROW_H)
+        cmd_w = dp(88)
+        for i, cmd in enumerate(cmds):
+            y = py + (n - i) * PICK_ROW_H
+            if i == self.fx_picker:
+                Color(*COLOR_ROW_CURSOR)
+                Rectangle(pos=(px + dp(10), y + dp(3)),
+                          size=(pw - dp(20), PICK_ROW_H - dp(6)))
+                Color(*COLOR_ACCENT)
+                RoundedRectangle(pos=(px + dp(12), y + dp(5)),
+                                 size=(pw - dp(24), PICK_ROW_H - dp(10)),
+                                 radius=[dp(4)])
+                color = COLOR_BG
+            else:
+                color = COLOR_NAME
+            label = cmd.strip().ljust(4)
+            help_txt = FX_HELP.get(cmd, "")
+            self._text_left(px + dp(28), y, cmd_w, label, color,
+                            h=PICK_ROW_H)
+            if help_txt:
+                hint_c = COLOR_BG if i == self.fx_picker else COLOR_HINT
+                self._text_left(px + dp(28) + cmd_w, y,
+                                pw - dp(56) - cmd_w, help_txt, hint_c,
+                                h=PICK_ROW_H, font_size=FONT_SMALL)
+        self._text(px, py, pw, "A: elegir · B: cancelar", COLOR_HINT,
+                   h=PICK_ROW_H, font_size=FONT_SMALL)

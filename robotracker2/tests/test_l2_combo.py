@@ -1,13 +1,8 @@
-"""Test del bug: L2 (Ctrl Izq) + B + A no debe cortar la celda seleccionada.
+"""Test: L2/R2 + S no debe borrar la celda.
 
-Reproduce el flujo exacto del usuario:
-  1. Pulsa Ctrl Izq (L2)
-  2. Pulsa B, suelta B
-  3. Pulsa A, suelta A
-
-Antes del fix, al soltar A con L2 mantenido se disparaba `a_tap()` que
-cortaba/pegaba/ponía 00 sobre la celda. Ahora L2 es un modificador de
-navegación: A y B con L2 no hacen nada (salvo L2+S mute mientras suena).
+L2 (Ctrl izq) + S mutea; S sola borra al soltar. Si S llega antes que Ctrl,
+o el SO repite S al soltar Ctrl, el combo consume el pulso y no borra.
+R2+A con selección duplica; A tap sin L2 sigue copiando.
 """
 
 import os
@@ -21,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from kivy.clock import Clock  # noqa: E402
 
 from controls import A, B, DOWN, L2, R2  # noqa: E402
+from lgpt_model import EMPTY  # noqa: E402
 from songs import DEFAULT_SONGS  # noqa: E402
 
 
@@ -76,6 +72,36 @@ def _run(app):
     assert not g.has_selection, "la selección debe cancelarse tras duplicar"
     print("  R2+A (Ctrl+A) duplica la chain OK")
 
+    # Restaura un valor para los casos Ctrl+S / S solo
+    g.view.set_value(r, t, 0x05)
+
+    # S llega antes que Ctrl: antes borraba la celda y luego muteaba
+    app._fresh_press = True
+    app._dispatch(B, {B})
+    app._fresh_press = True
+    app._dispatch(L2, {L2, B})
+    app._release(B)
+    assert g.view.chain_at(r, t) == 0x05, \
+        f"S luego Ctrl no debe borrar: {g.view.chain_at(r, t)}"
+    print("  S luego Ctrl (L2) no borra la celda OK")
+
+    # Tras L2+S, el SO puede repetir S ya sin Ctrl: tampoco debe borrar
+    app._fresh_press = True
+    app._dispatch(B, {B, L2})
+    app._fresh_press = False
+    app._dispatch(B, {B})
+    app._release(B)
+    assert g.view.chain_at(r, t) == 0x05, \
+        f"repetición de S sin Ctrl no debe borrar: {g.view.chain_at(r, t)}"
+    print("  repetición de S tras soltar Ctrl no borra OK")
+
+    # S solo (sin Ctrl) sigue borrando al soltar
+    app._fresh_press = True
+    app._dispatch(B, {B})
+    app._release(B)
+    assert g.view.chain_at(r, t) == EMPTY, \
+        f"S sola debe borrar, quedó {g.view.chain_at(r, t)}"
+    print("  S sola sigue borrando al soltar OK")
 
 
 def main():

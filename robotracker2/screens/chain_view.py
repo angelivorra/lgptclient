@@ -3,10 +3,14 @@
 Como LGPT: dos columnas por step — PHRASE (índice de phrase) y TRANSPOSE. La
 chain mostrada es la de la celda de SONG (song_row, track) desde la que se
 entró. Dpad mueve (arr/abj = step, izq/dcha = columna), A+dir edita el valor,
-A copia/pega/00, B borra. Crear una phrase en un hueco crea la chain si hace
-falta (estilo Piggy), reutilizando `ChainView` del modelo. Encima de las
-columnas, etiquetas PHRASE y TRSP.
+A copia/pega/00, doble A (columna phrase) pone la primera phrase no
+referenciada en la canción y mayor que la actual, B borra. Crear una phrase
+en un hueco crea la chain si hace falta (estilo Piggy), reutilizando
+`ChainView` del modelo. Encima de las columnas, el icono y el nombre del tipo
+de esa pista, y las etiquetas PHRASE y TRSP.
 """
+
+import time
 
 from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
 from kivy.metrics import dp
@@ -14,17 +18,19 @@ from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
 from lgpt_model import (CHAIN_LEN, EMPTY, NUM_TRACKS, ChainView, SongView,
-                        duplicate_phrase)
-
+                        alloc_unreferenced_phrase_above, duplicate_phrase)
+from screens.track_icons import draw_track_icon
 from theme import (COLOR_ACCENT, COLOR_BEAT, COLOR_BG, COLOR_BORDER, COLOR_CELL,
                    COLOR_EMPTY, COLOR_HEADER_BG, COLOR_HEADER_TXT, COLOR_HINT_BG,
                    COLOR_LINENUM, COLOR_LINENUM_CUR, COLOR_PLAY,
                    COLOR_ROW_CURSOR, COLOR_SEL, COLOR_TRSP, core_label,
                    draw_play_mark)
+from tracks import DEFAULT_TRACKS, track_caption
 
 ROW_H = dp(30)
 HEADER_H = dp(22)
-TOP_PAD = HEADER_H
+TRACK_BAR_H = dp(36)
+TOP_PAD = TRACK_BAR_H + HEADER_H
 LM = dp(48)
 STEP_W = dp(64)
 COL_W = dp(96)
@@ -34,6 +40,7 @@ FONT_HDR = dp(12)
 HINT_H = dp(32)                         # franja inferior del hint de selección
 
 _EDIT = {RIGHT: 1, LEFT: -1, UP: 0x10, DOWN: -0x10}
+_DOUBLE_A_S = 0.4                      # doble A: siguiente phrase libre
 
 
 class ChainGrid(Widget):
@@ -50,6 +57,8 @@ class ChainGrid(Widget):
         self.sel_anchor = None         # (step, col) extremo fijo
         self.play_step = None          # step en el playhead (o None)
         self.on_change = on_change
+        self.tracks = list(DEFAULT_TRACKS)
+        self._last_a_tap = 0.0
         self._tex = {}
         self.bind(pos=self._redraw, size=self._redraw)
 
@@ -69,7 +78,14 @@ class ChainGrid(Widget):
         self.clipboard = None
         self.sel_stage = 0
         self.sel_anchor = None
+        self._last_a_tap = 0.0
         self._redraw()
+
+    def set_tracks(self, kinds):
+        kinds = list(kinds)
+        if kinds != self.tracks:
+            self.tracks = kinds
+            self._redraw()
 
     def chain_index(self):
         c = self.project.song[self.song_row * NUM_TRACKS + self.track]
@@ -108,6 +124,7 @@ class ChainGrid(Widget):
             self.cursor_col = max(0, self.cursor_col - 1)
         elif button == RIGHT:
             self.cursor_col = min(1, self.cursor_col + 1)
+        self._last_a_tap = 0.0
         self._redraw()
 
     def edit(self, button):
@@ -133,6 +150,12 @@ class ChainGrid(Widget):
 
     def a_tap(self):
         step, col = self.cursor_step, self.cursor_col
+        now = time.monotonic()
+        if col == 0 and now - self._last_a_tap < _DOUBLE_A_S:
+            self._last_a_tap = now
+            self.assign_next_free_phrase()
+            return
+        self._last_a_tap = now
         cur = self._get(step, col)
         # celda con valor -> copiar; vacía -> pegar o poner 00
         if col == 0 and cur is not None:
@@ -147,6 +170,20 @@ class ChainGrid(Widget):
         else:
             self._set(step, col, 0)
             self._changed()
+
+    def assign_next_free_phrase(self):
+        """Doble A: la celda apunta a la primera phrase no usada en la
+        canción y mayor que la actual (circular). No copia contenido."""
+        if self.cursor_col != 0 or self.cv is None:
+            return False
+        cur = self._get(self.cursor_step, 0)
+        src = -1 if cur is None else cur
+        dst = alloc_unreferenced_phrase_above(self.project, src)
+        if dst is None or dst == cur:
+            return False
+        self._set(self.cursor_step, 0, dst)
+        self._changed()
+        return True
 
     def paste_block(self):
         if self.clipboard is not None:
@@ -271,9 +308,24 @@ class ChainGrid(Widget):
         Color(*color)
         Rectangle(texture=tex, size=(tw, th), pos=(x, y + (h - th) / 2))
 
+    def _draw_track_bar(self, x_step):
+        """Icono + nombre del tipo de esta pista, encima de las columnas."""
+        hy = self.y + self.height - TRACK_BAR_H
+        Color(*COLOR_HEADER_BG)
+        Rectangle(pos=(self.x, hy), size=(self.width, TRACK_BAR_H))
+        kind = (self.tracks[self.track] if 0 <= self.track < len(self.tracks)
+                else DEFAULT_TRACKS[min(self.track, len(DEFAULT_TRACKS) - 1)])
+        s = TRACK_BAR_H * 0.62
+        cx = x_step + s * 0.55
+        cy = hy + TRACK_BAR_H / 2
+        draw_track_icon(cx, cy, s, kind, COLOR_ACCENT, bg=COLOR_HEADER_BG)
+        self._text_left(cx + s * 0.65, hy, self.width,
+                        track_caption(self.track, kind),
+                        COLOR_ACCENT, h=TRACK_BAR_H)
+
     def _draw_headers(self, x_ph, x_tr):
         """PHRASE / TRSP alineados con las dos columnas."""
-        hy = self.y + self.height - HEADER_H
+        hy = self.y + self.height - TRACK_BAR_H - HEADER_H
         Color(*COLOR_HEADER_BG)
         Rectangle(pos=(self.x, hy), size=(self.width, HEADER_H))
         Color(*COLOR_BORDER)
@@ -303,6 +355,7 @@ class ChainGrid(Widget):
         with self.canvas:
             Color(*COLOR_BG)
             Rectangle(pos=self.pos, size=self.size)
+            self._draw_track_bar(x_step)
             self._draw_headers(x_ph, x_tr)
             for step in range(CHAIN_LEN):
                 y = self.y + self.height - TOP_PAD - (step + 1) * ROW_H

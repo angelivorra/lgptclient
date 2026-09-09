@@ -1,4 +1,4 @@
-"""Pantalla SONG: la parrilla 256 filas × 8 canales de índices de chain.
+"""Pantalla SONG: la parrilla 256 filas × 9 canales de índices de chain.
 
 Clon de la pantalla Song de LGPT. Trabaja con
 botones lógicos (`controls`); la app resuelve los acordes y llama a estos
@@ -10,34 +10,35 @@ métodos:
 - Ctrl+S cicla la selección: libre -> filas completas -> todo lo visible.
 - S copia la selección; Ctrl+A la corta; Ctrl+A sin selección pega el bloque.
 
-La edición muta el `LGPTProject` en memoria vía `SongView`.
+La edición muta el `LGPTProject` en memoria vía `SongView`. La cabecera
+muestra el icono y el nombre del tipo de cada pista (ver `tracks.py`).
 """
 
-from kivy.graphics import Color, Ellipse, Line, Rectangle, RoundedRectangle
+from kivy.graphics import Color, Line, Rectangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
-from lgpt_model import (EMPTY, NUM_TRACKS, SongView, clip_region,
-                        duplicate_chain, paste_region, read_cell)
+from lgpt_model import (EMPTY, NUM_TRACKS, SongView, duplicate_chain,
+                        read_cell, write_cell)
 
+from screens.track_icons import draw_track_icon
 from theme import (COLOR_BAR, COLOR_BEAT, COLOR_BG, COLOR_CELL, COLOR_EMPTY,
                    COLOR_HEADER_BG, COLOR_HEADER_TXT, COLOR_HINT_BG,
                    COLOR_LINENUM, COLOR_LINENUM_CUR, COLOR_MUTE_OVERLAY,
                    COLOR_MUTED, COLOR_PLAY, COLOR_SONG_ACCENT,
                    COLOR_SONG_CELL_FG, COLOR_SONG_HEADER_SEL, COLOR_SONG_ROW,
                    COLOR_SONG_SEL, COLOR_SONG_TRACK, core_label, draw_play_mark)
+from tracks import DEFAULT_TRACKS, slot_of, track_at_slot, track_caption
 
 ROW_H = dp(30)
-HEADER_H = dp(34)                       # cabecera con el nº de canal
+HEADER_H = dp(48)                       # icono + nombre del tipo de pista
 GUTTER_W = dp(54)
 FONT = dp(17)
 FONT_SMALL = dp(15)
+FONT_HDR = dp(11)
 HINT_H = dp(32)                         # franja inferior del hint de selección
-
-# Canales especiales (0-index): 6 = voz (canal 7), 7 = robot (canal 8)
-VOICE_TRACK = 6
-ROBOT_TRACK = 7
+NAME_H = dp(16)                         # franja del nombre bajo el icono
 
 _MOVE = {UP: (-1, 0), DOWN: (1, 0), LEFT: (0, -1), RIGHT: (0, 1)}
 _EDIT = {RIGHT: 1, LEFT: -1, UP: 0x10, DOWN: -0x10}
@@ -57,6 +58,7 @@ class SongGrid(Widget):
         self.play_pos = [None] * NUM_TRACKS   # fila en el playhead por canal
         self.muted = set()                    # canales muteados (0-7)
         self.pulse = [0.0] * NUM_TRACKS       # destello 1→0 al disparar nota
+        self.tracks = list(DEFAULT_TRACKS)    # tipo (drum/bass/...) por canal
         self._tex = {}
         self.bind(pos=self._redraw, size=self._redraw)
 
@@ -94,7 +96,8 @@ class SongGrid(Widget):
     # -- datos ----------------------------------------------------------
     def set_project(self, project):
         self.view = SongView(project)
-        self.cursor_row = self.cursor_track = self.top_row = 0
+        self.cursor_row = self.top_row = 0
+        self.cursor_track = track_at_slot(0)
         self.sel_stage = 0
         self.sel_anchor = None
         self.clipboard = None
@@ -102,6 +105,12 @@ class SongGrid(Widget):
         self.muted = set()
         self.pulse = [0.0] * NUM_TRACKS
         self._redraw()
+
+    def set_tracks(self, kinds):
+        kinds = list(kinds)
+        if kinds != self.tracks:
+            self.tracks = kinds
+            self._redraw()
 
     @property
     def has_selection(self):
@@ -111,7 +120,8 @@ class SongGrid(Widget):
     def move(self, button):
         dr, dt = _MOVE[button]
         self.cursor_row = max(0, min(self.view.length - 1, self.cursor_row + dr))
-        self.cursor_track = max(0, min(NUM_TRACKS - 1, self.cursor_track + dt))
+        slot = max(0, min(NUM_TRACKS - 1, slot_of(self.cursor_track) + dt))
+        self.cursor_track = track_at_slot(slot)
         self._ensure_visible()
         self._redraw()
 
@@ -140,7 +150,7 @@ class SongGrid(Widget):
             self.clipboard = [[read_cell(self.view, r, t)]]   # copiar celda
             self._redraw()
         elif self.clipboard is not None:
-            paste_region(self.view, r, t, self.clipboard)     # pegar
+            self._paste_visual(r, slot_of(t), self.clipboard)
             self._changed()
         else:
             self.view.set_value(r, t, 0x00)                   # poner 00
@@ -149,20 +159,20 @@ class SongGrid(Widget):
     # -- portapapeles de bloque ----------------------------------------
     def paste_block(self):
         if self.clipboard is not None:
-            paste_region(self.view, self.cursor_row, self.cursor_track,
-                         self.clipboard)
+            self._paste_visual(self.cursor_row, slot_of(self.cursor_track),
+                               self.clipboard)
             self._changed()
 
     def copy_selection(self):
         region = self._region()
         if region:
-            self.clipboard = clip_region(self.view, *region)
+            self.clipboard = self._clip_visual(*region)
         self.cancel_selection()
 
     def cut_selection(self):
         region = self._region()
         if region:
-            self.clipboard = clip_region(self.view, *region, cut=True)
+            self.clipboard = self._clip_visual(*region, cut=True)
             self._changed()
         self.cancel_selection()
 
@@ -209,8 +219,8 @@ class SongGrid(Widget):
         ar, at = self.sel_anchor
         r0, r1 = sorted((ar, self.cursor_row))
         if self.sel_stage == 1:
-            t0, t1 = sorted((at, self.cursor_track))
-            return (r0, t0, r1, t1)
+            s0, s1 = sorted((slot_of(at), slot_of(self.cursor_track)))
+            return (r0, s0, r1, s1)
         if self.sel_stage == 2:                       # filas completas
             return (r0, 0, r1, NUM_TRACKS - 1)
         n = self._visible_rows()                       # todo lo visible
@@ -230,6 +240,31 @@ class SongGrid(Widget):
         if self.on_change:
             self.on_change()
         self._redraw()
+
+    def _clip_visual(self, r0, s0, r1, s1, cut=False):
+        """Copia (o corta) el rectángulo en puestos visuales, no en canal LGPT."""
+        data = []
+        for r in range(r0, r1 + 1):
+            line = []
+            for s in range(s0, s1 + 1):
+                t = track_at_slot(s)
+                line.append(read_cell(self.view, r, t))
+                if cut:
+                    write_cell(self.view, r, t, None)
+            data.append(line)
+        return data
+
+    def _paste_visual(self, row, slot, data):
+        """Pega un bloque con esquina en (row, puesto visual)."""
+        for dr, line in enumerate(data):
+            r = row + dr
+            if r >= self.view.length:
+                break
+            for ds, cell in enumerate(line):
+                s = slot + ds
+                if s >= NUM_TRACKS:
+                    break
+                write_cell(self.view, r, track_at_slot(s), cell)
 
     def _visible_rows(self):
         return max(1, int((self.height - HEADER_H) // ROW_H))
@@ -251,8 +286,8 @@ class SongGrid(Widget):
             self._tex[key] = tex
         return tex
 
-    def _text(self, x, y, w, text, color, h=ROW_H):
-        tex = self._texture(text)
+    def _text(self, x, y, w, text, color, h=ROW_H, font_size=FONT):
+        tex = self._texture(text, font_size)
         tw, th = tex.size
         Color(*color)
         Rectangle(texture=tex, size=(tw, th),
@@ -263,33 +298,6 @@ class SongGrid(Widget):
         tw, th = tex.size
         Color(*color)
         Rectangle(texture=tex, size=(tw, th), pos=(x, y + (h - th) / 2))
-
-    def _icon_voice(self, cx, cy, s, color=COLOR_SONG_ACCENT):
-        """Micrófono (canal de voz)."""
-        Color(*color)
-        bw, bh = s * 0.40, s * 0.56
-        RoundedRectangle(pos=(cx - bw / 2, cy - bh * 0.10),
-                         size=(bw, bh), radius=[bw / 2])
-        Line(circle=(cx, cy - bh * 0.02, s * 0.34, 120, 240), width=1.4)
-        Line(points=[cx, cy - bh * 0.46, cx, cy - bh * 0.10], width=1.4)
-        Line(points=[cx - s * 0.20, cy - bh * 0.46,
-                     cx + s * 0.20, cy - bh * 0.46], width=1.4)
-
-    def _icon_robot(self, cx, cy, s, color=COLOR_SONG_ACCENT):
-        """Cabeza de robot (canal de robot)."""
-        hw, hh = s * 0.64, s * 0.52
-        Color(*color)
-        Line(points=[cx, cy + hh * 0.5, cx, cy + hh * 0.5 + s * 0.16],
-             width=1.4)
-        Ellipse(pos=(cx - s * 0.06, cy + hh * 0.5 + s * 0.10),
-                size=(s * 0.12, s * 0.12))
-        RoundedRectangle(pos=(cx - hw / 2, cy - hh / 2), size=(hw, hh),
-                         radius=[s * 0.14])
-        # ojos recortados en el fondo de cabecera
-        Color(*COLOR_BG)
-        er = s * 0.12
-        Ellipse(pos=(cx - hw * 0.26 - er / 2, cy - er / 2), size=(er, er))
-        Ellipse(pos=(cx + hw * 0.26 - er / 2, cy - er / 2), size=(er, er))
 
     def _frame_column(self, x, y, w, h):
         """Marco naranja y escuadras en L del canal del cursor."""
@@ -312,7 +320,10 @@ class SongGrid(Widget):
             return COLOR_MUTED
         if selected:
             return COLOR_SONG_ACCENT
-        return COLOR_SONG_TRACK[track]
+        return COLOR_SONG_TRACK[slot_of(track)]
+
+    def _col_x(self, slot, track_w):
+        return self.x + GUTTER_W + slot * track_w
 
     def _redraw(self, *_):
         self.canvas.clear()
@@ -344,14 +355,15 @@ class SongGrid(Widget):
                 num_color = (COLOR_LINENUM_CUR if row == self.cursor_row
                              else COLOR_LINENUM)
                 self._text(self.x, y, GUTTER_W, f"{row:02X}", num_color)
-                for t in range(NUM_TRACKS):
-                    x = self.x + GUTTER_W + t * track_w
+                for slot in range(NUM_TRACKS):
+                    t = track_at_slot(slot)
+                    x = self._col_x(slot, track_w)
                     v = self.view.chain_at(row, t)
                     text = "--" if v == EMPTY else f"{v:02X}"
                     is_cursor = (row == self.cursor_row
                                  and t == self.cursor_track)
                     in_sel = (region and region[0] <= row <= region[2]
-                              and region[1] <= t <= region[3])
+                              and region[1] <= slot <= region[3])
                     if is_cursor:
                         Color(*COLOR_SONG_ACCENT)
                         Rectangle(pos=(x + dp(2), y + dp(2)),
@@ -381,19 +393,21 @@ class SongGrid(Widget):
             hint_h = HINT_H if hint else 0
             # columnas muteadas: atenúa el cuerpo (debajo de la cabecera)
             for t in self.muted:
-                x = self.x + GUTTER_W + t * track_w
+                x = self._col_x(slot_of(t), track_w)
                 Color(*COLOR_MUTE_OVERLAY)
                 Rectangle(pos=(x, self.y + hint_h),
                           size=(track_w, self.height - HEADER_H - hint_h))
-            # cabecera de canales (1..6, voz, robot); muteadas en rojo
+            # cabecera de canales: nº + icono + nombre; muteadas en rojo
             hy = self.y + self.height - HEADER_H
             Color(*COLOR_HEADER_BG)
             Rectangle(pos=(self.x, hy), size=(self.width, HEADER_H))
             strip_h = dp(3)
-            for t in range(NUM_TRACKS):
-                x = self.x + GUTTER_W + t * track_w
+            for slot in range(NUM_TRACKS):
+                t = track_at_slot(slot)
+                x = self._col_x(slot, track_w)
                 selected = t == self.cursor_track
                 muted = t in self.muted
+                bg = COLOR_SONG_HEADER_SEL if selected else COLOR_HEADER_BG
                 if selected:
                     Color(*COLOR_SONG_HEADER_SEL)
                     Rectangle(pos=(x, hy), size=(track_w, HEADER_H))
@@ -401,23 +415,22 @@ class SongGrid(Widget):
                 if a > 0:
                     Color(1, 1, 1, 0.50 * a)
                     Rectangle(pos=(x, hy), size=(track_w, HEADER_H))
-                Color(*COLOR_SONG_TRACK[t])
+                Color(*COLOR_SONG_TRACK[slot])
                 strip = strip_h + (dp(10) * a if a > 0 else 0)
                 Rectangle(pos=(x, hy + HEADER_H - strip),
                           size=(track_w, strip))
-                cx, cy = x + track_w / 2, hy + HEADER_H / 2
-                s = min(track_w, HEADER_H) * 0.66
                 ink = self._track_ink(t, muted, selected)
-                if t == VOICE_TRACK:
-                    self._icon_voice(cx, cy, s, ink)
-                elif t == ROBOT_TRACK:
-                    self._icon_robot(cx, cy, s, ink)
-                else:
-                    self._text(x, hy, track_w, str(t + 1),
-                               ink if selected else (
-                                   COLOR_MUTED if muted else COLOR_HEADER_TXT),
-                               h=HEADER_H)
-            col_x = self.x + GUTTER_W + self.cursor_track * track_w
+                kind = (self.tracks[t] if t < len(self.tracks)
+                        else DEFAULT_TRACKS[t])
+                s = min(track_w * 0.62, HEADER_H - NAME_H) * 0.82
+                cx = x + track_w / 2
+                cy = hy + NAME_H + (HEADER_H - NAME_H) / 2
+                draw_track_icon(cx, cy, s, kind, ink, bg=bg)
+                name_ink = ink if selected else (
+                    COLOR_MUTED if muted else COLOR_HEADER_TXT)
+                self._text(x, hy, track_w, track_caption(t, kind), name_ink,
+                           h=NAME_H, font_size=FONT_HDR)
+            col_x = self._col_x(slot_of(self.cursor_track), track_w)
             self._frame_column(col_x, self.y + hint_h, track_w,
                                self.height - hint_h)
             if hint:

@@ -1,14 +1,17 @@
 """Mapa de navegación de pantallas estilo LittleGPTracker.
 
-Las pantallas están en una rejilla 2D (el cuadro del indicador de LGPT) y se
-navega con Ctrl+flechas hacia la pantalla adyacente. Diagrama:
+Las pantallas están en una rejilla 2D (el cuadro del indicador de LGPT).
+Arriba/abajo va a la celda inmediata; izquierda/derecha siempre a la
+pantalla principal (fila media) de la columna vecina — no se recuerda
+LIVE/PROJECT/GROOVE al cruzar. Diagrama:
 
 EFECTOS PROJECT LIVE      GROOVE
 PADS    SONG    CHAIN     PHRASE    INSTRUMENT
-        CONFIG            TABLE     TABLE
+TRACKS  CONFIG            TABLE     TABLE
 
 PROJECT está encima de SONG y GROOVE encima de PHRASE; CONFIG debajo de SONG;
-LIVE encima de CHAIN (preview del canal robot); PADS a la izquierda de SONG
+TRACKS debajo de PADS (tipo/icono de cada pista); LIVE encima de CHAIN
+(preview del canal robot); PADS a la izquierda de SONG
 (pads sampler por canción) y EFECTOS encima de PADS (efectos de los knobs del
 controlador por canción); PHRASE e INSTRUMENT tienen cada uno su TABLE debajo.
 Cada entrada: clave -> ((col, fila), etiqueta, letra). Fila 0 = arriba.
@@ -24,6 +27,7 @@ SCREENS = {
     "chain":            ((2, 1), "CHAIN",      "C"),
     "phrase":           ((3, 1), "PHRASE",     "P"),
     "instrument":       ((4, 1), "INSTRUMENT", "I"),
+    "tracks":           ((0, 2), "TRACKS",     "N"),
     "config":           ((1, 2), "CONFIG",     "C"),
     "phrase_table":     ((3, 2), "TABLE",      "T"),
     "instrument_table": ((4, 2), "TABLE",      "T"),
@@ -35,8 +39,19 @@ GRID_ROWS = 3
 
 _BY_POS = {pos: key for key, (pos, _label, _letter) in SCREENS.items()}
 
+# Fila media = PADS / SONG / CHAIN / PHRASE / INSTRUMENT.
+HOME_ROW = 1
+
 
 def neighbor(current, dx, dy):
-    """Pantalla adyacente en la dirección (dx, dy) o None si no hay ninguna."""
+    """Pantalla en la dirección (dx, dy) o None si no hay ninguna.
+
+    Arriba/abajo: celda inmediata (LIVE encima de CHAIN, CONFIG debajo
+    de SONG, …). Izquierda/derecha: pantalla principal de la columna
+    vecina, para que SONG→CHAIN no caiga en LIVE aunque vinieras de
+    PROJECT o estuvieras ya en LIVE.
+    """
     (cx, cy), _label, _letter = SCREENS[current]
-    return _BY_POS.get((cx + dx, cy + dy))
+    if dx != 0:
+        return _BY_POS.get((cx + dx, HOME_ROW))
+    return _BY_POS.get((cx, cy + dy))

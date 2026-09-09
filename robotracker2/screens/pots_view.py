@@ -4,9 +4,9 @@ Cuadrícula 2×2 de knobs (POT 1/2 arriba, 5/6 abajo — los del LPD8) más
 GUARDAR. El arco y la aguja siguen el **CC en vivo** del controlador
 (0-127); el campo % sigue siendo la mezcla dry/wet (`fx_mix`).
 
-- CANAL: canal al que afecta (1-8; en el robotraca.json se guarda 0-7).
-  Si el JSON trae varios ("1,2:acid"), se muestra el primero y al editar
-  queda en uno solo.
+- CANAL: canal al que afecta (1-9; en el robotraca.json se guarda 0-8),
+  con el icono y el nombre del tipo de esa pista. Si el JSON trae varios
+  ("1,2:acid"), se muestra el primero y al editar queda en uno solo.
 - EFECTO: "off" + los de EFFECT_PRESETS. "off" deja el knob sin target.
 - %: mezcla dry/wet (`fx_mix`; 100 = sin fx_mix). El arco del knob es
   la posición física del CC, no este porcentaje.
@@ -22,15 +22,17 @@ from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, UP
+from screens.track_icons import draw_track_icon
 from sinte_bridge import EFFECT_PRESETS
 from theme import (COLOR_ACCENT, COLOR_BG, COLOR_BORDER, COLOR_EMPTY,
                    COLOR_HINT, COLOR_HINT_BG, COLOR_NAME, COLOR_OK,
                    COLOR_ROW_CURSOR, COLOR_VOL, core_label)
+from tracks import DEFAULT_TRACKS, kind_at, track_caption
 
 POT_NOS = [1, 2, 5, 6]              # knobs configurables del controlador
 EFFECT_CYCLE = ["off", *EFFECT_PRESETS]
 COL_HINTS = (
-    "A+dir: cambia CANAL (1–8)",
+    "A+dir: cambia CANAL (1–9)",
     "A+dir: cambia EFECTO · A: lista",
     "A+izq/dcha: % ±1 · A+arr/abj: % ±10",
 )
@@ -56,6 +58,7 @@ class PotsGrid(Widget):
         self.col = 0
         self.picker = None
         self.live_cc = [None] * 4       # CC 0-127 del hardware, o None
+        self.tracks = list(DEFAULT_TRACKS)
         self._tex = {}
         self.bind(pos=self._redraw, size=self._redraw)
 
@@ -69,6 +72,12 @@ class PotsGrid(Widget):
         values = list(values)
         if values != self.live_cc:
             self.live_cc = values
+            self._redraw()
+
+    def set_tracks(self, kinds):
+        kinds = list(kinds)
+        if kinds != self.tracks:
+            self.tracks = kinds
             self._redraw()
 
     def move(self, button):
@@ -192,35 +201,56 @@ class PotsGrid(Widget):
                           COLOR_ACCENT if selected else COLOR_BORDER,
                           h=dp(22), font_size=FONT_SMALL)
         on = efecto is not None
-        # CANAL · EFECTO · %
-        c_txt = f"C {canal}" if canal else "—"
+        # CANAL (icono + nº + nombre) · EFECTO · %
         e_txt = efecto if efecto else "—"
         p_txt = f"{pct}%" if on else "—"
-        labels = (c_txt, e_txt, p_txt)
-        col_w = (w - dp(20)) / 3
+        col_w = (w - dp(16)) * 0.46, (w - dp(16)) * 0.32, (w - dp(16)) * 0.22
         ly = y + dp(8)
-        for c, txt in enumerate(labels):
-            lx = x + dp(10) + c * col_w
+        lx = x + dp(8)
+        for c, cw in enumerate(col_w):
             cell = selected and c == self.col
             if cell:
                 Color(*COLOR_ACCENT)
                 RoundedRectangle(pos=(lx + dp(2), ly + dp(2)),
-                                 size=(col_w - dp(4), dp(28)),
+                                 size=(cw - dp(4), dp(28)),
                                  radius=[dp(4)])
                 Color(*COLOR_ROW_CURSOR)
                 RoundedRectangle(pos=(lx + dp(5), ly + dp(5)),
-                                 size=(col_w - dp(10), dp(22)),
+                                 size=(cw - dp(10), dp(22)),
                                  radius=[dp(3)])
-            if cell:
-                color = COLOR_ACCENT
-            elif txt == "—":
-                color = COLOR_EMPTY
-            elif c == 2:
-                color = COLOR_VOL
+            if c == 0:
+                self._draw_canal(lx, ly, cw, canal, cell)
             else:
-                color = COLOR_NAME
-            self._text_center(lx, ly, col_w, txt, color, h=dp(32),
+                txt = e_txt if c == 1 else p_txt
+                if cell:
+                    color = COLOR_ACCENT
+                elif txt == "—":
+                    color = COLOR_EMPTY
+                elif c == 2:
+                    color = COLOR_VOL
+                else:
+                    color = COLOR_NAME
+                self._text_center(lx, ly, cw, txt, color, h=dp(32),
+                                  font_size=FONT_SMALL)
+            lx += cw
+
+    def _draw_canal(self, x, y, w, canal, selected):
+        """Icono + '3 DRUM' (o —) en la columna CANAL."""
+        if not canal:
+            color = COLOR_ACCENT if selected else COLOR_EMPTY
+            self._text_center(x, y, w, "—", color, h=dp(32),
                               font_size=FONT_SMALL)
+            return
+        kind = kind_at(self.tracks, canal - 1)
+        color = COLOR_ACCENT if selected else COLOR_NAME
+        s = dp(18)
+        cx = x + dp(10) + s / 2
+        cy = y + dp(16)
+        bg = COLOR_ROW_CURSOR
+        draw_track_icon(cx, cy, s, kind, color, bg=bg)
+        self._text_left(cx + s * 0.65, y, w - (cx + s * 0.65 - x),
+                        track_caption(canal - 1, kind), color,
+                        h=dp(32), font_size=FONT_SMALL)
 
     def _draw_dial(self, cx, cy, r, pct, color):
         Color(0.08, 0.08, 0.09, 1)

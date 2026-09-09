@@ -41,18 +41,21 @@ from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.screenmanager import ScreenManager, NoTransition
 
 from config import load_config, save_config
-from controls import (A, B, BACK, DOWN, DPAD, L2, LEFT, R2, RIGHT, SELECT,
-                      START, UP, GAMEPAD_BUTTONS, hat_to_buttons, key_to_button,
-                      trigger_axis_buttons)
-from lgpt_model import EMPTY, compact_instruments, compact_sequencer
+from controls import (A, B, BACK, DOWN, DPAD, KEY_ENTERS, L2, LEFT, R2,
+                      RIGHT, SELECT, START, UP, GAMEPAD_BUTTONS,
+                      hat_to_buttons, key_to_button, trigger_axis_buttons)
+from lgpt_model import (EMPTY, NUM_TRACKS, compact_instruments,
+                        compact_sequencer, ensure_extra_track,
+                        ensure_track_0)
 from midi_ctrl import POTS_KNOBS, MidiControl
-from midi_input import MidiNotesInput, midi_input_names
+from midi_input import MidiNotesInput, midi_input_names, resolve_midi_port
 from sinte_bridge import save_project
 try:
     from evdev_triggers import GamepadReader  # entrada evdev (Odin)
 except ImportError:
     GamepadReader = None
 from songs import DEFAULT_SONGS, display_name, find_songs, load_project
+from tracks import track_at_slot
 from player import Player
 from robots import ROBOT_TRACK, RobotPlayback, screen_label
 from screens.confirm import ConfirmDialog
@@ -109,28 +112,38 @@ class Robotracker2App(App):
         self.images_dir = Path(images_dir)
         self.ayuda_dir = Path(ayuda_dir)
         self.browser = None        # SampleBrowser/ImageBrowser activo (o None)
+        # Última carpeta (y cursor) del SampleBrowser, por raíz: al reabrir
+        # INSTRUMENT/PADS se vuelve a la carpeta en la que estábamos.
+        self._browser_cwd = {}
         self._screen_step = None   # step de PHRASE que se está editando
         self._pads_pad = None      # pad (1-4) al que apunta el navegador PADS
         self._pads_dirty = False   # pads de la canción sin guardar (memoria)
         self._pots_dirty = False   # knobs de la canción sin guardar (memoria)
+        self._tracks_dirty = False # tipos de pista sin guardar (robotraca)
         self._mute_dirty = False   # mute de canales sin guardar (robotraca)
         self.fullscreen = fullscreen
         self.held = set()          # botones lógicos pulsados ahora
+        self._pc_keys = set()     # teclas PC no-LGPT (p.ej. Intro) pulsadas
         self._trig_buttons = set()  # gatillos (ejes) actualmente "pulsados"
         self._ev_pad = None       # GamepadReader evdev (modo Odin) o None
         self.dirty = False
         self._a_consumed = False   # A se usó en un acorde (no disparar tap)
+        self._b_consumed = False   # B/S se usó en un acorde (no borrar al soltar)
         self.dialog = None         # ConfirmDialog activo (o None)
         self.player = None         # reproductor de la canción cargada
         self._song_dir = None      # directorio de la canción cargada
         self._play_start = None    # monotonic() al arrancar (temporizador)
-        self._play_keys = [None] * 8  # (phrase, step) por canal: pulso SONG
+        self._play_keys = [None] * NUM_TRACKS  # (phrase, step) por canal: pulso SONG
         self._robot_play = RobotPlayback()  # SCREEN sostenida + HIT del canal 8
         self._pad_hits = queue.SimpleQueue()  # pads MIDI -> destello en _tick
         self._fresh_press = False  # el botón actual no estaba ya en self.held
         self.midi_live = False     # pintado MIDI en vivo en PHRASE (R2+START)
         self._midi_notes = MidiNotesInput()
         self._midi_ctrl = None     # controlador MIDI (botones+knobs, mixer)
+        self._instr_preview = False   # teclado MIDI suena en INSTRUMENT
+        self._preview_held = {}       # nota -> vel (teclas aún pulsadas)
+        self._midi_ports_retry = 0.0  # hotplug: LPK25/LPD8 en cualquier USB
+        self._midi_hotplug = True     # tests lo apagan (sin puertos reales)
 
     def build(self):
         setup_window(self.fullscreen)
@@ -197,7 +210,12 @@ class Robotracker2App(App):
     # ------------------------------------------------------------------
     # Entrada -> botones lógicos
     # ------------------------------------------------------------------
-    def _on_key_down(self, _win, key, _scancode, codepoint, _modifiers):
+    def _on_key_down(self, _win, key, _scancode, codepoint, modifiers):
+        if self._pc_ctrl_enter(key, modifiers):
+            if key not in self._pc_keys:
+                self._pc_keys.add(key)
+                self._toggle_fullscreen()
+            return True
         button = key_to_button(key, codepoint)
         if button is None:
             return False
@@ -209,10 +227,30 @@ class Robotracker2App(App):
         return self._dispatch(button, set(self.held))
 
     def _on_key_up(self, _win, key, *_):
+        if key in KEY_ENTERS:
+            self._pc_keys.discard(key)
+            return False
         button = key_to_button(key)
         if button is not None:
             self._release(button)
         return False
+
+    def _pc_ctrl_enter(self, key, modifiers):
+        """Ctrl+Intro en PC (no en la Odin: ya va a pantalla completa)."""
+        if os.environ.get("ROBOTRACKER2_EVDEV_GAMEPAD"):
+            return False
+        if key not in KEY_ENTERS:
+            return False
+        mods = modifiers or ()
+        return L2 in self.held or R2 in self.held or "ctrl" in mods
+
+    def _toggle_fullscreen(self):
+        if Window.fullscreen:
+            Window.fullscreen = False
+            self.fullscreen = False
+        else:
+            Window.fullscreen = "auto"
+            self.fullscreen = True
 
     def _on_joy_button_down(self, _win, _stick, buttonid):
         button = GAMEPAD_BUTTONS.get(buttonid)
@@ -231,10 +269,12 @@ class Robotracker2App(App):
     def _release(self, button):
         if self.browser is not None:
             self.held.discard(button)
+            self._b_consumed = False
             return
         self.held.discard(button)
         if self.dialog is not None:
             self._a_consumed = False
+            self._b_consumed = False
             return
         # A soltado sin haberse usado en un acorde -> "tap". Pero si se suelta
         # con un hombro (L2/R2) mantenido, no es un tap: es el final de un
@@ -257,6 +297,16 @@ class Robotracker2App(App):
                 elif ed.current == "project":
                     ed.project_menu.activate()  # activar acción
             self._a_consumed = False
+        elif button == B:
+            # S/B: copiar o borrar al soltar, salvo que el pulso haya sido
+            # un combo (L2+S mute, R2+S selección). Si S llega antes que
+            # Ctrl, o Ctrl se suelta y el SO repite S, no debe vaciar la
+            # celda: el hombro consume el pulso.
+            if (not self._b_consumed and self.sm.current == "editor"
+                    and self.editor_screen.current in ("song", "chain",
+                                                       "phrase")):
+                self._b_tap()
+            self._b_consumed = False
 
 
     def _on_request_close(self, *_a, **_k):
@@ -343,7 +393,18 @@ class Robotracker2App(App):
     def _dispatch_editor(self, button, active):
         ed = self.editor_screen
         # Navegación entre pantallas (global en el editor): L2 (Ctrl izq) + dpad.
+        # En INSTRUMENT, con el foco en el ID del instrumento el mismo combo
+        # recorre el banco (izq/dcha ±1, arr/abj ±16). En cualquier otro
+        # campo (el nombre del sample, volumen, …) vuelve a cambiar de
+        # pantalla: Ctrl+izq a PHRASE, Ctrl+abj a TABLE.
         if button in DPAD and L2 in active:
+            if (ed.current == "instrument"
+                    and ed.instrument_menu.field_key() == "__instr__"):
+                d = 1 if button in (RIGHT, UP) else -1
+                ed.instrument_menu.cycle_instrument(
+                    d, coarse=button in (UP, DOWN))
+                self._retrigger_preview()
+                return True
             ed.navigate(*NAV_DELTA[button])
             return True
         if button == START:                 # play/stop (global en el editor)
@@ -352,10 +413,20 @@ class Robotracker2App(App):
             else:
                 self._toggle_play()
             return True
+        # S ya abajo + hombro: el combo consume B para no borrar al soltar
+        # (S antes que Ctrl, o Ctrl se suelta y el SO repite S).
+        if button in (L2, R2) and B in active:
+            self._b_consumed = True
+            if button == R2 and self._fresh_press:
+                g = self._editor_grid()
+                if g is not None:
+                    g.cycle_selection()
         if ed.current == "pots":
             return self._dispatch_pots(button, active)
         if ed.current == "pads":
             return self._dispatch_pads(button, active)
+        if ed.current == "tracks":
+            return self._dispatch_tracks(button, active)
         if ed.current == "song":
             return self._dispatch_song(button, active)
         if ed.current == "chain":
@@ -555,7 +626,8 @@ class Robotracker2App(App):
         self._open_browser(SampleBrowser(
             root, on_load=self._pads_sample_loaded,
             on_close=self._close_browser,
-            on_toast=self.editor_screen.toast_msg))
+            on_toast=self.editor_screen.toast_msg,
+            **self._sample_browser_start(root)))
 
     def _pads_sample_loaded(self, path):
         # El WAV ya está en la biblioteca de pads: se referencia por su
@@ -575,6 +647,85 @@ class Robotracker2App(App):
         self.editor_screen.toast_msg(f"PAD {self._pads_pad}: {name}")
         self._close_browser()
 
+
+    # ------------------------------------------------------------------
+    # Pantalla TRACKS (tipo/icono de cada pista, ver screens/tracks_view.py)
+    # ------------------------------------------------------------------
+    def _dispatch_tracks(self, button, active):
+        g = self.editor_screen.tracks_grid
+        if g.cursor == g.SAVE_ROW:
+            if button in (UP, DOWN):
+                g.move(button)
+                return True
+            if button == A:
+                if L2 in active or R2 in active:
+                    self._a_consumed = True
+                else:
+                    self._tracks_save()
+                return True
+            if button == SELECT:
+                return True
+            return True
+        if button in DPAD:
+            if button in (LEFT, RIGHT):
+                self._tracks_cycle(-1 if button == LEFT else 1)
+            else:
+                g.move(button)
+            return True
+        if button == A:
+            if L2 in active or R2 in active:
+                self._a_consumed = True
+            return True
+        if button == SELECT:
+            return True
+        return False
+
+    def _tracks_cycle(self, delta):
+        g = self.editor_screen.tracks_grid
+        self._midi_ctrl.cycle_track_kind(track_at_slot(g.cursor), delta)
+        kinds = self._midi_ctrl.tracks_state()
+        self.editor_screen.set_tracks(kinds)
+        self._tracks_dirty = True
+        self._sync_unsaved()
+
+    def _tracks_save(self):
+        """Guarda los tipos de pista en el robotraca.json de la canción."""
+        self._midi_ctrl.save()
+        self._tracks_dirty = False
+        self._sync_unsaved()
+        self.editor_screen.toast_msg("Pistas guardadas")
+
+
+    def _editor_grid(self):
+        """Parrilla de SONG/CHAIN/PHRASE, o None en otras pantallas."""
+        ed = self.editor_screen
+        return {"song": ed.song_grid, "chain": ed.chain_grid,
+                "phrase": ed.phrase_grid}.get(ed.current)
+
+    def _on_b_down(self, active, mute_track=None):
+        """B/S al pulsar: combos (mute, selección). Copiar/borrar va al soltar."""
+        if L2 in active:
+            if (mute_track is not None and self._fresh_press
+                    and self._playing_song()):
+                self._mute_toggle(mute_track)
+            self._b_consumed = True
+        elif R2 in active:
+            if self._fresh_press:
+                g = self._editor_grid()
+                if g is not None:
+                    g.cycle_selection()
+            self._b_consumed = True
+        elif self._fresh_press:
+            self._b_consumed = False
+
+    def _b_tap(self):
+        g = self._editor_grid()
+        if g is None:
+            return
+        if g.has_selection:
+            g.copy_selection()
+        else:
+            g.delete()
 
     def _dispatch_chain(self, button, active):
         g = self.editor_screen.chain_grid
@@ -598,14 +749,7 @@ class Robotracker2App(App):
                 self._a_consumed = False             # A tap: copiar/pegar/00
             return True
         if button == B:
-            if L2 in active:                         # L2 es navegar: B no hace nada
-                pass
-            elif R2 in active:                       # Ctrl+S: ciclar selección
-                g.cycle_selection()
-            elif g.has_selection:                    # S: copiar selección
-                g.copy_selection()
-            else:                                    # S: borrar celda
-                g.delete()
+            self._on_b_down(active)
             return True
         if button == BACK:
             if g.has_selection:
@@ -645,15 +789,7 @@ class Robotracker2App(App):
                 self._mute_toggle(g.cursor_track)
             return True
         if button == B:
-            if L2 in active:                         # L2(+S): mute (o nada)
-                if self._playing_song() and self._fresh_press:
-                    self._mute_toggle(g.cursor_track)
-            elif R2 in active:                       # Ctrl+S: ciclar selección
-                g.cycle_selection()
-            elif g.has_selection:                    # S: copiar selección
-                g.copy_selection()
-            else:                                    # S: borrar celda
-                g.delete()
+            self._on_b_down(active, mute_track=g.cursor_track)
             return True
 
         if button == BACK:
@@ -666,6 +802,23 @@ class Robotracker2App(App):
 
     def _dispatch_phrase(self, button, active):
         g = self.editor_screen.phrase_grid
+        if g.fx_picker is not None:
+            # Lista de FX (A+arr/abj sobre el comando): arr/abj mueve,
+            # A elige, B/BACK cierra. El resto no hace nada.
+            if button in (UP, DOWN, LEFT, RIGHT):
+                g.fx_picker_move(1 if button in (DOWN, RIGHT) else -1)
+                return True
+            if button == A:
+                if L2 in active or R2 in active:
+                    self._a_consumed = True
+                else:
+                    g.apply_fx_picker()
+                    self._a_consumed = True
+                return True
+            if button in (B, BACK):
+                g.close_fx_picker()
+                return True
+            return True
         if button in DPAD:
             if A in active:
                 g.edit(button)                       # A+dir: editar campo
@@ -683,14 +836,7 @@ class Robotracker2App(App):
                 self._a_consumed = False             # A tap: copiar/pegar/def
             return True
         if button == B:
-            if L2 in active:                         # L2 es navegar: B no hace nada
-                pass
-            elif R2 in active:                       # Ctrl+S: ciclar selección
-                g.cycle_selection()
-            elif g.has_selection:                    # S: copiar selección
-                g.copy_selection()
-            else:                                    # S: borrar campo
-                g.delete()
+            self._on_b_down(active)
             return True
         if button == BACK:
             if g.has_selection:
@@ -754,8 +900,11 @@ class Robotracker2App(App):
         m = self.editor_screen.instrument_menu
         if button in DPAD:
             if A in active:
+                was = m.instr_id
                 m.edit(button)     # A+arr/abj paso grande, A+izq/dcha fino
                 self._a_consumed = True
+                if m.instr_id != was:
+                    self._retrigger_preview()
             else:
                 m.move(button)     # arr/abj fila, izq/dcha pareja (solo foco)
             return True
@@ -782,13 +931,36 @@ class Robotracker2App(App):
                                                           w.size))
         self.root_layout.add_widget(self.browser)
 
+    @staticmethod
+    def _browser_root_key(root):
+        try:
+            return str(Path(root).resolve())
+        except OSError:
+            return str(Path(root))
+
+    def _sample_browser_start(self, root):
+        """kwargs para reabrir el navegador en la última carpeta de esa raíz."""
+        last = self._browser_cwd.get(self._browser_root_key(root))
+        if last is None:
+            return {}
+        cwd, index, top_idx = last
+        return {"start_cwd": cwd, "start_index": index,
+                "start_top_idx": top_idx}
+
+    def _remember_sample_browser(self):
+        b = self.browser
+        if isinstance(b, SampleBrowser):
+            self._browser_cwd[self._browser_root_key(b.root)] = (
+                b.cwd, b.index, b.top_idx)
+
     def _open_sample_browser(self):
         # biblioteca si existe; si no, los samples de la propia canción
         root = self.samples_dir if self.samples_dir.is_dir() \
             else self.editor_screen.project.dir / "samples"
         self._open_browser(SampleBrowser(root, on_load=self._load_sample,
                                          on_close=self._close_browser,
-                                         on_toast=self.editor_screen.toast_msg))
+                                         on_toast=self.editor_screen.toast_msg,
+                                         **self._sample_browser_start(root)))
 
     def _dispatch_browser(self, button):
         b = self.browser
@@ -810,6 +982,7 @@ class Robotracker2App(App):
 
     def _close_browser(self):
         if self.browser is not None:
+            self._remember_sample_browser()
             self.browser.cleanup()
             self.root_layout.remove_widget(self.browser)
             self.browser = None
@@ -894,6 +1067,9 @@ class Robotracker2App(App):
         """Persiste la configuración global (interfaces MIDI) al cambiar."""
         if self.midi_live:        # la interfaz puede haber cambiado: apaga
             self._set_midi_live(False)   # el modo (el usuario lo re-arma)
+        # Preview / hotplug: el puerto de notas puede haber cambiado.
+        self._midi_notes.close()
+        self._midi_ports_retry = 0.0
         # La interfaz de control puede haber cambiado: reabrir (barato;
         # los knobs/botones siguen la lista del engine por referencia).
         if self._midi_ctrl is not None:
@@ -918,7 +1094,7 @@ class Robotracker2App(App):
 
     def _save(self):
         """Guarda la canción (lgptsav.dat) y el robotraca.json (mute de
-        SONG y, si hay, pads/knobs en memoria)."""
+        SONG y, si hay, pads/knobs/pistas en memoria)."""
         ed = self.editor_screen
         try:
             save_project(ed.project)
@@ -927,15 +1103,19 @@ class Robotracker2App(App):
         except Exception as exc:                     # noqa: BLE001
             msg = f"Error: {exc}"
         self._midi_ctrl.sync_mute()
-        if self._pads_dirty or self._pots_dirty or self._mute_dirty:
+        if self._pads_dirty or self._pots_dirty or self._tracks_dirty \
+                or self._mute_dirty:
             extra = []
             if self._pads_dirty or self._pots_dirty:
                 extra.append("pads/knobs")
+            if self._tracks_dirty:
+                extra.append("pistas")
             if self._mute_dirty:
                 extra.append("mute")
             self._midi_ctrl.save()
             self._pads_dirty = False
             self._pots_dirty = False
+            self._tracks_dirty = False
             self._mute_dirty = False
             msg += " + " + "/".join(extra)
         self._sync_unsaved()
@@ -961,8 +1141,9 @@ class Robotracker2App(App):
 
     def _compact_instruments(self):
         """Compact Instruments: elimina del banco los instrumentos sin
-        referencia (ROBOT_INSTR 0x80 nunca) y, si quedan wavs huérfanos en
-        samples/, pregunta si borrarlos del disco (Sí/No, "No" por defecto)."""
+        referencia (00 y ROBOT_INSTR 0x80 nunca) y, si quedan wavs huérfanos
+        en samples/, pregunta si borrarlos del disco (Sí/No, "No" por
+        defecto)."""
         ed = self.editor_screen
         project = ed.project
         if project is None:
@@ -1071,7 +1252,9 @@ class Robotracker2App(App):
             ci = ed.chain_grid.chain_index()
             if ci is None:
                 return
-            ok = self.player.play_loop("chain", ed.chain_grid.track, ci)
+            ok = self.player.play_loop(
+                "chain", ed.chain_grid.track, ci,
+                from_step=ed.chain_grid.cursor_step)
         elif ed.current == "phrase":
             # play de la phrase del cursor, en bucle
             pi = ed.phrase_grid.pv.phrase_of(ed.phrase_grid.track) \
@@ -1163,10 +1346,10 @@ class Robotracker2App(App):
         if not port:
             ed.toast_msg("Configura 'MIDI Notas' en CONFIG")
             return
-        if port not in midi_input_names():
+        if resolve_midi_port(midi_input_names(), port) is None:
             ed.toast_msg("Interfaz MIDI Notas no disponible")
             return
-        if not self._midi_notes.open_port(port):
+        if not self._midi_notes.active and not self._midi_notes.open_port(port):
             ed.toast_msg(f"Error MIDI: {self._midi_notes.error}")
             return
         self._set_midi_live(True)
@@ -1175,16 +1358,16 @@ class Robotracker2App(App):
     def _set_midi_live(self, on):
         self.midi_live = on
         self.editor_screen.set_midi_live(on)
-        if not on:
-            self._midi_notes.close()
 
-    def _paint_midi_notes(self):
+    def _paint_midi_notes(self, events=None):
         """Pinta en la phrase del playhead las notas MIDI pendientes.
 
         Solo cuando: modo vivo activo, hay play, se está en PHRASE, y la
         phrase que suena es la que se está editando (si se navegó a otra
         phrase distinta de la que toca el canal, no se pinta nada)."""
-        notes = self._midi_notes.poll()
+        if events is None:
+            events = self._midi_notes.poll()
+        notes = [(n, v) for kind, n, v in events if kind == "on"]
         if not notes:
             return
         if self.player is None or not self.player.playing:
@@ -1204,12 +1387,101 @@ class Robotracker2App(App):
         for note, vel in notes:
             g.live_note(step, note, vel)
 
+    def _sync_instrument_preview(self, on):
+        """Corta voces al salir de INSTRUMENT. El puerto lo mantiene
+        `_ensure_midi_ports` (hotplug)."""
+        if on:
+            self._instr_preview = True
+            return
+        if not self._instr_preview:
+            return
+        self._instr_preview = False
+        self._preview_held.clear()
+        self._instrument_preview_panic()
+
+    def _ensure_midi_ports(self):
+        """Reconexión en caliente: LPK25/LPD8 en cualquier puerto USB y
+        enchufados después de arrancar. El id ALSA (`16:0`) no cuenta.
+        Como el player (`_ensure_midi_input`): cada ~1 s, sin spam."""
+        if not self._midi_hotplug:
+            return
+        now = time.monotonic()
+        if now < self._midi_ports_retry:
+            return
+        self._midi_ports_retry = now + 1.0
+        names = midi_input_names()
+        wanted_n = self.config.get("midi_notes")
+        wanted_c = self.config.get("midi_control")
+
+        if self._midi_ctrl is not None and wanted_c:
+            ok = resolve_midi_port(names, wanted_c) is not None
+            if self._midi_ctrl.active and not ok:
+                self._midi_ctrl.close()
+            elif not self._midi_ctrl.active and ok:
+                if self._midi_ctrl.open(wanted_c):
+                    self._midi_toast("MIDI Control: conectado")
+
+        if wanted_n:
+            ok = resolve_midi_port(names, wanted_n) is not None
+            if self._midi_notes.active and not ok:
+                self._midi_notes.close()
+            elif not self._midi_notes.active and ok:
+                if self._midi_notes.open_port(wanted_n):
+                    self._midi_toast("MIDI Notas: conectado")
+
+        ed = self.editor_screen
+        if self.sm.current == "editor" and ed.current == "config":
+            ed.config_menu._refresh_ports()
+            ed.config_menu._redraw()
+
+    def _midi_toast(self, msg):
+        if self.sm.current == "editor":
+            self.editor_screen.toast_msg(msg)
+
+    def _preview_midi_notes(self, events):
+        """Las notas del teclado MIDI suenan con el instrumento actual."""
+        if not events or self.player is None:
+            return
+        self.player._ensure_stream()
+        iid = self.editor_screen.instrument_menu.instr_id
+        eng = self.player.engine
+        for kind, note, vel in events:
+            if kind == "on":
+                self._preview_held[note] = vel
+                eng.push_event("preview_on", iid, note, vel)
+            else:
+                self._preview_held.pop(note, None)
+                eng.push_event("preview_off", note)
+
+    def _instrument_preview_panic(self):
+        if self.player is not None:
+            self.player.engine.push_event("preview_off_all")
+
+    def _retrigger_preview(self):
+        """Al cambiar de instrumento, las teclas aún pulsadas suenan con
+        el nuevo (y se cortan las voces del anterior)."""
+        if not self._instr_preview or self.player is None:
+            return
+        eng = self.player.engine
+        eng.push_event("preview_off_all")
+        iid = self.editor_screen.instrument_menu.instr_id
+        for note, vel in self._preview_held.items():
+            eng.push_event("preview_on", iid, note, vel)
+
     def _tick(self, dt):
+        self._ensure_midi_ports()
         for accion in self._midi_ctrl.drain():
             self._midi_action(accion)
-        if self.midi_live:
-            self._paint_midi_notes()
         ed = self.editor_screen
+        on_instr = (self.sm.current == "editor" and ed.current == "instrument")
+        self._sync_instrument_preview(on_instr)
+        midi_events = []
+        if self.midi_live or on_instr:
+            midi_events = self._midi_notes.poll()
+        if on_instr:
+            self._preview_midi_notes(midi_events)
+        elif self.midi_live:
+            self._paint_midi_notes(midi_events)
         p = self.player
         while True:
             try:
@@ -1228,11 +1500,11 @@ class Robotracker2App(App):
         else:
             ed.set_play_indicator(False)
         if not playing:
-            ed.song_grid.set_play([None] * 8)
+            ed.song_grid.set_play([None] * NUM_TRACKS)
             ed.song_grid.clear_pulse()
             ed.chain_grid.set_play(None)
             ed.phrase_grid.set_play(None)
-            self._play_keys = [None] * 8
+            self._play_keys = [None] * NUM_TRACKS
             if (self._robot_play.playing or self._robot_play.cc is not None
                     or self._robot_play.note is not None
                     or self._robot_play.hit_note is not None):
@@ -1290,10 +1562,11 @@ class Robotracker2App(App):
     # ------------------------------------------------------------------
     def _session_dirty(self):
         return self.dirty or self._pads_dirty or self._pots_dirty \
-            or self._mute_dirty
+            or self._tracks_dirty or self._mute_dirty
 
     def _sync_unsaved(self):
-        """Asterisco en cabecera si hay cambios de canción, pads o knobs."""
+        """Asterisco en cabecera si hay cambios de canción, pads, knobs o
+        pistas."""
         self.editor_screen.set_unsaved(self._session_dirty())
 
     def _mark_dirty(self):
@@ -1302,6 +1575,10 @@ class Robotracker2App(App):
 
     def load_song(self, song_dir):
         project = load_project(song_dir)
+        # Canciones legacy de LGPT: instrumento 00, chain en canal 0 si
+        # falta, y la novena pista (canal 8, visualmente la primera).
+        ensure_track_0(project)
+        ensure_extra_track(project)
         if self.player is not None:
             self.player.close()
         # Sin banco global de pads: los pads son SOLO por canción
@@ -1319,13 +1596,15 @@ class Robotracker2App(App):
         self.dirty = False
         self._pads_dirty = False
         self._pots_dirty = False
+        self._tracks_dirty = False
         self._mute_dirty = False
         self.editor_screen.set_play_indicator(False)
         self.editor_screen.enter_song(project, display_name(song_dir.name))
-        # PADS/POTS: estado de esta canción (robotraca.json "pads" y
-        # "pots"/"fx_mix"; sin la clave, vacíos — no hay banco global)
+        # PADS/POTS/TRACKS: estado de esta canción (robotraca.json "pads",
+        # "pots"/"fx_mix" y "tracks"; sin la clave, vacíos / defaults)
         self.editor_screen.pads_grid.set_state(self._midi_ctrl.pads_state())
         self.editor_screen.pots_grid.set_state(self._midi_ctrl.pots_state())
+        self.editor_screen.set_tracks(self._midi_ctrl.tracks_state())
         self._sync_unsaved()
         self.sm.current = "editor"
 

@@ -16,6 +16,55 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
 
+# Canciones LGPT clásicas: 8 canales × 256 filas. En memoria hay un noveno
+# (índice 8) para la pista extra de robotracker; si esa columna está vacía
+# al guardar, se escribe otra vez en 8 para no romper el LGPT original.
+LEGACY_CHANNEL_COUNT = 8
+CHANNEL_COUNT = 9
+EXTRA_TRACK = 8
+SONG_ROWS = 256
+SONG_EMPTY = 0xFF
+
+
+def expand_song(song) -> bytearray:
+    """Pasa el buffer SONG a CHANNEL_COUNT columnas (las legacy vienen con 8)."""
+    data = bytearray(song or b"")
+    n = len(data)
+    if n == CHANNEL_COUNT * SONG_ROWS:
+        return data
+    stride = LEGACY_CHANNEL_COUNT
+    if n and n % SONG_ROWS == 0:
+        stride = n // SONG_ROWS
+    if stride == CHANNEL_COUNT:
+        return data
+    rows = n // stride if stride else 0
+    extra = CHANNEL_COUNT - stride
+    out = bytearray()
+    for row in range(SONG_ROWS):
+        if stride and row < rows:
+            out.extend(data[row * stride:(row + 1) * stride])
+        else:
+            out.extend([SONG_EMPTY] * max(stride, 0))
+        if extra > 0:
+            out.extend([SONG_EMPTY] * extra)
+    return out
+
+
+def collapse_song_for_disk(song) -> bytes:
+    """Si la pista extra está vacía, guarda 8 columnas (compatible LGPT)."""
+    data = expand_song(song)
+    extra_used = any(
+        data[row * CHANNEL_COUNT + EXTRA_TRACK] != SONG_EMPTY
+        for row in range(SONG_ROWS)
+    )
+    if extra_used:
+        return bytes(data)
+    out = bytearray()
+    for row in range(SONG_ROWS):
+        base = row * CHANNEL_COUNT
+        out.extend(data[base:base + LEGACY_CHANNEL_COUNT])
+    return bytes(out)
+
 
 def lz_read_var_size(data: bytes, pos: int) -> tuple[int, int]:
     """Lee un entero de tamaño variable usado por el compresor LZ."""
@@ -110,7 +159,7 @@ class LGPTProject:
 
         # Datos crudos extraídos del XML
         self.project = {}
-        self.song = bytearray()          # 8 canales x 256 filas
+        self.song = bytearray()          # CHANNEL_COUNT canales x 256 filas
         self.chains = bytearray()        # 255 cadenas x 16 pasos
         self.transposes = bytearray()    # 255 cadenas x 16 transpuestas
         self.notes = bytearray()         # 255 frases x 16 notas
@@ -140,6 +189,7 @@ class LGPTProject:
                 self._parse_grooves(child)
             elif tag == "INSTRUMENTBANK":
                 self._parse_instruments(child)
+        self.song = expand_song(self.song)
 
     def _parse_project(self, node: ET.Element):
         for param in node.findall("PARAMETER"):
@@ -228,7 +278,7 @@ class LGPTProject:
             for param in instr.findall("PARAM"):
                 name = param.get("NAME")
                 value = param.get("VALUE")
-                if name and value:
+                if name is not None and value is not None:
                     params[name] = value
             self.instrument_bank[iid] = {"type": itype, "params": params}
 
@@ -317,9 +367,11 @@ def print_project_summary(p: LGPTProject):
         print(f"  {k}: {v}")
 
     print("\n=== SONG (primeras filas) ===")
-    for row in range(min(16, 256)):
-        cells = [f"{p.song[row * 8 + ch]:02X}" if p.song[row * 8 + ch] != 0xFF else "--"
-                 for ch in range(8)]
+    for row in range(min(16, SONG_ROWS)):
+        cells = [
+            f"{p.song[row * CHANNEL_COUNT + ch]:02X}"
+            if p.song[row * CHANNEL_COUNT + ch] != SONG_EMPTY else "--"
+            for ch in range(CHANNEL_COUNT)]
         print(f"  {row:02X}: {' | '.join(cells)}")
 
     print("\n=== CHAINS usadas ===")

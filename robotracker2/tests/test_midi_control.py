@@ -47,7 +47,7 @@ class StubEngine:
 
     def __init__(self):
         self.muted = set()
-        self.channels = [StubChannel(i) for i in range(8)]
+        self.channels = [StubChannel(i) for i in range(9)]
         self.base_master = 0.5
         self.master = 0.5
         self.pad_volume_map = {}
@@ -311,11 +311,11 @@ def test_pots_state_y_edicion():
         # canción sin "pots": borrador en cualquier orden (canal primero)
         ctrl.set_song(engine, Path(tmp))
         ctrl.set_pot_canal(5, 1)            # pot5, sin target: borrador
-        assert ctrl.pots_state()[2] == (1, None, 100), ctrl.pots_state()
+        assert ctrl.pots_state()[2] == (9, None, 100), ctrl.pots_state()
         ctrl.set_pot_efecto(5, 1)           # primer efecto: valve
-        assert ctrl._cfg["pots"] == {"pot5": "0:valve"}, ctrl._cfg["pots"]
-        assert ctrl.pots_state()[2] == (1, "valve", 100)
-        assert ctrl.pots[0][1] == ((0,), "valve", 1.0)
+        assert ctrl._cfg["pots"] == {"pot5": "8:valve"}, ctrl._cfg["pots"]
+        assert ctrl.pots_state()[2] == (9, "valve", 100)
+        assert ctrl.pots[0][1] == ((8,), "valve", 1.0)
 
         # borrador en el otro orden (efecto primero, por la lista del
         # picker): set_pot_efecto_nombre guarda el draft y, al elegir el
@@ -326,8 +326,8 @@ def test_pots_state_y_edicion():
             ctrl.pots_state()
         assert "pot6" not in ctrl._cfg["pots"], ctrl._cfg["pots"]
         ctrl.set_pot_canal(6, 1)                    # canal después
-        assert ctrl._cfg["pots"] == {"pot6": "0:delay"}, ctrl._cfg["pots"]
-        assert ctrl.pots_state()[3] == (1, "delay", 100)
+        assert ctrl._cfg["pots"] == {"pot6": "8:delay"}, ctrl._cfg["pots"]
+        assert ctrl.pots_state()[3] == (9, "delay", 100)
         # "off" desde la lista deja el knob sin target
         ctrl.set_pot_efecto_nombre(6, "off")
         assert "pot6" not in ctrl._cfg["pots"], ctrl._cfg["pots"]
@@ -462,6 +462,7 @@ def _run(app):
 
     assert isinstance(app, Robotracker2App)
     app._midi_ctrl.close()      # sin puertos reales en los tests
+    app._midi_hotplug = False
 
     songs = app.load_screen.songs
     assert songs, "debe haber canciones"

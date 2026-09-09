@@ -11,35 +11,44 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    encontradas en `../sinte/songs/`. Flechas ↑/↓ mueven la selección (con wrap).
    Si la lista no cabe (muchas canciones o densidad ×2 en Odin), una ventana
    de scroll sigue al cursor; con pocas se centra. **A** carga la canción.
+   Si el proyecto no trae el instrumento **00**, la columna 0 de SONG está
+   vacía, o no existe la novena pista (canciones LGPT de 8 canales), se
+   crean al cargar: Sample vacío, chain en la fila 0 del canal 0 y chain
+   en la pista extra. Quedan en memoria hasta Guardar.
 2. **Editor** (`screens/editor.py`): al cargar entra en la pantalla SONG. Las
    pantallas estilo LGPT están dispuestas en rejilla (`navmap.py`):
 
    ```
-   EFECTOS  PROJECT           GROOVE
+   EFECTOS  PROJECT LIVE      GROOVE
    PADS     SONG    CHAIN     PHRASE    INSTRUMENT
-            CONFIG            TABLE     TABLE
+   TRACKS   CONFIG            TABLE     TABLE
    ```
 
 
-   Se navega con **Ctrl+flechas** hacia la pantalla adyacente. La cabecera
+   **Ctrl+arriba/abajo** va a la pantalla de encima o debajo (LIVE sobre
+   CHAIN, PROJECT sobre SONG, …). **Ctrl+izquierda/derecha** siempre a la
+   pantalla principal de esa columna (PADS / SONG / CHAIN / PHRASE /
+   INSTRUMENT), no a LIVE ni a PROJECT aunque vinieras de ahí. La cabecera
    muestra el nombre de la pantalla + la canción (` *` si hay cambios sin
-   guardar: lgptsav.dat, pads o knobs) y a la derecha una tira fija
-   **D S C P I**: **D** = PADS, **S** = SONG, **C** = CHAIN (CONFIG pinta su
+   guardar: lgptsav.dat, pads, knobs o pistas) y a la derecha una tira fija
+   **D S C P I**: **D** = PADS (TRACKS pinta su **N** magenta en la columna D),
+   **S** = SONG, **C** = CHAIN (CONFIG pinta su
    **C** magenta en la columna S; no es la misma C), **P** = PHRASE,
    **I** = INSTRUMENT. El color indica la altura: **azul** = fila media,
-   **cian** = fila de arriba (PROJECT/GROOVE/EFECTOS), **magenta** = fila de
-   abajo (TABLE/CONFIG), mostrando en esa celda su letra (P/G/T/C/E).
+   **cian** = fila de arriba (PROJECT/GROOVE/EFECTOS/LIVE), **magenta** = fila de
+   abajo (TABLE/CONFIG/TRACKS), mostrando en esa celda su letra (P/G/T/C/E/N).
    En el chip activo, una **raya blanca arriba y/o abajo** indica si
    **Ctrl+flecha** puede subir o bajar de fila; izquierda/derecha se leen
    en la tira D S C P I.
    **Esc** vuelve a la lista de canciones.
 
-3. **SONG** (`screens/song_view.py`): parrilla 256×8 de índices de chain
+3. **SONG** (`screens/song_view.py`): parrilla 256×9 de índices de chain
    (bandas por compás/beat, celda naranja sólida, marco y escuadras en el
-   canal del cursor, tira de color por canal). Cabecera
-   con el nº de canal (1–6) e iconos vectoriales: micrófono en el canal 7
-   (voz) y robot en el 8.
-   Dpad mueve el cursor, **A+dir**
+   canal del cursor, tira de color por canal). Las columnas van: **pista
+   extra primero** (canal LGPT 8, la novena), luego 0–5, vocoder y robot
+   al final. Cabecera con el **nº, icono y
+   nombre** del tipo de cada pista (drum / bass / synth / noise / robot /
+   vocoder; se editan en TRACKS). Dpad mueve el cursor, **A+dir**
    edita (±1 izq/dcha, ±0x10 arr/abj; en vacío crea chain), **B** borra.
    Portapapeles/selección estilo LGPT: **A** copia/pega/pone 00; **Ctrl+S**
    cicla selección (libre → filas → todo visible); **S** copia selección;
@@ -50,9 +59,14 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    Con selección activa sale un **hint inferior** con las operaciones
    (B copiar · R2+A duplicar chain · R2+B ciclar · BACK cancelar).
 4. **CHAIN** (`screens/chain_view.py`): la chain de la celda de SONG donde
-   está el cursor (nº en la cabecera). 16 steps × 2 columnas: **phrase** y
+   está el cursor (nº en la cabecera, y **icono + nombre** de esa pista
+   encima de las columnas). 16 steps × 2 columnas: **phrase** y
    **transpose**. Dpad mueve (arr/abj step, izq/dcha columna), **A+dir** edita,
-   **A** copia/pega/00, **B** borra; crear phrase en un hueco crea la chain si
+   **A** copia/pega/00, **doble A** en la columna phrase pone en la celda la
+   primera phrase **no referenciada en la canción** (da igual si tiene notas)
+   con índice mayor que la actual (si no hay por encima, da la vuelta); no
+   copia el contenido, solo cambia el índice. **B** borra; crear phrase en un
+   hueco crea la chain si
    hace falta (estilo Piggy). Selección igual que SONG (**Ctrl+S** cicla
    libre→columnas→todo, **S** copia, **Ctrl+A** con selección **duplica la
    phrase** del step del cursor (columna PHRASE) a la primera phrase libre con
@@ -63,10 +77,12 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    BACK cancelar).
 
 5. **PHRASE** (`screens/phrase_view.py`): la phrase del step de CHAIN (nº en la
-   cabecera). 16 steps × campos **nota · instr · FX1(cmd+param) · FX2(cmd+param)**.
+   cabecera, y **icono + nombre** de esa pista encima de las columnas). 16 steps × campos **nota · instr · FX1(cmd+param) · FX2(cmd+param)**.
    Dpad mueve (arr/abj step, izq/dcha campo), **A+dir** edita (nota: ±1 semitono
    / ±octava; instr y param: ±1/±0x10; cmd: cicla comandos), **A** copia/pega/def
-   por campo (portapapeles propio), **B** borra el campo. Editar un hueco crea la
+   por campo (portapapeles propio), **doble A** en instrumento pone el primer
+   id **no referenciado en la canción** (da igual si existe en el banco) mayor
+   que el actual (si no hay por encima, da la vuelta), **B** borra el campo. Editar un hueco crea la
    chain y la phrase (estilo Piggy). El ciclado de **comandos FX** solo ofrece los
    usados en las canciones de `songs/` (`FX_USED` en `phrase_view.py`: VOLM, KILL,
    DLAY, LEGA, TABL, STOP, MDCC, MDPG, PTCH, RTRG). Selección multicelda igual que
@@ -174,10 +190,14 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    usadas — por eso el orden recomendado es primero Sequencer y luego
    Instruments) y, si quedan `.wav` huérfanos en `samples/` de la canción,
    pregunta (**Sí/No**, "No" por defecto) si borrarlos del disco. El
-   instrumento del canal de robotas (**0x80**) nunca se elimina: no hay UI
-   de creación de instrumentos y perderlo dejaría el canal mudo para
-   siempre. *Save Song As* queda pendiente (toast). Arriba/abajo navegan,
-   **A** activa.
+   instrumento **00** (pista 0) y el del canal de robotas (**0x80**) nunca
+   se eliminan: no hay UI de creación de instrumentos y perderlos dejaría
+   esa pista muda. Al **cargar** una canción, si el instrumento 00, la
+   columna 0 de SONG o la novena pista no existen (canciones LGPT de 8
+   canales), se crean en memoria — un Sample vacío y chains en la fila 0
+   del canal 0 y de la pista extra — y quedan persistidos al guardar.
+   *Save Song As* queda pendiente (toast).
+   Arriba/abajo navegan, **A** activa.
 10. **CONFIG** (`screens/config_view.py`): selección de las **interfaces MIDI
     de entrada** (debajo de SONG en la rejilla). Dos campos editables
     (izq/dcha ciclan entre los puertos MIDI de entrada disponibles, A+izq/dcha
@@ -197,8 +217,9 @@ PHRASE el step activo de esa phrase. El alcance depende de la pantalla:
 - En **SONG** arranca desde la fila del cursor y **solo arrancan los canales
   que tienen algo en esa fila**: un canal sin nada ahí no suena en toda la
   reproducción, y si la fila entera está vacía, no suena nada.
-- En **CHAIN** reproduce **solo esa chain en bucle** (el canal de esa chain,
-  ignorando el resto de la canción).
+- En **CHAIN** reproduce **solo esa chain en bucle** desde el **step del
+  cursor** (como SONG arranca en la fila del cursor); al terminar vuelve
+  al step 00. Solo suena el canal de esa chain.
 - En **PHRASE** reproduce **solo esa phrase en bucle** (el canal de esa phrase,
   sin transpose ni avance de chain).
 
@@ -208,12 +229,13 @@ propio motor (`Engine.loop_scope` en `../sinte/lgpt_engine.py`): solo se
 arranca ese canal y, al terminar la chain/phrase, vuelve a su step 0.
 
 
-**Mute (SONG, mientras suena)**: con **L2** mantenido, **cada pulsación nueva
-de S** alterna el mute de la pista del cursor (columna atenuada + cabecera en
-rojo) — se puede tocar varias veces seguidas para ir probando; una tecla
-mantenida no repite el toggle sola (se ignora la autorepetición del SO). Lo
-que quede al soltar **L2** es lo que se queda; soltar S no hace nada especial
-por sí sola.
+**Mute (SONG, mientras suena)**: con **L2** (Ctrl izquierdo) mantenido, **cada
+pulsación nueva de S** alterna el mute de la pista del cursor (columna atenuada
++ cabecera en rojo) — se puede tocar varias veces seguidas para ir probando;
+una tecla mantenida no repite el toggle sola (se ignora la autorepetición del
+SO). S sola (sin L2) borra la celda al **soltar**; si S llega antes que Ctrl, o
+Ctrl se suelta y el SO sigue mandando S, el combo se consume y no borra. Lo
+que quede al soltar **L2** es el mute que se queda.
 
 Si hay **cambios sin guardar**, al **salir** o **cargar otra canción** (o cerrar
 la ventana) aparece un diálogo modal (`screens/confirm.py`) con **Guardar /
@@ -231,7 +253,8 @@ pantalla, B = borrar, START = play, BACK = volver) es fija.
 - **PC (teclado)**: flechas = dpad, `A` = A, `S` = B, **`Ctrl` izquierdo = L2**
   (navegar entre pantallas con dpad; mute con S), **`Ctrl` derecho = R2**
   (selección: cut/paste, ciclar selección), `Espacio` = START, `Esc` = BACK,
-  `Supr/Retroceso` = B. **R2+START** (Ctrl derecho + Espacio) alterna el
+  `Supr/Retroceso` = B. **Ctrl+Intro** alterna pantalla completa.
+  **R2+START** (Ctrl derecho + Espacio) alterna el
   **pintado MIDI en vivo** en PHRASE (ver arriba).
 - **Odin 2 Portal (gamepad)**: ROCKNIX (InputPlumber) oculta el mando a SDL;
   **toda la entrada la lee la app por evdev** del DualSense virtual de
@@ -279,8 +302,9 @@ claves `"pots"` y `"fx_mix"`:
 ```
 
 (En `"pots"`, el canal se guarda 0-7 como en el mixer; la pantalla lo
-muestra 1-8. Un target multicanal tipo `"1,2:acid"` muestra el **primer**
-canal y, al editarlo, queda como un solo canal.) Sin entrada en
+muestra 1-8 **con el icono y el nombre** del tipo de esa pista. Un target
+multicanal tipo `"1,2:acid"` muestra el **primer** canal y, al editarlo,
+queda como un solo canal.) Sin entrada en
 `"fx_mix"`, el % es 100 (100% wet, como en el mixer).
 
 Controles, estilo tracker: **arr/abj** elige knob (y baja a la fila
@@ -334,6 +358,28 @@ se cae a ningún banco global). El mixer conserva su propio banco
 `config.json` (la pantalla CONFIG edita las interfaces). La lógica vive en
 `sinte/midi_control.py`, importada vía `sinte_bridge.py`.
 
+### Pantalla TRACKS (tipo de cada pista)
+
+Debajo de PADS (L2+abajo desde PADS, **N** magenta en la columna D). Cada
+canal elige un tipo de **drum / bass / synth / noise / robot / vocoder**:
+el icono y el nombre van juntos. Las filas van en el mismo orden que las
+columnas de SONG (pista extra arriba, vocoder y robot abajo). Se ve en la
+cabecera de **SONG** (nº + icono + nombre por columna), en **CHAIN** y
+**PHRASE**, y en el campo CANAL de **EFECTOS**. Se guarda en el
+`robotraca.json` de la canción:
+
+```json
+{
+  "tracks": ["drum", "bass", "synth", "synth", "noise", "synth", "vocoder", "robot", "synth"]
+}
+```
+
+Sin la clave, esas mismas nueve son el valor por defecto (vocoder y robot
+en los canales 7 y 8; la extra es el canal 9). Controles: **arr/abj**
+elige pista (y baja a **GUARDAR**) · **izq/dcha** cicla el tipo · **A
+sobre GUARDAR** persiste. Como PADS/EFECTOS, los cambios viven en memoria
+hasta guardar.
+
 ## Ejecutar
 
 Usa el venv propio (`robotracker2/.venv`, con Kivy/numpy/sounddevice). Si no
@@ -345,8 +391,9 @@ cd /home/angel/git/lgptclient
 robotracker2/.venv/bin/python robotracker2/robotracker2.py [--songs RUTA]
 ```
 
-En **PC arranca en ventana** (1280×720). Con `--fullscreen` (o
-`ROBOTRACKER2_FULLSCREEN=1`) va a pantalla completa; así lo lanza la Odin.
+En **PC arranca en ventana** (1280×720). **Ctrl+Intro** alterna pantalla
+completa (también `--fullscreen` o `ROBOTRACKER2_FULLSCREEN=1`; así lo
+lanza la Odin).
 
 ## Odin 2 Portal (ROCKNIX)
 
@@ -398,11 +445,14 @@ siguen sonando desde `sinte/songs/<canción>/samples/`.
 | `lgpt_model.py` | Modelo LGPT (SongView/ChainView/PhraseView) sobre sinte |
 | `sinte_bridge.py` | Puente a `../sinte` (parser + engine) |
 | `robots.py` | Constantes canal de robotas: golpes reales, MDCC↔`images/` |
+| `tracks.py` | Tipos de pista (drum/bass/synth/noise/robot/vocoder) |
 | `screens/load_song.py` | Pantalla de cargar canción |
 | `screens/editor.py` | Editor: cabecera D S C P I + contenido por pantalla + toast |
-| `screens/song_view.py` | Rejilla SONG 256×8 (canvas) |
+| `screens/song_view.py` | Rejilla SONG 256×8 (canvas; cabecera con icono+nombre) |
 | `screens/chain_view.py` | Chain: 16 steps × phrase/transpose (canvas) |
 | `screens/phrase_view.py` | Phrase: 16 steps × nota/instr/fx1/fx2 (canal 8: HIT/SCREEN) |
+| `screens/tracks_view.py` | TRACKS: tipo/icono de cada pista (robotraca.json) |
+| `screens/track_icons.py` | Glifos vectoriales de los 6 tipos de pista |
 | `screens/groove_view.py` | Groove: 16 steps de ticks, 32 grooves (canvas) |
 | `screens/table_view.py` | Table: 16 filas × 3 FX (canvas) |
 | `screens/instrument_view.py` | Instrument: menú de parámetros (canvas) |
