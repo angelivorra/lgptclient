@@ -19,6 +19,7 @@ Réplica en Python/numpy del comportamiento del reproductor original
     (acorde sobre la nota de la fila: samples polifónicos, MIDI y vocoder).
     SLID desliza el pitch hasta una nota destino en N steps de phrase.
     FADE apaga la nota: 0 filas = ya (declick); N = rampa a silencio en N filas.
+    FCUT/FRES/FMOD cambian corte, canto y tipo del filtro de la voz.
   - Tablas (1 fila por tick, 3 columnas de comandos).
   - Instrumentos MIDI (0x80-0x8F) y comandos MDCC/MDPG/MVEL: se emiten a
     un sink MidiOut (puerto MIDI real en el reproductor).
@@ -44,6 +45,7 @@ import numpy as np
 import soundfile as sf
 
 from chords import chord_intervals, expand_chord_notes
+from filter_ui import SVF_MODES, mode_from_param, normalize_mode
 from lgpt_parser import CHANNEL_COUNT, LGPTProject, expand_song
 
 SAMPLE_RATE = 44100
@@ -184,14 +186,23 @@ class InstrumentDef:
     downsample: int = 0         # 0 = off; n => hold de 2^n
     cutoff: int = 0xFF
     reso: int = 0
-    filter_mix: int = 0         # "filter type" 0-255
+    filter_mix: int = 0         # "filter type" 0-255 (solo original/scream)
+    filter_mode: str = "original"
     filter_scream: bool = False
     attenuate: int = 0xFF
     table: int = -1
 
     @property
     def filtering(self) -> bool:
-        """Regla del upstream: el filtro solo actúa si cut<255 o res>0."""
+        """Cuándo corre el filtro. LGPT/scream: cut<255 o res>0.
+        lp abierto del todo (255, res 0) y hp cerrado del todo (0, res 0)
+        se saltan: no se oyen. bp/notch siempre actúan."""
+        if self.filter_mode == "lp":
+            return self.cutoff < 0xFF or self.reso > 0
+        if self.filter_mode == "hp":
+            return self.cutoff > 0 or self.reso > 0
+        if self.filter_mode in SVF_MODES:
+            return True
         return self.cutoff < 0xFF or self.reso > 0
 
 
@@ -203,6 +214,7 @@ def parse_instrument(index: int, params: dict) -> InstrumentDef:
             return default
 
     fine = (int_or("fine tune", 0x7F) - 0x7F) / 0x80
+    mode = normalize_mode(params.get("filter mode", "original"))
     return InstrumentDef(
         index=index,
         sample_name=params.get("sample", ""),
@@ -219,7 +231,8 @@ def parse_instrument(index: int, params: dict) -> InstrumentDef:
         cutoff=int_or("filter cut", 0xFF),
         reso=int_or("filter res", 0),
         filter_mix=int_or("filter type", 0),
-        filter_scream=params.get("filter mode", "original") == "scream",
+        filter_mode=mode,
+        filter_scream=mode == "scream",
         attenuate=int_or("attenuate", 0xFF),
         table=int_or("table", -1),
     )
@@ -311,8 +324,8 @@ class Voice:
         "vol_scale", "vol_cur", "vol_target", "vol_kinc",
         "pan", "cc_vol", "cc_pan", "cc_cutoff",
         "crush", "drive_gain", "ds_shift", "attenuate",
-        "f_active", "f_mix", "f_scream", "f_cut_base", "f_reso_base",
-        "f_speed", "f_height", "f_delay",
+        "f_active", "f_mix", "f_scream", "f_mode", "f_cut_base", "f_reso_base",
+        "f_speed", "f_height", "f_delay", "f_low", "f_band", "sr",
         "k_rem", "active", "_samples_per_tick", "declick", "releasing",
     )
 
@@ -368,14 +381,18 @@ class Voice:
         self.ds_shift = idef.downsample
         self.attenuate = idef.attenuate / 255.0
 
+        self.sr = out_sr
         self.f_active = idef.filtering
         self.f_mix = idef.filter_mix / 255.0
+        self.f_mode = idef.filter_mode
         self.f_scream = idef.filter_scream
         self.f_cut_base = idef.cutoff / 255.0
         self.f_reso_base = idef.reso / 255.0
         self.f_speed = [0.0] * self.n_channels
         self.f_height = [0.0] * self.n_channels
         self.f_delay = [0.0] * self.n_channels
+        self.f_low = [0.0] * self.n_channels
+        self.f_band = [0.0] * self.n_channels
 
         self.k_rem = KRATE            # samples hasta el próximo k-update
         self.active = True
@@ -505,6 +522,46 @@ class Voice:
             step = 1.0 + 0.5 / ss
             self.pfin_step = step if target > self.pfin_ratio else 1.0 / step
 
+    def set_fcut(self, value: int):
+        """FCUT: corte 0-255 (byte bajo). Enciende el filtro si hace falta."""
+        self.f_cut_base = (value & 0xFF) / 255.0
+        self._sync_filter_active()
+
+    def set_fres(self, value: int):
+        """FRES: canto/resonancia 0-255 (byte bajo)."""
+        self.f_reso_base = (value & 0xFF) / 255.0
+        self._sync_filter_active()
+
+    def set_fmod(self, value: int):
+        """FMOD: tipo de filtro (índice de FILTER_MODES)."""
+        self.f_mode = mode_from_param(value)
+        self.f_scream = self.f_mode == "scream"
+        self._reset_filter_state()
+        if self.f_mode in SVF_MODES:
+            self.f_active = True
+        else:
+            self._sync_filter_active()
+
+    def _sync_filter_active(self):
+        cut = int(round(self.f_cut_base * 255.0))
+        res = int(round(self.f_reso_base * 255.0))
+        if self.f_mode == "lp":
+            self.f_active = cut < 0xFF or res > 0
+        elif self.f_mode == "hp":
+            self.f_active = cut > 0 or res > 0
+        elif self.f_mode in SVF_MODES:
+            self.f_active = True
+        else:
+            self.f_active = cut < 0xFF or res > 0
+
+    def _reset_filter_state(self):
+        n = self.n_channels
+        self.f_speed = [0.0] * n
+        self.f_height = [0.0] * n
+        self.f_delay = [0.0] * n
+        self.f_low = [0.0] * n
+        self.f_band = [0.0] * n
+
     def _ramp_arr(self, ratio: float, target: float, step, updates):
         """Avanza una rampa geométrica (multiplicativa) sobre el bloque.
         Devuelve (valor_por_sample, ratio_final, step_o_None). Si step es
@@ -586,9 +643,12 @@ class Voice:
             v = np.maximum(v, self.vol_target)
         x *= (v * (1.0 / 255.0) * self.vol_scale * self.cc_vol)[:, None]
 
-        # Filtro del upstream (bucle por sample; solo voces filtradas)
+        # Filtro: LGPT/scream (upstream) o SVF barato (lp/hp/bp/notch)
         if self.f_active:
-            self._render_filter(x)
+            if self.f_mode in SVF_MODES:
+                self._render_svf(x)
+            else:
+                self._render_filter(x)
 
         x *= self.attenuate
 
@@ -673,6 +733,47 @@ class Voice:
             self.f_speed[c] = sp
             self.f_height[c] = hg
             self.f_delay[c] = dl
+
+    def _render_svf(self, x: np.ndarray):
+        """State-variable Chamberlin: lp / hp / bp / notch.
+
+        Un bloque, coeficientes fijos (cut/res no barren dentro del
+        callback). 2 estados por canal, bucle sobre lista Python como el
+        filtro LGPT: en la Pi 4 es más barato que indexar numpy, y este
+        lazo no tiene el `dirt` ni las ramas de scream.
+        """
+        cut = min(max(self.f_cut_base * self.cc_cutoff, 0.0), 1.0)
+        freq = 40.0 * ((8000.0 / 40.0) ** cut)
+        freq = min(freq, self.sr * 0.22)
+        f = float(2.0 * np.sin(np.pi * freq / self.sr))
+        damp = 2.0 - 1.80 * self.f_reso_base
+        if damp < f + 0.08:
+            damp = f + 0.08
+        mode = self.f_mode
+        for c in range(self.n_channels):
+            col = x[:, c].tolist()
+            low = self.f_low[c]
+            band = self.f_band[c]
+            for i, s in enumerate(col):
+                low = low + f * band
+                high = s - low - damp * band
+                band = f * high + band
+                if mode == "lp":
+                    y = low
+                elif mode == "hp":
+                    y = high
+                elif mode == "bp":
+                    y = band
+                else:
+                    y = high + low
+                if y > 1.0:
+                    y = 1.0
+                elif y < -1.0:
+                    y = -1.0
+                col[i] = y
+            x[:, c] = col
+            self.f_low[c] = low
+            self.f_band[c] = band
 
 
 # --------------------------------------------------------------------------
@@ -2424,7 +2525,7 @@ class Engine:
             else:
                 self._set_groove(ch, groove)
         elif cmd in ("VOLM", "LEGA", "SLID", "PTCH", "PFIN", "MDCC", "MDPG",
-                     "MVEL"):
+                     "MVEL", "FCUT", "FRES", "FMOD"):
             self._instrument_command(ch, cmd, param)
         else:
             self.unsupported_cmds.add(cmd)
@@ -2444,6 +2545,12 @@ class Engine:
                     v.set_ptch(param)
                 elif cmd == "PFIN":
                     v.set_pfin(param)
+                elif cmd == "FCUT":
+                    v.set_fcut(param)
+                elif cmd == "FRES":
+                    v.set_fres(param)
+                elif cmd == "FMOD":
+                    v.set_fmod(param)
         elif ch.kind == "midi" and ch.midi_def is not None:
             # MidiInstrument::ProcessCommand del upstream
             mch = ch.midi_def.channel

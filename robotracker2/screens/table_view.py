@@ -14,6 +14,8 @@ from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
 from lgpt_model import FX_EMPTY
+from sinte_bridge import (FILTER_MODES, clamp255, cut_label, mode_from_param,
+                          mode_index, mode_label, res_label)
 from theme import (COLOR_ACCENT, COLOR_BEAT, COLOR_BG, COLOR_BORDER, COLOR_EMPTY,
                    COLOR_FX1, COLOR_FX2, COLOR_FX3, COLOR_HEADER_BG,
                    COLOR_HEADER_TXT, COLOR_LINENUM, COLOR_LINENUM_CUR,
@@ -29,13 +31,13 @@ FONT_HDR = dp(12)
 
 # FX que se pueden ciclar en tablas: solo los usados en las canciones de songs/
 # (4 chars cada uno; "HOP ", "PAN " llevan espacio).
-TABLE_FX = ["VOLM", "PTCH", "RTRG", "HOP ", "KILL", "ARPG", "CRSH", "FCUT",
-            "FLTR", "FRES", "LPOF", "PAN ", "PFIN", "PLOF"]
+TABLE_FX = ["VOLM", "PTCH", "RTRG", "HOP ", "KILL", "ARPG", "CRSH",
+            "PAN ", "PFIN", "PLOF", "FCUT", "FRES", "FMOD"]
 
 # (kind, ancho) — 3 columnas cmd+param
-COLS = [("cmd1", dp(74)), ("prm1", dp(74)),
-        ("cmd2", dp(74)), ("prm2", dp(74)),
-        ("cmd3", dp(74)), ("prm3", dp(74))]
+COLS = [("cmd1", dp(70)), ("prm1", dp(110)),
+        ("cmd2", dp(70)), ("prm2", dp(110)),
+        ("cmd3", dp(70)), ("prm3", dp(110))]
 
 _COL_COLOR = {"cmd1": COLOR_FX1, "prm1": COLOR_FX1, "cmd2": COLOR_FX2,
               "prm2": COLOR_FX2, "cmd3": COLOR_FX3, "prm3": COLOR_FX3}
@@ -126,10 +128,22 @@ class TableGrid(Widget):
         if _KIND[kind] == "cmd":
             self._edit_cmd(row, col, 1 if button in (RIGHT, UP) else -1)
         else:
-            delta = (1 if button == RIGHT else -1) if button in (LEFT, RIGHT) \
-                else (0x10 if button == UP else -0x10)
-            cur = self._prm(row, col) or 0
-            self._set_raw(row, col, max(0, min(0xFFFF, cur + delta)))
+            cmd = self._cmd(row, col)
+            if cmd in ("FCUT", "FRES"):
+                cur = clamp255(self._prm(row, col) or 0)
+                d = (1 if button == RIGHT else -1) if button in (LEFT, RIGHT) \
+                    else (16 if button == UP else -16)
+                self._set_raw(row, col, max(0, min(255, cur + d)))
+            elif cmd == "FMOD":
+                cur = mode_from_param(self._prm(row, col) or 0)
+                d = 1 if button in (RIGHT, UP) else -1
+                self._set_raw(row, col,
+                              (mode_index(cur) + d) % len(FILTER_MODES))
+            else:
+                delta = (1 if button == RIGHT else -1) if button in (LEFT, RIGHT) \
+                    else (0x10 if button == UP else -0x10)
+                cur = self._prm(row, col) or 0
+                self._set_raw(row, col, max(0, min(0xFFFF, cur + delta)))
         self._changed()
 
     def _edit_cmd(self, row, col, d):
@@ -176,7 +190,16 @@ class TableGrid(Widget):
         raw = self._get_raw(row, col)
         if _KIND[kind] == "cmd":
             return raw.strip().ljust(4) if raw is not None else "----"
-        return f"{raw:04X}" if raw is not None else "...."
+        if raw is None:
+            return "...."
+        cmd = self._cmd(row, col)
+        if cmd == "FCUT":
+            return cut_label(raw)
+        if cmd == "FRES":
+            return res_label(raw)
+        if cmd == "FMOD":
+            return mode_label(mode_from_param(raw))
+        return f"{raw:04X}"
 
     def _texture(self, text, font_size=FONT):
         key = (text, font_size)

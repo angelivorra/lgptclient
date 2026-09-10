@@ -171,9 +171,10 @@ Sartenazo v1):
   instante, también en la nota que está sonando), `KILL`, `FADE` (apaga la
   nota: 0 filas = ya con declick; N = rampa el volumen actual a 0 en N
   filas de phrase), `DLAY`, `LEGA`,
-  `TABL`, `STOP`, `HOP`.
+  `TABL`, `STOP`, `HOP`, `FCUT`, `FRES`, `FMOD`.
 - Tablas (1 fila/tick, 3 columnas, HOP con contador).
-- Crush/downsample y filtro LP del upstream (ver limitaciones).
+- Crush/downsample, filtro LP del upstream (`original`/`scream`) y
+  filtros baratos SVF por voz (`lp`/`hp`/`bp`/`notch`).
 - Instrumentos MIDI: note on/off, `MDCC`, `MDPG`, `MVEL`, `VOLM` → CC7,
   y `FADE` (0 = note off ya; N = note off tras N filas),
   emitidos por el puerto MIDI de salida configurado.

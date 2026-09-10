@@ -19,6 +19,11 @@ from lgpt_parser import (CHANNEL_COUNT, EXTRA_TRACK, LGPTProject,  # noqa: E402
                          expand_song, note_byte_to_name)
 from lgpt_engine import EFFECT_PRESETS, Engine, slid_pack, slid_unpack  # noqa: E402
 from chords import CHORD_TYPES, chord_label, cycle_chord  # noqa: E402
+from filter_ui import (  # noqa: E402
+    FILTER_MODES, PHRASE_FILTER_HELP, SVF_MODES, clamp255, cut_label,
+    field_help, mode_from_param, mode_index, mode_label, normalize_mode,
+    res_label, type_label,
+)
 from lgpt_writer import save_project  # noqa: E402
 # Control MIDI (botones + knobs) y aplicación de robotraca.json: la misma
 # maquinaria que usan sinte/lgpt_player y mixer (ver sinte/midi_control.py).
@@ -32,6 +37,9 @@ __all__ = ["LGPTProject", "EFFECT_PRESETS", "Engine",
            "note_byte_to_name", "save_project",
            "CHORD_TYPES", "chord_label", "cycle_chord",
            "slid_pack", "slid_unpack",
+           "FILTER_MODES", "PHRASE_FILTER_HELP", "SVF_MODES", "clamp255",
+           "cut_label", "field_help", "mode_from_param", "mode_index",
+           "mode_label", "normalize_mode", "res_label", "type_label",
            "SINTE_DIR", "_apply_pad_volume", "apply_song_config",
            "build_song_pots", "load_song_cfg", "match_button", "match_pot",
            "open_midi_input", "parse_button_spec", "parse_pot_target",

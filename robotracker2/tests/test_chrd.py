@@ -32,7 +32,9 @@ def _run(app):
     pg.cursor_col = 2                       # fx1cmd
     pg.edit(RIGHT)                          # primer comando = VOLM
     assert pg._cmd(0, 1) == FX_USED[0]
-    for _ in range(len(FX_USED) - 1):
+    for _ in range(len(FX_USED)):
+        if pg._cmd(0, 1) == "CHRD":
+            break
         pg.edit(RIGHT)
     assert pg._cmd(0, 1) == "CHRD", f"tras ciclar: {pg._cmd(0, 1)}"
     assert pg._prm(0, 1) == 0, "al elegir CHRD el tipo arranca en maj"
@@ -81,7 +83,8 @@ def _run(app):
     print("  A+dcha cicla FX sin abrir el picker OK")
 
     # dispatch: A+arr abre; arr/abj mueve; A aplica; B cierra
-    pg.edit(RIGHT)                          # CHRD -> VOLM (wrap)
+    pg.pv.set_fx_cmd(0, t, 1, FX_USED[-1])
+    pg.edit(RIGHT)                          # último -> VOLM (wrap)
     assert pg._cmd(0, 1) == FX_USED[0]
     app._dispatch(UP, {UP, A})
     assert pg.fx_picker == 0, pg.fx_picker
@@ -127,6 +130,25 @@ def _run(app):
     pg.edit(DOWN)
     assert pg._prm(0, 1) == 1
     print("  FADE muestra filas y se edita por ejes OK")
+
+    assert "FCUT" in FX_USED and "FRES" in FX_USED and "FMOD" in FX_USED
+    pg.pv.set_fx_cmd(0, t, 1, "FCUT")
+    pg.pv.set_fx_param(0, t, 1, 0)
+    pg.cursor_col = 3
+    assert pg._field_text(0, 3) == "muy sordo", pg._field_text(0, 3)
+    pg.edit(UP)                             # +16
+    assert pg._prm(0, 1) == 16
+    pg.pv.set_fx_param(0, t, 1, 255)
+    assert pg._field_text(0, 3) == "abierto", pg._field_text(0, 3)
+    pg.pv.set_fx_cmd(0, t, 1, "FRES")
+    pg.pv.set_fx_param(0, t, 1, 0)
+    assert pg._field_text(0, 3) == "limpio", pg._field_text(0, 3)
+    pg.pv.set_fx_cmd(0, t, 1, "FMOD")
+    pg.pv.set_fx_param(0, t, 1, 2)          # lp
+    assert pg._field_text(0, 3) == "grave", pg._field_text(0, 3)
+    pg.edit(RIGHT)
+    assert pg._field_text(0, 3) == "agudo", pg._field_text(0, 3)
+    print("  FCUT/FRES/FMOD se leen en palabras OK")
 
 
 def main():

@@ -208,6 +208,24 @@ def _e2e(app, song):
     assert params["loopmode"] == "none"
     print("  enum loopmode cicla OK")
 
+    # --- filtro: valores en palabras, no 0-255 crudo ----------------------
+    ri, si = _row_of(m, "filter mode")
+    _navigate(m, ri, si)
+    params["filter mode"] = "original"
+    m.edit(UP)
+    assert params["filter mode"] == "scream"
+    m.edit(UP)
+    assert params["filter mode"] == "lp"
+    assert "grave" in m._value_text(m._layout()[ri][1][si])
+    params["filter cut"] = "0"
+    ri, si = _row_of(m, "filter cut")
+    _navigate(m, ri, si)
+    assert m._value_text(m._layout()[ri][1][si]) == "muy sordo"
+    params["filter cut"] = "255"
+    assert m._value_text(m._layout()[ri][1][si]) == "abierto"
+    assert "sordo" in m._hint_text() or "izquierda" in m._hint_text()
+    print("  filtro: etiquetas y ayuda en palabras OK")
+
     # --- instrumento MIDI -------------------------------------------------
     m.select_instrument(0x85)
     assert set(_fields(m)) == {"__instr__", "channel", "note length",

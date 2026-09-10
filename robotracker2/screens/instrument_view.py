@@ -15,14 +15,18 @@ from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
-from sinte_bridge import note_byte_to_name
-from theme import (COLOR_ACCENT, COLOR_BG, COLOR_BORDER, COLOR_HDR, COLOR_LABEL,
-                   COLOR_OK, COLOR_VALUE, core_label)
+from sinte_bridge import (FILTER_MODES, cut_label, field_help, mode_label,
+                          note_byte_to_name, res_label, type_label)
+from theme import (COLOR_ACCENT, COLOR_BG, COLOR_BORDER, COLOR_HDR, COLOR_HINT,
+                   COLOR_HINT_BG, COLOR_LABEL, COLOR_OK, COLOR_VALUE,
+                   core_label)
 
 FONT = dp(22)
 FONT_HDR = dp(15)
+FONT_HINT = dp(14)
 ITEM_H = dp(38)
 HDR_H = dp(26)
+HINT_H = dp(40)
 PAD_TOP = dp(30)
 WAVE_W = dp(300)
 WAVE_H = dp(180)
@@ -30,7 +34,7 @@ WAVE_BINS = 220
 
 # Valores de los campos enum (se conserva el actual si no está en la lista).
 ENUMS = {
-    "filter mode": ["original", "bassy", "scream"],
+    "filter mode": list(FILTER_MODES),
     "loopmode": ["none", "loop"],
 }
 
@@ -53,10 +57,10 @@ SAMPLE_LAYOUT = [
              ("crushdrive", "Drive", "int", 0, 255)]),
     ("row", [("downsample", "Downsample", "int", 0, 16)]),
     ("hdr", "FILTER"),
-    ("row", [("filter cut", "Cut", "int", 0, 255),
-             ("filter res", "Res", "int", 0, 255)]),
-    ("row", [("filter type", "Type", "int", 0, 255)]),
-    ("row", [("filter mode", "Mode", "enum")]),
+    ("row", [("filter cut", "Corte", "int", 0, 255),
+             ("filter res", "Canto", "int", 0, 255)]),
+    ("row", [("filter type", "Mezcla", "int", 0, 255)]),
+    ("row", [("filter mode", "Tipo", "enum")]),
     ("row", [("attenuate", "Attenuate", "int", 1, 255)]),
     ("hdr", "LOOP"),
     ("row", [("loopmode", "Loop mode", "enum")]),
@@ -264,14 +268,27 @@ class InstrumentMenu(Widget):
             self._redraw()
 
     # -- scroll ---------------------------------------------------------
+    def _filter_mode(self):
+        return self._params().get("filter mode", "original")
+
+    def _hint_text(self):
+        if self._is_midi() or not self.instr_ids:
+            return ""
+        try:
+            key = self.field_key()
+        except (IndexError, TypeError):
+            return ""
+        return field_help(key, self._filter_mode())
+
     def _visible(self):
         # nº de items (filas + cabeceras) que caben desde top_idx
         layout = self._layout()
         y = self.height - PAD_TOP
+        floor = self.y + (HINT_H if self._hint_text() else 0)
         n = 0
         for i in range(self.top_idx, len(layout)):
             h = ITEM_H if layout[i][0] == "row" else HDR_H
-            if y - h < self.y:
+            if y - h < floor:
                 break
             y -= h
             n += 1
@@ -306,6 +323,15 @@ class InstrumentMenu(Widget):
                 return f"{int(params.get(key, '0') or 0):07X}"
             except ValueError:
                 return "0000000"
+        if key == "filter cut":
+            return cut_label(params.get(key, "255"),
+                             params.get("filter mode", "original"))
+        if key == "filter res":
+            return res_label(params.get(key, "0"))
+        if key == "filter type":
+            return type_label(params.get(key, "0"))
+        if key == "filter mode":
+            return mode_label(params.get(key, "original"), long=True)
         return params.get(key, "--")
 
     def _texture(self, text, font_size=FONT):
@@ -324,7 +350,7 @@ class InstrumentMenu(Widget):
         label_w = max(self._texture(sl[1]).size[0]
                       for _kind, payload in layout if _kind == "row"
                       for sl in payload)
-        val_w = dp(220)
+        val_w = dp(260)
         gap = dp(24)
         pair_gap = dp(40)
         block_w = label_w + val_w + gap + (label_w + val_w + pair_gap)
@@ -368,6 +394,18 @@ class InstrumentMenu(Widget):
                 self._draw_wave(self.x + self.width - WAVE_W - dp(20),
                                 self.y + self.height - PAD_TOP - WAVE_H,
                                 WAVE_W, WAVE_H)
+            hint = self._hint_text()
+            if hint:
+                Color(*COLOR_HINT_BG)
+                Rectangle(pos=(self.x, self.y), size=(self.width, HINT_H))
+                Color(*COLOR_ACCENT)
+                Line(points=[self.x, self.y + HINT_H,
+                             self.x + self.width, self.y + HINT_H], width=1)
+                tex = self._texture(hint, FONT_HINT)
+                Color(*COLOR_HINT)
+                Rectangle(texture=tex, size=tex.size,
+                          pos=(self.x + dp(16),
+                               self.y + (HINT_H - tex.size[1]) / 2))
 
     def _draw(self, x, y, text, color):
         tex = self._texture(text)

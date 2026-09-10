@@ -50,8 +50,10 @@ from robots import (HIT_NOTES, ROBOT_INSTR, ROBOT_TRACK, ayuda_preview_path,
                     hit_label, mdcc_unpack, screen_label)
 from screens.hit_icons import draw_hit_icon
 from screens.track_icons import draw_track_icon
-from sinte_bridge import (chord_label, cycle_chord, note_byte_to_name,
-                          slid_pack, slid_unpack)
+from sinte_bridge import (FILTER_MODES, PHRASE_FILTER_HELP, chord_label,
+                          clamp255, cut_label, cycle_chord, mode_from_param,
+                          mode_index, mode_label, note_byte_to_name,
+                          res_label, slid_pack, slid_unpack)
 from theme import (COLOR_ACCENT, COLOR_BEAT, COLOR_BG, COLOR_BORDER, COLOR_EMPTY,
                    COLOR_FX1, COLOR_FX2, COLOR_HEADER_BG, COLOR_HEADER_TXT,
                    COLOR_HINT, COLOR_HINT_BG, COLOR_HIT, COLOR_INSTR,
@@ -74,7 +76,7 @@ MAX_NOTE = 131                     # (9+2)*12 - 1
 
 # Comandos FX que se pueden ciclar. Todos de 4 chars (requisito de set_fx_cmd).
 FX_USED = ["VOLM", "KILL", "FADE", "DLAY", "LEGA", "TABL", "STOP", "MDCC", "MDPG",
-           "PTCH", "RTRG", "SLID", "CHRD"]
+           "PTCH", "RTRG", "SLID", "CHRD", "FCUT", "FRES", "FMOD"]
 FX_HELP = {
     "VOLM": "volumen de la nota",
     "KILL": "corta la nota (ticks)",
@@ -89,13 +91,14 @@ FX_HELP = {
     "RTRG": "repite la nota",
     "SLID": "slide a nota destino",
     "CHRD": "acorde sobre la nota",
+    **PHRASE_FILTER_HELP,
 }
 PICK_ROW_H = dp(34)
 
 # (kind, ancho_px) — columnas normales (6) y las del canal de robotas (2).
 COLS = [("note", dp(70)), ("instr", dp(52)),
-        ("fx1cmd", dp(74)), ("fx1prm", dp(100)),
-        ("fx2cmd", dp(74)), ("fx2prm", dp(100))]
+        ("fx1cmd", dp(74)), ("fx1prm", dp(124)),
+        ("fx2cmd", dp(74)), ("fx2prm", dp(124))]
 ROBOT_COLS = [("hit", dp(148)), ("screen", dp(150))]
 
 _HIT_NOTE_LIST = [note for _label, note in HIT_NOTES]
@@ -404,6 +407,10 @@ class PhraseGrid(Widget):
                 self._edit_slid(step, which, button)
             elif self._cmd(step, which) == "FADE":
                 self._edit_fade(step, which, button)
+            elif self._cmd(step, which) in ("FCUT", "FRES"):
+                self._edit_filter_byte(step, which, button)
+            elif self._cmd(step, which) == "FMOD":
+                self._edit_fmod(step, which, button)
             else:
                 cur = self.pv.fx_param_at(step, self.track, which)
                 self.pv.set_fx_param(step, self.track, which,
@@ -499,6 +506,12 @@ class PhraseGrid(Widget):
                                  self._slid_default_param(step))
         elif new == "FADE":
             self.pv.set_fx_param(step, self.track, which, 0)
+        elif new == "FCUT":
+            self.pv.set_fx_param(step, self.track, which, 128)
+        elif new == "FRES":
+            self.pv.set_fx_param(step, self.track, which, 0)
+        elif new == "FMOD":
+            self.pv.set_fx_param(step, self.track, which, mode_index("lp"))
 
     def _slid_default_param(self, step):
         src = self._note(step)
@@ -523,6 +536,34 @@ class PhraseGrid(Widget):
             d = 4 if button == UP else -4
         self.pv.set_fx_param(step, self.track, which,
                              max(0, min(16, cur + d)))
+
+    def _edit_filter_byte(self, step, which, button):
+        """FCUT/FRES: byte 0-255. A+izq/dcha ±1, A+arr/abj ±16."""
+        cur = clamp255(self.pv.fx_param_at(step, self.track, which))
+        if button in (LEFT, RIGHT):
+            d = 1 if button == RIGHT else -1
+        else:
+            d = 16 if button == UP else -16
+        self.pv.set_fx_param(step, self.track, which,
+                             max(0, min(255, cur + d)))
+
+    def _edit_fmod(self, step, which, button):
+        """FMOD: cicla tipos de filtro."""
+        cur = mode_from_param(self.pv.fx_param_at(step, self.track, which))
+        d = 1 if button in (RIGHT, UP) else -1
+        self.pv.set_fx_param(step, self.track, which,
+                             (mode_index(cur) + d) % len(FILTER_MODES))
+
+    def _step_filter_mode(self, step):
+        """Modo del filtro para etiquetar FCUT: FMOD de la fila, o el del instrumento."""
+        for which in (1, 2):
+            if self._cmd(step, which) == "FMOD":
+                return mode_from_param(self._prm(step, which) or 0)
+        iid = self.effective_instr(step)
+        if iid is None or self.project is None:
+            return "original"
+        data = self.project.instrument_bank.get(iid) or {}
+        return (data.get("params") or {}).get("filter mode", "original")
 
     def open_fx_picker(self):
         """Lista de comandos FX con mini explicación (A+arr/abj sobre cmd)."""
@@ -559,6 +600,13 @@ class PhraseGrid(Widget):
                                  self._slid_default_param(self.cursor_step))
         elif cmd == "FADE" and prev != "FADE":
             self.pv.set_fx_param(self.cursor_step, self.track, which, 0)
+        elif cmd == "FCUT" and prev != "FCUT":
+            self.pv.set_fx_param(self.cursor_step, self.track, which, 128)
+        elif cmd == "FRES" and prev != "FRES":
+            self.pv.set_fx_param(self.cursor_step, self.track, which, 0)
+        elif cmd == "FMOD" and prev != "FMOD":
+            self.pv.set_fx_param(self.cursor_step, self.track, which,
+                                 mode_index("lp"))
         self.fx_picker = None
         self._changed()
 
@@ -616,6 +664,15 @@ class PhraseGrid(Widget):
         if self.block_clipboard is not None:
             return "PORTAPAPELES: Ctrl+A pegar"
         return None
+
+    def _filter_hint(self):
+        """Una línea si el cursor está en FCUT / FRES / FMOD."""
+        kind = self._cols()[self.cursor_col][0]
+        which = _WHICH.get(kind)
+        if which is None:
+            return None
+        cmd = self._cmd(self.cursor_step, which)
+        return PHRASE_FILTER_HELP.get(cmd)
 
     def _clip_cell(self, step, col):
         """Valor de portapapeles de bloque: en NOTE, (nota, instrumento)."""
@@ -740,6 +797,11 @@ class PhraseGrid(Widget):
         elif self._cmd(step, _WHICH[kind]) == "SLID":
             self.pv.set_fx_param(step, self.track, _WHICH[kind],
                                  self._slid_default_param(step))
+        elif self._cmd(step, _WHICH[kind]) == "FCUT":
+            self.pv.set_fx_param(step, self.track, _WHICH[kind], 128)
+        elif self._cmd(step, _WHICH[kind]) == "FMOD":
+            self.pv.set_fx_param(step, self.track, _WHICH[kind],
+                                 mode_index("lp"))
         else:
             self.pv.set_fx_param(step, self.track, _WHICH[kind], 0)
 
@@ -779,6 +841,12 @@ class PhraseGrid(Widget):
             return f"{note_byte_to_name(note)} {steps:02d}"
         if self._cmd(step, which) == "FADE":
             return f"{raw & 0xFF:02d}"
+        if self._cmd(step, which) == "FCUT":
+            return cut_label(raw, self._step_filter_mode(step))
+        if self._cmd(step, which) == "FRES":
+            return res_label(raw)
+        if self._cmd(step, which) == "FMOD":
+            return mode_label(mode_from_param(raw))
         return f"{raw:04X}"
 
     def _texture(self, text, font_size=FONT):
@@ -931,8 +999,8 @@ class PhraseGrid(Widget):
                 preview_x = free_x + (avail_w - size) / 2
                 self._draw_preview(preview_x, size)
 
-            # hint de operaciones con la selección activa (franja inferior)
-            hint = self._selection_hint()
+            # hint: selección, o explicación si el cursor está en un filtro
+            hint = self._selection_hint() or self._filter_hint()
             if hint:
                 Color(*COLOR_HINT_BG)
                 Rectangle(pos=(self.x, self.y), size=(self.width, HINT_H))

@@ -2313,8 +2313,8 @@
             <PARAM NAME="pan" VALUE="127" />
             <PARAM NAME="filter cut" VALUE="255" />
             <PARAM NAME="filter res" VALUE="0" />
-            <PARAM NAME="filter type" VALUE="16" />
-            <PARAM NAME="filter mode" VALUE="scream" />
+            <PARAM NAME="filter type" VALUE="0" />
+            <PARAM NAME="filter mode" VALUE="original" />
             <PARAM NAME="attenuate" VALUE="79" />
             <PARAM NAME="start" VALUE="0" />
             <PARAM NAME="loopmode" VALUE="none" />
@@ -2341,8 +2341,8 @@
             <PARAM NAME="pan" VALUE="127" />
             <PARAM NAME="filter cut" VALUE="255" />
             <PARAM NAME="filter res" VALUE="0" />
-            <PARAM NAME="filter type" VALUE="48" />
-            <PARAM NAME="filter mode" VALUE="bassy" />
+            <PARAM NAME="filter type" VALUE="0" />
+            <PARAM NAME="filter mode" VALUE="original" />
             <PARAM NAME="attenuate" VALUE="255" />
             <PARAM NAME="start" VALUE="0" />
             <PARAM NAME="loopmode" VALUE="none" />

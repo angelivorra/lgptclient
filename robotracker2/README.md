@@ -95,8 +95,11 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    id **no referenciado en la canción** (da igual si existe en el banco) mayor
    que el actual (si no hay por encima, da la vuelta), **B** borra el campo. Editar un hueco crea la
    chain y la phrase (estilo Piggy). El ciclado de **comandos FX** solo ofrece los
-   usados en las canciones de `songs/` (`FX_USED` en `phrase_view.py`: VOLM, KILL,
-   FADE, DLAY, LEGA, TABL, STOP, MDCC, MDPG, PTCH, RTRG, SLID, CHRD). **FADE**
+   usados en las canciones de `songs/` más los filtros (`FX_USED` en
+   `phrase_view.py`: VOLM, KILL, FADE, DLAY, LEGA, TABL, STOP, MDCC, MDPG,
+   PTCH, RTRG, SLID, CHRD, FCUT, FRES, FMOD). **FCUT/FRES/FMOD** se muestran
+   con palabras (sordo/abierto, limpio/silba, grave/agudo…) no en hex.
+   **FADE**
    apaga la nota en N filas (0 = ya, con declick; 3 = rampa el volumen a 0 en 3
    filas). Selección multicelda igual que
    SONG/CHAIN (**Ctrl+S** cicla libre→columnas→todo, **S** copia, **Ctrl+A**
@@ -167,14 +170,16 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    PHRASE, la del comando TABL del step; si no, la primera existente; nº en la
    cabecera). 16 filas × **3 columnas FX** (cmd+param). Dpad mueve (arr/abj fila,
    izq/dcha campo), **A+dir** edita (cmd cicla `TABLE_FX` — los FX de tablas
-   usados en songs: VOLM/PTCH/RTRG/HOP/KILL/ARPG/CRSH/filtros/PAN…; param ±),
+   usados en songs: VOLM/PTCH/RTRG/HOP/KILL/ARPG/CRSH/PAN…; param ±),
    **A** copia/pega/def por campo, **B** borra. Se guarda (writer extendido para
    TABLES). Las dos posiciones TABLE de la rejilla abren esta vista.
 8. **INSTRUMENT** (`screens/instrument_view.py`): parámetros del instrumento
    (nº en cabecera) organizados **por secciones estilo LGPT** — selector de
    Instrument, SAMPLE, AMP (Volume, Pan), TUNE (Root note, Fine tune), CRUSH
-   (**Crush + Drive** en pareja, Downsample), FILTER (**Cut + Res** en pareja,
-   Type, Mode, Attenuate), LOOP (Loop mode, Start, End en hex) y TABLE. Los
+   (   **Crush + Drive** en pareja, Downsample), FILTER (**Corte + Canto** en
+   pareja, Mezcla, Tipo — valores en palabras y una línea de ayuda; modos
+   `original`/`scream` y los baratos `lp`/`hp`/`bp`/`notch`), LOOP (Loop
+   mode, Start, End en hex) y TABLE. Los
    instrumentos **MIDI (0x80-0x8F)** muestran sus campos propios: Channel,
    Note length, Volume, Table. El **Volume del instrumento es el volumen
    MÁXIMO** de la voz: el `VOLM vv` de la canción escala relativo a él

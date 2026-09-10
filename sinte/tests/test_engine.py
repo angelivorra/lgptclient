@@ -1048,5 +1048,65 @@ class TestRealSongs(unittest.TestCase):
         self.assertEqual(intervals, [5, 6, 5, 7, 5])
 
 
+class TestFilter(unittest.TestCase):
+    def _mix_engine(self, mode="lp", cut=40, res=0):
+        engine = make_engine()
+        t = np.arange(SAMPLE_RATE, dtype=np.float32) / SAMPLE_RATE
+        data = (0.35 * np.sin(2 * np.pi * 120 * t)
+                + 0.35 * np.sin(2 * np.pi * 4000 * t))[:, None]
+        engine.bank.samples["test.wav"] = Sample(
+            data.astype(np.float32), SAMPLE_RATE)
+        params = engine.project.instrument_bank[0]["params"]
+        params["filter mode"] = mode
+        params["filter cut"] = str(cut)
+        params["filter res"] = str(res)
+        return engine
+
+    def _bin_energy(self, buf, freq):
+        spec = np.fft.rfft(buf[:, 0])
+        idx = int(round(freq * len(buf) / SAMPLE_RATE))
+        return float(abs(spec[idx]))
+
+    def test_svf_lp_quita_agudos(self):
+        engine = self._mix_engine("lp", cut=80)
+        note_row(engine.project, 0)
+        engine._process_tick()
+        v = engine.channels[0].voice
+        self.assertEqual(v.f_mode, "lp")
+        self.assertTrue(v.f_active)
+        out = engine.render(4096)
+        self.assertGreater(self._bin_energy(out, 120),
+                           self._bin_energy(out, 4000) * 2)
+
+    def test_svf_hp_quita_graves(self):
+        engine = self._mix_engine("hp", cut=200)
+        note_row(engine.project, 0)
+        engine._process_tick()
+        out = engine.render(4096)
+        self.assertGreater(self._bin_energy(out, 4000),
+                           self._bin_energy(out, 120) * 2)
+
+    def test_fcut_enciende_filtro(self):
+        engine = make_engine()
+        note_row(engine.project, 0)
+        engine.project.cmd1[0] = "FCUT"
+        engine.project.param1[0] = 40
+        engine._process_tick()
+        v = engine.channels[0].voice
+        self.assertTrue(v.f_active)
+        self.assertAlmostEqual(v.f_cut_base, 40 / 255.0, places=5)
+        self.assertNotIn("FCUT", engine.unsupported_cmds)
+
+    def test_fmod_cambia_modo(self):
+        engine = self._mix_engine("original", cut=255, res=0)
+        note_row(engine.project, 0)
+        engine.project.cmd1[0] = "FMOD"
+        engine.project.param1[0] = 2          # lp
+        engine._process_tick()
+        v = engine.channels[0].voice
+        self.assertEqual(v.f_mode, "lp")
+        self.assertNotIn("FMOD", engine.unsupported_cmds)
+
+
 if __name__ == "__main__":
     unittest.main()
