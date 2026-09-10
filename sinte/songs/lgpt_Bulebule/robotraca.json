@@ -6,7 +6,15 @@
     }
   },
   "master": 125,
-  "mute": [],
+  "mute": [
+    7
+  ],
+  "pad_volume": {
+    "1": 80
+  },
+  "pads": {
+    "1": "Crash 1.wav"
+  },
   "pots": {
     "pot1": "1,2:acid",
     "pot2": "4:bode",
