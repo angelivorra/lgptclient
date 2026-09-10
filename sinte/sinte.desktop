@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Sinte
+Comment=Reproductor standalone de canciones LGPT (motor propio, sin JACK ni binario LGPT)
+Exec=/home/angel/git/lgptclient/sinte/run.sh
+Path=/home/angel/git/lgptclient/sinte
+Icon=/home/angel/git/lgptclient/sinte/icon.png
+Terminal=true
+Categories=AudioVideo;Audio;Player;
+Keywords=sinte;lgpt;tracker;music;

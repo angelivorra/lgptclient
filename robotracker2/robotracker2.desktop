@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=ROBOTRACKER2
+Comment=Editor/reproductor táctil de canciones LGPT (SONG/CHAIN/PHRASE/INSTRUMENT/TABLE/GROOVE/PROJECT)
+Exec=/home/angel/git/lgptclient/robotracker2/.venv/bin/python /home/angel/git/lgptclient/robotracker2/robotracker2.py
+Path=/home/angel/git/lgptclient/robotracker2
+Icon=/home/angel/git/lgptclient/robotracker2/icon.png
+Terminal=false
+Categories=AudioVideo;Audio;Sequencer;
+Keywords=tracker;lgpt;piggy;music;synth;robotraca;
+StartupWMClass=ROBOTRACKER2

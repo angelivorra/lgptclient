@@ -105,6 +105,21 @@ class EventServer:
         self._queue.put(line.encode("ascii", "replace"))
         self._queued += 1
 
+    def drop_pending(self):
+        """Tira los eventos aún no enviados. Al cambiar de canción hay que
+        vaciar esta cola ANTES del STOP: si no, las NOTA de la canción vieja
+        salen por TCP mezcladas con las de la nueva (~1 s de overlap, el
+        delay con el que los clientes programan)."""
+        while True:
+            try:
+                item = self._queue.get_nowait()
+            except queue.Empty:
+                break
+            if item is None:
+                self._queue.put(None)   # no tragar el cierre del hilo
+                break
+        self._queued = 0
+
     @property
     def client_count(self) -> int:
         with self._lock:
@@ -249,6 +264,10 @@ class EventMidiOut:
         self.server = server
         self._engine_ref = engine_ref      # {"engine": Engine} del player
         self.client_delay_ms = client_delay_ms
+        # True mientras se carga otra canción: el hilo de audio puede
+        # terminar el bloque de la vieja y emitir NOTA/CC/ACRD después de
+        # que hayamos mandado STOP. Esos eventos se descartan.
+        self.suppress_notes = False
 
     def _ts(self) -> int:
         engine = self._engine_ref.get("engine")
@@ -256,6 +275,8 @@ class EventMidiOut:
         return audible - self.client_delay_ms
 
     def note_on(self, channel, note, velocity):
+        if self.suppress_notes:
+            return
         engine = self._engine_ref.get("engine")
         audible = engine.event_time_ms() if engine is not None else now_ms()
         ts = audible - self.client_delay_ms
@@ -270,6 +291,8 @@ class EventMidiOut:
         pass
 
     def cc(self, channel, control, value):
+        if self.suppress_notes:
+            return
         self.server.emit("CC", self._ts(), value, channel, control)
 
     def chord_on(self, channel, notes, velocity):
@@ -278,6 +301,8 @@ class EventMidiOut:
         # tracker (0-7), no un canal MIDI. Sin evento de "off" explícito,
         # mismo criterio que note_off: el receptor corta la nota anterior
         # al recibir la siguiente.
+        if self.suppress_notes:
+            return
         self.server.emit("ACRD", self._ts(), channel, velocity, *notes)
 
     def program_change(self, channel, program):

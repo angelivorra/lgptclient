@@ -515,15 +515,45 @@ class Player:
                 remaining.append([0, wpos + m])   # sigue en el próximo bloque
         self._calib_active = remaining
 
-    def _load_song(self, index: int):
-        project_dir = self.projects[index]
+    def _unload_engine(self):
+        """Suelta el engine actual sin mezclarlo con el siguiente.
+
+        Al cambiar de canción (o volver a la lista) hay que: 1) dejar de
+        emitir NOTA/CC, 2) parar el secuenciador, 3) tirar lo que aún no
+        ha salido por TCP, 4) mandar STOP para que las robotas vacíen su
+        cola (~1 s de eventos ya programados). Si no, la canción vieja
+        sigue sonando en los solenoides encima de la nueva.
+        `panic()` solo manda note-off y el protocolo no los transporta.
+        """
+        out = self.event_out
+        if out is not None:
+            out.suppress_notes = True
         old = self.engine_ref.get("engine")
         if old is not None:
-            old.panic()                   # note off de notas MIDI colgadas
+            old.playing = False
+            old.panic()
+        self.engine_ref["engine"] = None
+        if self.event_server is not None:
+            self.event_server.drop_pending()
+        if out is not None:
+            out.transport_stop(False)
+
+    def _arm_engine(self, engine: Engine):
+        """Cuelga el engine nuevo y arranca. El START tiene que salir con
+        `engine_ref` ya apuntando al nuevo, si no los timestamps se sellan
+        con el viejo (o con now())."""
+        engine.midi_out = self.event_out
+        if self.event_out is not None:
+            self.event_out.suppress_notes = False
+        self.engine_ref["engine"] = engine
+        engine.start()
+
+    def _load_song(self, index: int):
+        self._unload_engine()
+        project_dir = self.projects[index]
         engine = Engine(project_dir, sample_rate=self.args.samplerate,
                         audio_delay=self.args.delay,
                         wavs_dir=self.args.wavs_dir)
-        engine.midi_out = self.event_out
         m = self.args.master_fx
         if m:
             engine.master_chain = MasterChain(
@@ -534,9 +564,8 @@ class Player:
                 limit_db=float(m.get("limit", -1.0)),
                 release_s=float(m.get("release", 0.15)),
                 gain_db=float(m.get("gain", 0.0)))
-        engine.start()
         self._apply_song_config(project_dir, engine)
-        self.engine_ref["engine"] = engine   # swap atómico de referencia
+        self._arm_engine(engine)
         return engine
 
     def _apply_song_config(self, project_dir: Path, engine: Engine):
@@ -851,8 +880,7 @@ class Player:
                         self.index = (self.index - 1) % len(self.projects)
                         engine = self._load_song(self.index)
                     elif key in ("q", "esc"):
-                        engine.push_event("stop")
-                        self.engine_ref["engine"] = None
+                        self._unload_engine()
                         scr.timeout(100)
                         needs_clear = True
                         break
@@ -1233,21 +1261,13 @@ class Player:
         self._calib_send(robot, motor)                # valores al día antes de sonar
         engine = Engine(song_dir, sample_rate=self.args.samplerate,
                         audio_delay=self.args.delay, wavs_dir=self.args.wavs_dir)
-        engine.midi_out = self.event_out
-        engine.start()
         self._apply_song_config(song_dir, engine)
-        self.engine_ref["engine"] = engine
+        self._arm_engine(engine)
         return f"sonando {robot['nombre']} · {motor['nombre']} (nota {nota})"
 
     def _calib_stop_song(self):
         """Para la canción de test (si hay) y restaura ruido a todas."""
-        engine = self.engine_ref.get("engine")
-        if engine is not None:
-            try:
-                engine.panic()
-            except Exception:
-                pass
-        self.engine_ref["engine"] = None
+        self._unload_engine()
         self._calib_set_ruido(None)
 
     def _calib_save(self, robot: dict, motor: dict) -> str:

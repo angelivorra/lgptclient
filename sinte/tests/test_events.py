@@ -185,6 +185,30 @@ class TestEventMidiOut(unittest.TestCase):
         finally:
             s.close()
 
+    def test_drop_pending_deja_sitio_al_stop(self):
+        """Cola llena: sin vaciar, el STOP se perdería (MAX_QUEUED)."""
+        for _ in range(2000):
+            self.server.emit("NOTA", 1, 2, 3, 4)
+        self.assertGreater(self.server.dropped, 0)
+        dropped = self.server.dropped
+        self.server.drop_pending()
+        self.server.emit("STOP", 99)
+        self.assertEqual(self.server.dropped, dropped)
+
+    def test_suppress_notes_deja_pasar_stop(self):
+        """Durante la carga, NOTA/CC/ACRD se descartan; STOP y START no."""
+        seen = []
+        self.sink.server.emit = lambda kind, ts, *fields: seen.append(kind)
+        self.ref["engine"] = FakeEngine(audible_ms=10_000)
+        self.sink.suppress_notes = True
+        self.sink.note_on(channel=0, note=60, velocity=100)
+        self.sink.cc(channel=0, control=7, value=64)
+        self.sink.chord_on(2, [60, 64, 67], 90)
+        self.sink.transport_stop(finished=False)
+        self.sink.suppress_notes = False
+        self.sink.transport_start()
+        self.assertEqual(seen, ["STOP", "START"])
+
 
 if __name__ == "__main__":
     unittest.main()

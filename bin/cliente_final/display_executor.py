@@ -16,13 +16,12 @@ import queue
 from typing import Optional
 
 from media_manager import AnimationConfig
+from scenes import SceneEngine
 
 logger = logging.getLogger("cliente.display")
 
 SYSTEM_FPS = 30
-ANIMATION_FPS = 20
 FRAME_INTERVAL = 1.0 / SYSTEM_FPS
-ANIMATION_FRAME_INTERVAL = 1.0 / ANIMATION_FPS
 
 
 class FramebufferWriter:
@@ -146,9 +145,12 @@ class FramebufferWriter:
 class DisplayExecutor:
     """Ejecuta imágenes y animaciones en el framebuffer."""
     
-    def __init__(self, fb_device: str = "/dev/fb0", simulate: bool = False):
+    def __init__(self, fb_device: str = "/dev/fb0", simulate: bool = False,
+                 invert: bool = False):
         self.fb_writer = FramebufferWriter(fb_device, simulate)
         self.simulate = simulate
+        self.invert = invert
+        self.scenes = SceneEngine(invert=invert)
         
         self._render_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -160,6 +162,7 @@ class DisplayExecutor:
         self._current_animation: Optional[AnimationConfig] = None
         self._animation_frame_idx: int = 0
         self._animation_pack_file = None
+        self._animation_interval: float = 1.0 / 20
         self._waiting_until: Optional[float] = None
         
         # Control para pausar cuando status screen está activo
@@ -290,12 +293,43 @@ class DisplayExecutor:
             self._waiting_until = None
             self._last_frame_time = 0
             self._frame_accumulator = 0
+            fps = config.fps if config.fps and config.fps > 0 else 20
+            self._animation_interval = 1.0 / fps
             
             self.stats['animations_started'] += 1
             logger.info(
                 f"🎬 Animación configurada: {animation_id} "
-                f"({len(config.frames)} frames @ {ANIMATION_FPS} FPS)"
+                f"({len(config.frames)} frames @ {fps} FPS)"
             )
+
+    def play_scene(self, name: str):
+        """Activa una escena procedural (non-blocking)."""
+        try:
+            self._command_queue.put_nowait(('scene', name))
+        except queue.Full:
+            self._play_scene_internal(name)
+
+    def _play_scene_internal(self, name: str):
+        with self._state_lock:
+            if self._animation_pack_file:
+                try:
+                    self._animation_pack_file.close()
+                except Exception:
+                    pass
+                self._animation_pack_file = None
+            self._current_type = 'scene'
+            self._current_image = None
+            self._current_animation = None
+            self._waiting_until = None
+            self.scenes.set_scene(name)
+            logger.info(f"🌌 Escena procedural: {name}")
+
+    def pulse_hit(self, kind: str, velocity: int = 127):
+        """Impulso de bombo/caja/crash. El render lo consume; el GPIO no."""
+        self.scenes.pulse(kind, velocity)
+
+    def set_bpm(self, bpm: float):
+        self.scenes.set_bpm(bpm)
     
     def _render_loop(self):
         """Loop principal de renderizado."""
@@ -318,6 +352,8 @@ class DisplayExecutor:
                         self._show_image_internal(cmd[1], cmd[2], cmd[3])
                     elif cmd[0] == 'animation':
                         self._play_animation_internal(cmd[1])
+                    elif cmd[0] == 'scene':
+                        self._play_scene_internal(cmd[1])
             except:
                 pass
             
@@ -341,9 +377,19 @@ class DisplayExecutor:
                                 self._frame_accumulator += (current_time - self._last_frame_time)
                                 self._last_frame_time = current_time
                                 
-                                if self._frame_accumulator >= ANIMATION_FRAME_INTERVAL:
+                                if self._frame_accumulator >= self._animation_interval:
                                     self._render_animation_frame()
-                                    self._frame_accumulator -= ANIMATION_FRAME_INTERVAL
+                                    self._frame_accumulator -= self._animation_interval
+                    elif self._current_type == 'scene':
+                        frame = self.scenes.render()
+                        if frame:
+                            write_ok = self.fb_writer.write(
+                                frame, skip_black_check=True)
+                            if write_ok:
+                                self.stats['frames_rendered'] += 1
+                                self.stats['fb_writes_ok'] += 1
+                            else:
+                                self.stats['fb_writes_failed'] += 1
             
             except Exception as e:
                 logger.error(f"❌ Error en render loop: {e}")

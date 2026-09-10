@@ -33,6 +33,9 @@ from kivy.config import Config
 # Tamaño de ventana de reserva (fuera de fullscreen). Antes de crear la Window.
 Config.set("graphics", "width", "1280")
 Config.set("graphics", "height", "720")
+_ICON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")
+if os.path.isfile(_ICON):
+    Config.set("kivy", "window_icon", _ICON)
 
 from kivy.app import App
 from kivy.clock import Clock

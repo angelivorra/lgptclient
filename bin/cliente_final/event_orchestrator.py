@@ -195,6 +195,8 @@ class EventOrchestrator:
         self.stats['notas_mapeadas'] += 1
         logger.debug(f"🎵 NOTA {note} → {len(pins)} pin(es): {pins}")
 
+        self._schedule_hit_visual(server_ts_ms, note, velocity)
+
         for pin in pins:
             try:
                 self._schedule_pin_activation(server_ts_ms, note, pin)
@@ -245,6 +247,38 @@ class EventOrchestrator:
             description=f"GPIO {pin} ({pin_config.nombre}) - Nota {note}"
         )
         self.stats['gpio_programados'] += 1
+
+    def _hit_kinds_for_note(self, note: int) -> list:
+        """Bombo/caja/crash a partir de los nombres de pin de esta robota."""
+        pins = self.config.get_pins_for_note(note)
+        if not pins:
+            return []
+        blob = " ".join(
+            self.config.get_pin_config(p).nombre.lower() for p in pins)
+        kinds = []
+        if "bombo" in blob:
+            kinds.append("kick")
+        if "caja" in blob:
+            kinds.append("snare")
+        if "crash" in blob or "platillo" in blob:
+            kinds.append("crash")
+        return kinds
+
+    def _schedule_hit_visual(self, server_ts_ms: int, note: int, velocity: int):
+        """Encola impulsos de escena al mismo reloj que las imágenes (ts+1s)."""
+        if not self._pantalla:
+            return
+        kinds = self._hit_kinds_for_note(note)
+        if not kinds:
+            return
+        execution_time_ms = server_ts_ms + self.base_delay_ms
+        for kind in kinds:
+            self.scheduler.schedule_at_walltime(
+                wall_time_ms=execution_time_ms,
+                callback=self.display_executor.pulse_hit,
+                args=(kind, velocity),
+                description=f"HIT {kind} nota {note}"
+            )
 
     def handle_cc(self, server_ts_ms: int, value: int, channel: int, controller: int):
         self.stats['cc_recibidos'] += 1
@@ -302,12 +336,35 @@ class EventOrchestrator:
         except Exception as e:
             logger.error(f"❌ Error mostrando imagen {cc:03d}/{value:03d}: {e}")
 
+    def _execute_scene(self, name: str):
+        if not self._pantalla:
+            return
+        try:
+            self._stop_production_idle()
+            if self._status_screen_active:
+                self.stop_status_screen()
+            self.display_executor.play_scene(name)
+            logger.info(f"✅ Escena procedural: {name}")
+        except Exception as e:
+            logger.error(f"❌ Error activando escena {name}: {e}")
+
     def handle_start(self, server_ts_ms: int):
         logger.info(f"▶️  START recibido (ts={server_ts_ms}) - Iniciando canción")
         self._playing = True
         self._stop_production_idle()
         if self._status_screen_active:
             self.stop_status_screen()
+        # Escena live al mismo reloj que el audio. Sin MDCC en la canción.
+        if self._pantalla:
+            if self.current_bpm > 0:
+                self.display_executor.set_bpm(self.current_bpm)
+            execution_time_ms = server_ts_ms + self.base_delay_ms
+            self.scheduler.schedule_at_walltime(
+                wall_time_ms=execution_time_ms,
+                callback=self._execute_scene,
+                args=("live",),
+                description="Escena live"
+            )
 
     def handle_stop(self, server_ts_ms: int):
         self.stats['stops_recibidos'] += 1
@@ -324,6 +381,13 @@ class EventOrchestrator:
         self.current_bpm = bpm
         self.stats['bpm_recibidos'] += 1
         logger.info(f"🎵 BPM: {bpm:.2f}")
+        execution_time_ms = server_ts_ms + self.base_delay_ms
+        self.scheduler.schedule_at_walltime(
+            wall_time_ms=execution_time_ms,
+            callback=self.display_executor.set_bpm,
+            args=(bpm,),
+            description=f"BPM {bpm:.1f}"
+        )
 
     def handle_end(self, server_ts_ms: int):
         logger.info(f"⏹️  END recibido (ts={server_ts_ms}) - Canción terminada")

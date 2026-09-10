@@ -37,9 +37,24 @@ from pathlib import Path
 
 STATUS_FILE = "/tmp/cliente_status.json"
 
-# Configuración del servidor
-SERVER_HOST = os.environ.get("SERVER_HOST", "192.168.0.2")
+# Configuración del servidor. Se prueba en orden (sinte, luego este PC en
+# el WiFi de robots). SERVER_HOSTS="ip1,ip2" sustituye la lista entera;
+# si no, SERVER_HOST + SERVER_FALLBACK.
+def _server_hosts() -> list[str]:
+    extra = os.environ.get("SERVER_HOSTS")
+    if extra:
+        return [h.strip() for h in extra.split(",") if h.strip()]
+    hosts = [os.environ.get("SERVER_HOST", "192.168.0.2")]
+    fallback = os.environ.get("SERVER_FALLBACK", "192.168.0.102")
+    if fallback and fallback not in hosts:
+        hosts.append(fallback)
+    return hosts
+
+
+SERVER_HOSTS = _server_hosts()
+SERVER_HOST = SERVER_HOSTS[0]
 SERVER_PORT = int(os.environ.get("SERVER_PORT", "8888"))
+CONNECT_TIMEOUT_S = float(os.environ.get("SERVER_CONNECT_TIMEOUT", "2"))
 
 # Sincronización del reloj con el servidor.
 # En vez de NTP (que necesitaría internet o un servidor NTP autoritativo en la
@@ -105,7 +120,8 @@ class MIDIClient:
         # Crear gestor de medios y ejecutor de display
         logger.info("📺 Inicializando sistema de display...")
         self.media_manager = MediaManager(MEDIA_BASE_PATH, max_image_cache=10)
-        self.display_executor = DisplayExecutor(simulate=SIMULATE_DISPLAY)
+        self.display_executor = DisplayExecutor(
+            simulate=SIMULATE_DISPLAY, invert=self.config.invertir)
         logger.info(f"   Ruta de medios: {MEDIA_BASE_PATH}")
         logger.info(f"   Modo display: {'Simulación' if SIMULATE_DISPLAY else 'Real'}")
         
@@ -280,13 +296,31 @@ class MIDIClient:
                 
         except (ValueError, IndexError) as e:
             logger.error(f"Error parseando mensaje '{line}': {e}")
-    
+
+    async def _try_connect(self, host: str):
+        """Abre TCP a host:SERVER_PORT o None si falla / timeout."""
+        logger.info(f"🔌 Conectando a {host}:{SERVER_PORT}...")
+        self.orchestrator.set_connection_status(False, host, SERVER_PORT)
+        try:
+            return await asyncio.wait_for(
+                asyncio.open_connection(host, SERVER_PORT),
+                timeout=CONNECT_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            logger.error(
+                f"❌ {host}:{SERVER_PORT}: timeout ({CONNECT_TIMEOUT_S:.0f}s)"
+            )
+        except Exception as e:
+            logger.error(f"❌ {host}:{SERVER_PORT}: {e}")
+        return None
+
     async def run(self):
         """Loop principal del cliente."""
         logger.info("=" * 60)
         logger.info("Cliente MIDI con GPIO - Iniciando")
         logger.info("=" * 60)
-        logger.info(f"Servidor: {SERVER_HOST}:{SERVER_PORT}")
+        lista = ", ".join(f"{h}:{SERVER_PORT}" for h in SERVER_HOSTS)
+        logger.info(f"Servidores (en orden): {lista}")
         logger.info(f"Sincronización de reloj con el servidor: {'Activada' if ENABLE_TIME_SYNC else 'Desactivada'}")
         logger.info(f"Modo GPIO: {'Simulación' if SIMULATE_GPIO else 'Real'}")
         logger.info("")
@@ -296,59 +330,62 @@ class MIDIClient:
         
         try:
             while True:
+                reader = writer = None
+                connected_host = None
+                # Siempre el sinte primero, para volver a él cuando reaparezca.
+                for host in SERVER_HOSTS:
+                    pair = await self._try_connect(host)
+                    if pair is not None:
+                        reader, writer = pair
+                        connected_host = host
+                        break
+
+                if reader is None:
+                    last = SERVER_HOSTS[-1]
+                    self.orchestrator.set_connection_status(
+                        False, last, SERVER_PORT)
+                    logger.info("")
+                    logger.info("⏳ Reintentando conexión en 3 segundos...")
+                    logger.info("")
+                    await asyncio.sleep(3)
+                    continue
+
+                logger.info(f"✅ Conectado a {connected_host}:{SERVER_PORT}")
+                self.orchestrator.set_connection_status(
+                    True, connected_host, SERVER_PORT)
+                
                 try:
-                    logger.info(f"🔌 Conectando a {SERVER_HOST}:{SERVER_PORT}...")
-                    
-                    # Actualizar estado de conexión (intentando conectar)
-                    self.orchestrator.set_connection_status(False, SERVER_HOST, SERVER_PORT)
-                    
-                    reader, writer = await asyncio.open_connection(SERVER_HOST, SERVER_PORT)
-                    logger.info("✅ Conectado al servidor")
-                    
-                    # Actualizar estado de conexión (conectado)
-                    self.orchestrator.set_connection_status(True, SERVER_HOST, SERVER_PORT)
-                    
+                    # El reloj se sincroniza al recibir el primer SYNC del
+                    # servidor (llega justo tras CONFIG, antes de cualquier
+                    # evento). Ver sync_clock_to_server / process_message.
+                    logger.info("")
+                    logger.info("📡 Esperando mensajes del servidor...")
+                    logger.info("-" * 60)
                     logger.info("")
                     
-                    try:
-                        # El reloj se sincroniza al recibir el primer SYNC del
-                        # servidor (llega justo tras CONFIG, antes de cualquier
-                        # evento). Ver sync_clock_to_server / process_message.
-                        logger.info("")
-                        logger.info("📡 Esperando mensajes del servidor...")
-                        logger.info("-" * 60)
-                        logger.info("")
+                    # Loop de recepción de mensajes
+                    while True:
+                        line = await reader.readline()
+                        if not line:
+                            logger.warning("❌ Servidor cerró la conexión")
+                            break
                         
-                        # Loop de recepción de mensajes
-                        while True:
-                            line = await reader.readline()
-                            if not line:
-                                logger.warning("❌ Servidor cerró la conexión")
-                                break
+                        try:
+                            text = line.decode().strip()
+                            await self.process_message(text)
+                        except UnicodeDecodeError as e:
+                            logger.error(f"Error decodificando mensaje: {e}")
+                            continue
                             
-                            try:
-                                text = line.decode().strip()
-                                await self.process_message(text)
-                            except UnicodeDecodeError as e:
-                                logger.error(f"Error decodificando mensaje: {e}")
-                                continue
-                                
-                    except Exception as e:
-                        logger.error(f"❌ Error en loop de lectura: {e}")
-                    finally:
-                        writer.close()
-                        await writer.wait_closed()
-                        logger.info("🔌 Conexión cerrada")
-                        
-                        # Actualizar estado de conexión (desconectado)
-                        self.orchestrator.set_connection_status(False, SERVER_HOST, SERVER_PORT)
-                        
                 except Exception as e:
-                    logger.error(f"❌ Error de conexión: {e}")
-                    # Actualizar estado de conexión (error)
-                    self.orchestrator.set_connection_status(False, SERVER_HOST, SERVER_PORT)
+                    logger.error(f"❌ Error en loop de lectura: {e}")
+                finally:
+                    writer.close()
+                    await writer.wait_closed()
+                    logger.info("🔌 Conexión cerrada")
+                    self.orchestrator.set_connection_status(
+                        False, connected_host, SERVER_PORT)
                 
-                # Esperar antes de reintentar
                 logger.info("")
                 logger.info("⏳ Reintentando conexión en 3 segundos...")
                 logger.info("")
