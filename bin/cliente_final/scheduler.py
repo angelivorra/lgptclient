@@ -21,7 +21,7 @@ logger = logging.getLogger("cliente.scheduler")
 class ScheduledTask:
     """Tarea programada para ejecutar en un momento específico."""
     due_mono: float = field(compare=True)
-    seq: int = field(compare=False)
+    seq: int = field(compare=True)
     epoch: int = field(compare=False, default=0)
     callback: Callable = field(compare=False, default=None)
     args: Tuple = field(compare=False, default_factory=tuple)

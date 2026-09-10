@@ -16,8 +16,8 @@ Protocolo de mensajes (ASCII, terminados en \\n):
   NOTA,<server_ts_ms>,<note>,<channel>,<velocity>
   CC,<server_ts_ms>,<value>,<channel>,<controller>
   START,<server_ts_ms>
-  STOP,<server_ts_ms>    <- Limpia cola de eventos pendientes
-  END,<server_ts_ms>
+  STOP,<server_ts_ms>    <- Corta en ts+delay (mismo reloj que las notas)
+  END,<server_ts_ms>     <- Igual que STOP al terminar la canción
   RCONFIG,<json>          <- Config íntegra de esta robota (al conectar, antes de NOTA)
   CALIB,<server_ts_ms>,<robot>,<pin>,<tiempo_ms>,<delay_ms>  <- Calibración en vivo
   CALTEST,<server_ts_ms>,<robot>,<pin>            <- Programa el pin (ts+1s-delay)

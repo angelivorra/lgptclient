@@ -6,8 +6,8 @@ Recibe eventos del cliente TCP y los procesa:
 - Eventos NOTA: Programa activación de GPIO según configuración
 - Eventos CC: Gestiona pantalla/animaciones con delay de 1 segundo
 - Eventos START: Inicio de canción, detiene pantalla idle
-- Eventos STOP: Limpia cola de eventos pendientes, vuelve a idle
-- Eventos END: Fin de canción, vuelve a idle
+- Eventos STOP/END: el corte se programa en ts+delay (el mismo reloj que
+  las notas) para coincidir con el audio; un START posterior anula el corte.
 """
 import logging
 import time
@@ -58,6 +58,9 @@ class EventOrchestrator:
         # Estado de conexión y reproducción
         self._connected = False  # True → conectado al servidor
         self._playing   = False  # True → reproduciendo una canción (entre START y STOP/END)
+        # Generación de transporte: un START incrementa; el STOP/END diferido
+        # no corta si ya arrancó otra canción (cambio de tema).
+        self._transport_seq = 0
 
         # Bucle idle: el DisplayExecutor loopea solo (loop:true). Un hilo
         # que reencolaba play_animation cada ciclo dejaba comandos sueltos
@@ -350,6 +353,7 @@ class EventOrchestrator:
 
     def handle_start(self, server_ts_ms: int):
         logger.info(f"▶️  START recibido (ts={server_ts_ms}) - Iniciando canción")
+        self._transport_seq += 1
         self._playing = True
         self._stop_production_idle()
         if self._status_screen_active:
@@ -369,15 +373,7 @@ class EventOrchestrator:
 
     def handle_stop(self, server_ts_ms: int):
         self.stats['stops_recibidos'] += 1
-        cancelled = self.scheduler.clear_queue()
-        self.stats['tareas_canceladas'] += cancelled
-        logger.info(
-            f"⏹️  STOP recibido (ts={server_ts_ms}) - "
-            f"Cola limpiada: {cancelled} eventos cancelados"
-        )
-        self._playing = False
-        self.display_executor.set_live(False)
-        self._show_idle()
+        self._schedule_transport_end(server_ts_ms, "STOP")
 
     def handle_bpm(self, server_ts_ms: int, bpm: float):
         self.current_bpm = bpm
@@ -392,7 +388,37 @@ class EventOrchestrator:
         )
 
     def handle_end(self, server_ts_ms: int):
-        logger.info(f"⏹️  END recibido (ts={server_ts_ms}) - Canción terminada")
+        self._schedule_transport_end(server_ts_ms, "END")
+
+    def _schedule_transport_end(self, server_ts_ms: int, kind: str):
+        """Corta en ts+delay, al mismo instante audible que las notas.
+
+        Si se aplica al recibir, la maleta se apaga ~1 s antes que el audio
+        (el secuenciador va por delante) y se tiran los golpes ya encolados.
+        Un START posterior incrementa `_transport_seq` y este corte no corre.
+        """
+        seq = self._transport_seq
+        execution_time_ms = server_ts_ms + self.base_delay_ms
+        self.scheduler.schedule_at_walltime(
+            wall_time_ms=execution_time_ms,
+            callback=self._apply_transport_end,
+            args=(seq, kind),
+            description=kind,
+        )
+        logger.info(
+            f"⏹️  {kind} recibido (ts={server_ts_ms}) — "
+            f"corte en {self.base_delay_ms}ms"
+        )
+
+    def _apply_transport_end(self, seq: int, kind: str):
+        if seq != self._transport_seq:
+            logger.info(f"⏭️  {kind} anulado (ya hay START nuevo)")
+            return
+        cancelled = self.scheduler.clear_queue()
+        self.stats['tareas_canceladas'] += cancelled
+        logger.info(
+            f"⏹️  {kind} — cola limpiada: {cancelled} eventos cancelados"
+        )
         self._playing = False
         self.display_executor.set_live(False)
         self._show_idle()
