@@ -340,8 +340,8 @@ class EditorScreen(Screen):
         if key == "chain":
             # la chain es la de la celda de SONG donde está el cursor. Solo se
             # re-crea el contexto si la celda ha cambiado: así, al volver de
-            # PHRASE a la misma chain se conserva la posición del cursor (y la
-            # selección/portapapeles) en vez de resetearla a 0.
+            # PHRASE a la misma chain se conserva la posición del cursor.
+            # El portapapeles se conserva al cambiar de chain (pegar en otra).
             if (self.chain_grid.cv is None
                     or self.chain_grid.project is not self.project
                     or self.chain_grid.song_row != self.song_grid.cursor_row

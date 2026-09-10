@@ -5,8 +5,10 @@ La phrase es la del canal (track) en el step de la chain desde el que se entró.
 Cursor: arr/abj = step, izq/dcha = campo (nota, instr, fx1cmd, fx1prm, fx2cmd,
 fx2prm). A+dir edita el campo; en un comando FX, A+izq/dcha cicla y
 A+arr/abj abre la lista con una mini explicación. A copia/pega/valor por
-defecto; doble A en instrumento pone el primer id no usado en la canción
-y mayor que el actual; B borra el campo.
+defecto; en NOTE la nota y el instrumento viajan juntos (cortar/copiar/
+pegar y B). A en un hueco de NOTE pone C-octava con el último instrumento
+usado. Doble A en instrumento pone el primer id no usado en la canción
+y mayor que el actual; B borra el campo (en NOTE, también el instrumento).
 Editar un hueco crea la chain y la phrase (estilo Piggy), reutilizando
 `PhraseView` del modelo. Portapapeles propio (por campo).
 
@@ -71,11 +73,12 @@ HINT_H = dp(32)                         # franja inferior del hint de selección
 MAX_NOTE = 131                     # (9+2)*12 - 1
 
 # Comandos FX que se pueden ciclar. Todos de 4 chars (requisito de set_fx_cmd).
-FX_USED = ["VOLM", "KILL", "DLAY", "LEGA", "TABL", "STOP", "MDCC", "MDPG",
+FX_USED = ["VOLM", "KILL", "FADE", "DLAY", "LEGA", "TABL", "STOP", "MDCC", "MDPG",
            "PTCH", "RTRG", "SLID", "CHRD"]
 FX_HELP = {
     "VOLM": "volumen de la nota",
     "KILL": "corta la nota (ticks)",
+    "FADE": "apaga la nota (filas)",
     "DLAY": "retrasa el disparo",
     "LEGA": "glide entre notas",
     "TABL": "lanza una tabla",
@@ -129,6 +132,7 @@ class PhraseGrid(Widget):
         self.octave = 4
         self.clipboard = None          # (kind, value) — portapapeles propio
         self.block_clipboard = None    # list[list] de valores crudos (bloque)
+        self.last_instr = None         # último instrumento usado al pintar notas
         self.sel_stage = 0             # 0=sin sel, 1=libre, 2=columnas, 3=todo
         self.sel_anchor = None         # (step, col) extremo fijo de la selección
         self.play_step = None
@@ -149,13 +153,15 @@ class PhraseGrid(Widget):
 
     # -- contexto -------------------------------------------------------
     def set_context(self, project, song_row, track, chain_step):
+        same_song = self.project is project
         self.project = project
         self.pv = PhraseView(project, song_row, chain_step)
         self.track = track
         self.cursor_step = 0
         self.cursor_col = 0
-        self.clipboard = None
-        self.block_clipboard = None
+        if not same_song:
+            self.clipboard = None
+            self.block_clipboard = None
         self.sel_stage = 0
         self.sel_anchor = None
         self._last_a_tap = 0.0
@@ -255,6 +261,16 @@ class PhraseGrid(Widget):
         bank = self._bank_ids()
         return bank[0] if bank else 0
 
+    def _remember_instr(self, iid):
+        if iid is not None:
+            self.last_instr = iid
+
+    def _place_instr(self, step=None):
+        """Instrumento al crear una nota: el último usado, o el heredado."""
+        if self.last_instr is not None:
+            return self.last_instr
+        return self._default_instr(step)
+
     def _cmd(self, step, which):
         c = self.pv.fx_cmd_at(step, self.track, which)
         return None if c == FX_EMPTY else c
@@ -302,9 +318,20 @@ class PhraseGrid(Widget):
                 self.pv.set_fx_param(step, self.track, 1, value)
             return
         if kind == "note":
-            self.pv.set_note(step, self.track, value)
+            if isinstance(value, tuple):
+                note, instr = value
+                self.pv.set_note(step, self.track, note)
+                self.pv.set_instr(step, self.track, instr)
+                self._remember_instr(instr)
+            else:
+                self.pv.set_note(step, self.track, value)
+                if value is None:
+                    self.pv.set_instr(step, self.track, None)
         elif kind == "instr":
+            if isinstance(value, tuple):
+                return
             self.pv.set_instr(step, self.track, value)
+            self._remember_instr(value)
         elif kind.endswith("cmd"):
             which = _WHICH[kind]
             if value is None:
@@ -375,6 +402,8 @@ class PhraseGrid(Widget):
                                      cycle_chord(cur, d))
             elif self._cmd(step, which) == "SLID":
                 self._edit_slid(step, which, button)
+            elif self._cmd(step, which) == "FADE":
+                self._edit_fade(step, which, button)
             else:
                 cur = self.pv.fx_param_at(step, self.track, which)
                 self.pv.set_fx_param(step, self.track, which,
@@ -386,6 +415,7 @@ class PhraseGrid(Widget):
         # El banco suele estar hueco (00, 01, 10…); ciclarlo hacía que
         # A+dcha saltara a 10 y A+arr se fuera muchos slots.
         nudge_cell(self.pv, step, self.track, delta, col="instr")
+        self._remember_instr(self._instr(step))
 
     def _edit_note(self, step, delta):
         cur = self._note(step)
@@ -394,7 +424,9 @@ class PhraseGrid(Widget):
                 self.pv.set_note(step, self.track,
                                  note_name_to_byte(f"C-{self.octave}"))
                 if self._instr(step) is None:
-                    self.pv.set_instr(step, self.track, self._default_instr(step))
+                    iid = self._place_instr(step)
+                    self.pv.set_instr(step, self.track, iid)
+                    self._remember_instr(iid)
         else:
             self.pv.set_note(step, self.track, max(0, min(MAX_NOTE, cur + delta)))
 
@@ -427,7 +459,9 @@ class PhraseGrid(Widget):
         else:
             self.pv.set_note(step, self.track, note & 0x7F)
             if self._instr(step) is None:
-                self.pv.set_instr(step, self.track, self._default_instr(step))
+                iid = self._place_instr(step)
+                self.pv.set_instr(step, self.track, iid)
+                self._remember_instr(iid)
         param = min(velocity * 2, 0xFF)
         for which in (1, 2):            # actualizar el VOLM que ya haya
             if self.pv.fx_cmd_at(step, self.track, which) == "VOLM":
@@ -463,6 +497,8 @@ class PhraseGrid(Widget):
         elif new == "SLID":
             self.pv.set_fx_param(step, self.track, which,
                                  self._slid_default_param(step))
+        elif new == "FADE":
+            self.pv.set_fx_param(step, self.track, which, 0)
 
     def _slid_default_param(self, step):
         src = self._note(step)
@@ -478,6 +514,16 @@ class PhraseGrid(Widget):
             steps = max(1, min(16, steps + (1 if button == UP else -1)))
         self.pv.set_fx_param(step, self.track, which, slid_pack(note, steps))
 
+    def _edit_fade(self, step, which, button):
+        """A+izq/dcha: filas ±1. A+arr/abj: filas ±4. 0 = apagar ya."""
+        cur = self.pv.fx_param_at(step, self.track, which) & 0xFF
+        if button in (LEFT, RIGHT):
+            d = 1 if button == RIGHT else -1
+        else:
+            d = 4 if button == UP else -4
+        self.pv.set_fx_param(step, self.track, which,
+                             max(0, min(16, cur + d)))
+
     def open_fx_picker(self):
         """Lista de comandos FX con mini explicación (A+arr/abj sobre cmd)."""
         kind = self._cols()[self.cursor_col][0]
@@ -492,7 +538,7 @@ class PhraseGrid(Widget):
         if self.fx_picker is None or not self.fx_commands:
             return
         n = len(self.fx_commands)
-        self.fx_picker = max(0, min(n - 1, self.fx_picker + delta))
+        self.fx_picker = (self.fx_picker + delta) % n
         self._redraw()
 
     def apply_fx_picker(self):
@@ -511,6 +557,8 @@ class PhraseGrid(Widget):
         elif cmd == "SLID" and prev != "SLID":
             self.pv.set_fx_param(self.cursor_step, self.track, which,
                                  self._slid_default_param(self.cursor_step))
+        elif cmd == "FADE" and prev != "FADE":
+            self.pv.set_fx_param(self.cursor_step, self.track, which, 0)
         self.fx_picker = None
         self._changed()
 
@@ -561,15 +609,24 @@ class PhraseGrid(Widget):
         return (0, 0, PHRASE_LEN - 1, len(self._cols()) - 1)   # todo
 
     def _selection_hint(self):
-        """Operaciones disponibles con la selección activa (None sin ella)."""
-        if self.sel_stage == 0:
-            return None
-        return ("SELECCIÓN: B copiar · R2+A cortar · "
-                "R2+B ciclar · BACK cancelar")
+        """Franja inferior: selección activa, o cómo pegar el bloque."""
+        if self.sel_stage > 0:
+            return ("SELECCIÓN: B copiar · Ctrl+A cortar · "
+                    "Ctrl+S ciclar · BACK cancelar")
+        if self.block_clipboard is not None:
+            return "PORTAPAPELES: Ctrl+A pegar"
+        return None
+
+    def _clip_cell(self, step, col):
+        """Valor de portapapeles de bloque: en NOTE, (nota, instrumento)."""
+        kind = self._cols()[col][0]
+        if kind == "note":
+            return (self._note(step), self._instr(step))
+        return self._get_raw(step, col)
 
     def _read_block(self, region):
         s0, c0, s1, c1 = region
-        return [[self._get_raw(s, c) for c in range(c0, c1 + 1)]
+        return [[self._clip_cell(s, c) for c in range(c0, c1 + 1)]
                 for s in range(s0, s1 + 1)]
 
     def copy_selection(self):
@@ -619,7 +676,15 @@ class PhraseGrid(Widget):
         val = self._get_raw(step, col)
         ckind = _KIND[kind]
         if val is not None:
-            self.clipboard = (ckind, val)          # copiar
+            if kind == "note":
+                instr = self._instr(step)
+                self.clipboard = (ckind, (val, instr))
+                self._remember_instr(instr if instr is not None
+                                     else self.effective_instr(step))
+            else:
+                self.clipboard = (ckind, val)      # copiar
+                if kind == "instr":
+                    self._remember_instr(val)
             self._redraw()
         elif self.clipboard is not None and self.clipboard[0] == ckind:
             self._set_raw(step, col, self.clipboard[1])   # pegar
@@ -642,6 +707,7 @@ class PhraseGrid(Widget):
         if dst is None or dst == cur:
             return False
         self.pv.set_instr(self.cursor_step, self.track, dst)
+        self._remember_instr(dst)
         self._changed()
         if self.on_nav:
             self.on_nav()
@@ -661,8 +727,13 @@ class PhraseGrid(Widget):
         elif kind == "note":
             self.pv.set_note(step, self.track,
                              note_name_to_byte(f"C-{self.octave}"))
+            iid = self._place_instr(step)
+            self.pv.set_instr(step, self.track, iid)
+            self._remember_instr(iid)
         elif kind == "instr":
-            self.pv.set_instr(step, self.track, self._default_instr(step))
+            iid = self._place_instr(step)
+            self.pv.set_instr(step, self.track, iid)
+            self._remember_instr(iid)
         elif kind.endswith("cmd"):
             self.pv.set_fx_cmd(step, self.track, _WHICH[kind],
                                self.fx_commands[0])
@@ -706,6 +777,8 @@ class PhraseGrid(Widget):
         if self._cmd(step, which) == "SLID":
             note, steps = slid_unpack(raw)
             return f"{note_byte_to_name(note)} {steps:02d}"
+        if self._cmd(step, which) == "FADE":
+            return f"{raw & 0xFF:02d}"
         return f"{raw:04X}"
 
     def _texture(self, text, font_size=FONT):

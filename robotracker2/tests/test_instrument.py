@@ -290,8 +290,8 @@ def _e2e(app, song):
 
     app.config["midi_notes"] = "PuertoTest"
     app._midi_notes = _FakeMidi([("on", 60, 100)])
-    app._instr_preview = True
     app.player._ensure_stream = lambda: True
+    app._remember_preview_instr()
     app._preview_midi_notes(app._midi_notes.poll())
     out = app.player.engine.render(512)
     assert 60 in app.player.engine.preview_voices
@@ -301,6 +301,16 @@ def _e2e(app, song):
         app.player.engine.render(512)
     assert 60 not in app.player.engine.preview_voices
     print("  preview MIDI note on/off suena con el instrumento OK")
+
+    viewed = m.instr_id
+    ed.goto("song")
+    app._midi_notes = _FakeMidi([("on", 67, 90)])
+    app._handle_midi_notes()
+    app.player.engine.render(512)
+    v = app.player.engine.preview_voices.get(67)
+    assert v is not None, "el teclado MIDI debe sonar fuera de INSTRUMENT"
+    assert v.iid == viewed, "debe usar el último instrumento visto"
+    print("  preview MIDI en SONG usa el último instrumento visto OK")
 
     # --- roundtrip: los params fuera de la UI se conservan -----------------
     params["print fx"] = "hall"

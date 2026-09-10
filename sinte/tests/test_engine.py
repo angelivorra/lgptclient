@@ -164,6 +164,43 @@ class TestVoices(unittest.TestCase):
         engine._process_tick()             # avanza al paso 1 y ejecuta KILL
         self.assertIsNone(engine.channels[0].voice)
 
+    def test_fade_inmediato(self):
+        # FADE 00 apaga la nota en el mismo tick (declick, voces a releases)
+        engine = make_engine()
+        note_row(engine.project, 0)
+        engine.project.cmd1[1] = "FADE"
+        engine.project.param1[1] = 0
+        for _ in range(TICKS_PER_STEP):
+            engine._process_tick()
+        self.assertIsNotNone(engine.channels[0].voice)
+        engine._process_tick()
+        self.assertIsNone(engine.channels[0].voice)
+        self.assertTrue(engine.channels[0].releases)
+        self.assertNotIn("FADE", engine.unsupported_cmds)
+        engine.render(512)
+        self.assertFalse(engine.channels[0].releases)
+
+    def test_fade_en_filas(self):
+        # FADE 03 rampa el volumen actual a 0 en 3 filas
+        engine = make_engine()
+        note_row(engine.project, 0)
+        engine.project.cmd1[1] = "FADE"
+        engine.project.param1[1] = 3
+        for _ in range(TICKS_PER_STEP + 1):
+            engine._process_tick()
+        v = engine.channels[0].voice
+        self.assertIsNotNone(v)
+        start = v.vol_cur
+        row = int(TICKS_PER_STEP * engine.samples_per_tick)
+        engine.render(row)
+        self.assertTrue(v.active)
+        self.assertGreater(v.vol_cur, start * 0.4)
+        self.assertLess(v.vol_cur, start * 0.9)
+        engine.render(row * 2 + 2000)
+        self.assertFalse(v.active)
+        self.assertIsNone(engine.channels[0].voice)
+        self.assertNotIn("FADE", engine.unsupported_cmds)
+
     def test_volm_instant(self):
         engine = make_engine()
         note_row(engine.project, 0)
@@ -408,6 +445,27 @@ class TestMidiOut(unittest.TestCase):
         off_idx = events.index(("note_off", 3, 60))
         on_idx = events.index(("note_on", 3, 62, 127))
         self.assertLess(off_idx, on_idx)
+
+    def test_fade_midi_inmediato(self):
+        engine = self.make_midi_engine()
+        note_row(engine.project, 0, note=60, instr=0x80)
+        engine.project.cmd1[1] = "FADE"
+        engine.project.param1[1] = 0
+        for _ in range(TICKS_PER_STEP + 1):
+            engine._process_tick()
+        self.assertIn(("note_off", 3, 60), engine.midi_out.events)
+
+    def test_fade_midi_en_filas(self):
+        engine = self.make_midi_engine()
+        note_row(engine.project, 0, note=60, instr=0x80)
+        engine.project.cmd1[1] = "FADE"
+        engine.project.param1[1] = 3
+        for _ in range(TICKS_PER_STEP + 1):
+            engine._process_tick()
+        self.assertNotIn(("note_off", 3, 60), engine.midi_out.events)
+        for _ in range(3 * TICKS_PER_STEP):
+            engine._process_tick()
+        self.assertIn(("note_off", 3, 60), engine.midi_out.events)
 
     def test_mdcc(self):
         engine = self.make_midi_engine()

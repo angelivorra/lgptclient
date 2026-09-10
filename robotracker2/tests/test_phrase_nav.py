@@ -83,6 +83,8 @@ def _run(app):
     # step con `..`: se hereda el instrumento de arriba (no se queda en 00)
     other = bank[1] if len(bank) > 1 else target
     g.pv.set_instr(0, g.track, other)
+    g.pv.set_instr(1, g.track, None)
+    g.pv.set_instr(2, g.track, None)
     g.pv.set_instr(3, g.track, None)
     g.cursor_step = 3
     assert g._instr(3) is None

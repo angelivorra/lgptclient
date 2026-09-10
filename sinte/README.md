@@ -168,11 +168,14 @@ Sartenazo v1):
   voz y `VOLM vv` escala relativo a él: FF = el volumen del instrumento,
   80 ≈ la mitad; el volumen del instrumento se re-lee en vivo en cada
   trigger y cada bloque de render, así editarlo desde el editor se oye al
-  instante, también en la nota que está sonando), `KILL`, `DLAY`, `LEGA`,
+  instante, también en la nota que está sonando), `KILL`, `FADE` (apaga la
+  nota: 0 filas = ya con declick; N = rampa el volumen actual a 0 en N
+  filas de phrase), `DLAY`, `LEGA`,
   `TABL`, `STOP`, `HOP`.
 - Tablas (1 fila/tick, 3 columnas, HOP con contador).
 - Crush/downsample y filtro LP del upstream (ver limitaciones).
-- Instrumentos MIDI: note on/off, `MDCC`, `MDPG`, `MVEL` y `VOLM` → CC7,
+- Instrumentos MIDI: note on/off, `MDCC`, `MDPG`, `MVEL`, `VOLM` → CC7,
+  y `FADE` (0 = note off ya; N = note off tras N filas),
   emitidos por el puerto MIDI de salida configurado.
 - Filtro low-pass con resonancia por canal (biquad propio, sin plugins
   LADSPA: no añade dependencias y sobra para 8 canales en la RPi4).

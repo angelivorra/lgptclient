@@ -51,13 +51,18 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    vocoder; se editan en TRACKS). Dpad mueve el cursor, **A+dir**
    edita (±1 izq/dcha, ±0x10 arr/abj; en vacío crea chain), **B** borra.
    Portapapeles/selección estilo LGPT: **A** copia/pega/pone 00; **Ctrl+S**
-   cicla selección (libre → filas → todo visible); **S** copia selección;
-   **Ctrl+A** con selección **duplica la chain** de la celda del cursor a la
-   primera chain libre con índice mayor (si no hay ninguna por encima, da la
-   vuelta y usa la primera libre desde 00; copia sus 16 steps + transposes y
-   apunta la celda a la copia) o pega (sin selección); **Esc** cancela.
+   cicla selección (libre → filas → todo visible; en el PC vale el Ctrl
+   izquierdo o el derecho; con play, Ctrl izquierdo+S mutea); **S** copia
+   selección; **Ctrl+A** con selección **corta** el bloque (vacía las celdas);
+   **Ctrl derecho+A** (R2+A) con selección **duplica la chain** de la celda
+   del cursor a la primera chain libre con índice mayor (si no hay ninguna
+   por encima, da la vuelta y usa la primera libre desde 00; copia sus 16
+   steps + transposes y apunta la celda a la copia) o pega (sin selección);
+   **Esc** cancela.
    Con selección activa sale un **hint inferior** con las operaciones
-   (B copiar · R2+A duplicar chain · R2+B ciclar · BACK cancelar).
+   (B copiar · Ctrl+A cortar · R2+A duplicar chain · Ctrl+S ciclar ·
+   BACK cancelar). Si hay un bloque en el portapapeles, **PORTAPAPELES:
+   Ctrl+A pegar**.
 4. **CHAIN** (`screens/chain_view.py`): la chain de la celda de SONG donde
    está el cursor (nº en la cabecera, y **icono + nombre** de esa pista
    encima de las columnas). 16 steps × 2 columnas: **phrase** y
@@ -68,29 +73,40 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    copia el contenido, solo cambia el índice. **B** borra; crear phrase en un
    hueco crea la chain si
    hace falta (estilo Piggy). Selección igual que SONG (**Ctrl+S** cicla
-   libre→columnas→todo, **S** copia, **Ctrl+A** con selección **duplica la
-   phrase** del step del cursor (columna PHRASE) a la primera phrase libre con
-   índice mayor (o la primera libre desde 00 si no hay por encima), o pega sin
-   selección) con su **propio portapapeles**
-   (independiente del de SONG). Con selección activa sale un **hint inferior**
-   con las operaciones (B copiar · R2+A duplicar phrase · R2+B ciclar ·
-   BACK cancelar).
+   libre→columnas→todo, **S** copia, **Ctrl+A** corta el bloque, **Ctrl
+   derecho+A** con selección **duplica la phrase** del step del cursor
+   (columna PHRASE) a la primera phrase libre con índice mayor (o la primera
+   libre desde 00 si no hay por encima), o pega sin selección) con su
+   **propio portapapeles**
+   (independiente del de SONG; se conserva al cambiar de chain para pegar
+   en otra). Con selección activa sale un **hint inferior**
+   con las operaciones (B copiar · Ctrl+A cortar · R2+A duplicar phrase ·
+   Ctrl+S ciclar · BACK cancelar). Si hay un bloque copiado, **PORTAPAPELES:
+   Ctrl+A pegar**.
 
 5. **PHRASE** (`screens/phrase_view.py`): la phrase del step de CHAIN (nº en la
    cabecera, y **icono + nombre** de esa pista encima de las columnas). 16 steps × campos **nota · instr · FX1(cmd+param) · FX2(cmd+param)**.
    Dpad mueve (arr/abj step, izq/dcha campo), **A+dir** edita (nota: ±1 semitono
    / ±octava; instr y param: ±1/±0x10; cmd: cicla comandos), **A** copia/pega/def
-   por campo (portapapeles propio), **doble A** en instrumento pone el primer
+   por campo (portapapeles propio; en **NOTE**, nota e instrumento viajan
+   juntos: cortar/copiar/pegar y **B** también quitan o restauran el
+   instrumento; **A** en un hueco pone C-octava con el último instrumento
+   usado), **doble A** en instrumento pone el primer
    id **no referenciado en la canción** (da igual si existe en el banco) mayor
    que el actual (si no hay por encima, da la vuelta), **B** borra el campo. Editar un hueco crea la
    chain y la phrase (estilo Piggy). El ciclado de **comandos FX** solo ofrece los
    usados en las canciones de `songs/` (`FX_USED` en `phrase_view.py`: VOLM, KILL,
-   DLAY, LEGA, TABL, STOP, MDCC, MDPG, PTCH, RTRG). Selección multicelda igual que
+   FADE, DLAY, LEGA, TABL, STOP, MDCC, MDPG, PTCH, RTRG, SLID, CHRD). **FADE**
+   apaga la nota en N filas (0 = ya, con declick; 3 = rampa el volumen a 0 en 3
+   filas). Selección multicelda igual que
    SONG/CHAIN (**Ctrl+S** cicla libre→columnas→todo, **S** copia, **Ctrl+A**
    corta/pega, **Esc** cancela) con su **propio portapapeles de bloque**
-   (independiente del de SONG/CHAIN y del portapapeles por campo). Con
-   selección activa sale un **hint inferior** con las operaciones
-   (B copiar · R2+A cortar · R2+B ciclar · BACK cancelar).
+   (independiente del de SONG/CHAIN y del portapapeles por campo). En el PC
+   vale **cualquier Ctrl** (el izquierdo es L2 y el derecho R2): con
+   selección, **Ctrl+A** corta el bloque; **sin selección**, **Ctrl+A**
+   pega el bloque. Con selección activa sale un **hint inferior**
+   (B copiar · Ctrl+A cortar · Ctrl+S ciclar · BACK cancelar); si hay
+   un bloque en el portapapeles, otro hint: **PORTAPAPELES: Ctrl+A pegar**.
 
    **Pintado MIDI en vivo**: si hay una interfaz **MIDI Notas** configurada en
    CONFIG (y disponible), **R2+START** activa el modo de pintar notas del
@@ -170,7 +186,10 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    = paso grande, A+izq/dcha = paso fino (estilo LGPT); los enums ciclan. Solo
    se muestran los params que el engine implementa — el resto (Print FX, FX
    amount, Feedback mix, interpol, slices…) **se conserva en el XML** al
-   guardar. Al entrar **desde PHRASE va al instrumento del step**. En **Sample**,
+   guardar. Al entrar **desde PHRASE va al instrumento del step**. El
+   teclado MIDI (interfaz **MIDI Notas** de CONFIG) suena ese instrumento
+   **en cualquier pantalla y durante el play**: se recuerda el último que
+   hayas tenido abierto en INSTRUMENT. En **Sample**,
    **A abre el navegador de samples** (`screens/sample_browser.py`): navega la
    biblioteca, **previsualiza** al pasar por cada .wav y **A carga** (copia el
    wav a la canción y lo asigna; un solo A, como el navegador de imágenes).

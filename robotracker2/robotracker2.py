@@ -143,7 +143,7 @@ class Robotracker2App(App):
         self.midi_live = False     # pintado MIDI en vivo en PHRASE (R2+START)
         self._midi_notes = MidiNotesInput()
         self._midi_ctrl = None     # controlador MIDI (botones+knobs, mixer)
-        self._instr_preview = False   # teclado MIDI suena en INSTRUMENT
+        self._preview_instr = None    # último instrumento visto en INSTRUMENT
         self._preview_held = {}       # nota -> vel (teclas aún pulsadas)
         self._midi_ports_retry = 0.0  # hotplug: LPK25/LPD8 en cualquier USB
         self._midi_hotplug = True     # tests lo apagan (sin puertos reales)
@@ -711,6 +711,10 @@ class Robotracker2App(App):
             if (mute_track is not None and self._fresh_press
                     and self._playing_song()):
                 self._mute_toggle(mute_track)
+            elif self._fresh_press:
+                g = self._editor_grid()
+                if g is not None:
+                    g.cycle_selection()
             self._b_consumed = True
         elif R2 in active:
             if self._fresh_press:
@@ -740,19 +744,28 @@ class Robotracker2App(App):
                 g.move(button)                       # mover cursor
             return True
         if button == A:
-            if R2 in active:                         # Ctrl+A: duplicar / pegar
+            if R2 in active:                         # Ctrl der+A: duplicar / pegar
                 if g.has_selection:
                     g.duplicate_phrase()
                 else:
                     g.paste_block()
                 self._a_consumed = True
-            elif L2 in active:                       # L2 es navegar: A no hace nada
+            elif L2 in active:
+                if g.has_selection:
+                    g.cut_selection()
+                else:
+                    g.paste_block()
                 self._a_consumed = True
             else:
                 self._a_consumed = False             # A tap: copiar/pegar/00
             return True
         if button == B:
-            self._on_b_down(active)
+            if L2 in active:
+                if self._fresh_press:
+                    g.cycle_selection()
+                self._b_consumed = True
+            else:
+                self._on_b_down(active)
             return True
         if button == BACK:
             if g.has_selection:
@@ -775,13 +788,17 @@ class Robotracker2App(App):
                 g.move(button)                       # mover cursor / extender sel.
             return True
         if button == A:
-            if R2 in active:                         # Ctrl+A: duplicar / pegar
+            if R2 in active:                         # Ctrl der+A: duplicar / pegar
                 if g.has_selection:
                     g.duplicate_chain()
                 else:
                     g.paste_block()
                 self._a_consumed = True
-            elif L2 in active:                       # L2 es navegar: A no hace nada
+            elif L2 in active:
+                if g.has_selection:
+                    g.cut_selection()
+                else:
+                    g.paste_block()
                 self._a_consumed = True
             else:
                 self._a_consumed = False             # A tap: se resuelve al soltar
@@ -830,16 +847,27 @@ class Robotracker2App(App):
                 g.move(button)                       # mover cursor
             return True
         if button == A:
-            if R2 in active:                         # Ctrl+A: cortar / pegar
+            if R2 in active:                         # Ctrl der+A: cortar / pegar
                 g.cut_selection() if g.has_selection else g.paste_block()
                 self._a_consumed = True
-            elif L2 in active:                       # L2 es navegar: A no hace nada
+            elif L2 in active:
+                # Ctrl izq+A: con selección corta; sin ella pega el bloque.
+                if g.has_selection:
+                    g.cut_selection()
+                else:
+                    g.paste_block()
                 self._a_consumed = True
             else:
                 self._a_consumed = False             # A tap: copiar/pegar/def
             return True
         if button == B:
-            self._on_b_down(active)
+            if L2 in active:
+                # Ctrl izq+S cicla la selección (Ctrl der+S / R2+B ya lo hace)
+                if self._fresh_press:
+                    g.cycle_selection()
+                self._b_consumed = True
+            else:
+                self._on_b_down(active)
             return True
         if button == BACK:
             if g.has_selection:
@@ -1390,17 +1418,69 @@ class Robotracker2App(App):
         for note, vel in notes:
             g.live_note(step, note, vel)
 
-    def _sync_instrument_preview(self, on):
-        """Corta voces al salir de INSTRUMENT. El puerto lo mantiene
-        `_ensure_midi_ports` (hotplug)."""
-        if on:
-            self._instr_preview = True
+    def _preview_iid(self):
+        """Instrumento del teclado MIDI: el último visto en INSTRUMENT."""
+        if self._preview_instr is not None:
+            return self._preview_instr
+        m = self.editor_screen.instrument_menu
+        return m.instr_id if m.instr_ids else 0
+
+    def _remember_preview_instr(self):
+        m = self.editor_screen.instrument_menu
+        if m.instr_ids:
+            self._preview_instr = m.instr_id
+
+    def _preview_midi_notes(self, events):
+        """Las notas del teclado MIDI suenan con el último instrumento visto."""
+        if not events or self.player is None:
             return
-        if not self._instr_preview:
+        ensure = getattr(self.player, "_ensure_stream", None)
+        if callable(ensure):
+            ensure()
+        eng = getattr(self.player, "engine", None)
+        if eng is None or not hasattr(eng, "push_event"):
             return
-        self._instr_preview = False
-        self._preview_held.clear()
-        self._instrument_preview_panic()
+        iid = self._preview_iid()
+        for kind, note, vel in events:
+            if kind == "on":
+                self._preview_held[note] = vel
+                eng.push_event("preview_on", iid, note, vel)
+            else:
+                self._preview_held.pop(note, None)
+                eng.push_event("preview_off", note)
+
+    def _instrument_preview_panic(self):
+        if self.player is not None:
+            eng = getattr(self.player, "engine", None)
+            if eng is not None and hasattr(eng, "push_event"):
+                eng.push_event("preview_off_all")
+
+    def _retrigger_preview(self):
+        """Al cambiar de instrumento, las teclas aún pulsadas suenan con
+        el nuevo (y se cortan las voces del anterior)."""
+        self._remember_preview_instr()
+        if self.player is None or not self._preview_held:
+            return
+        eng = getattr(self.player, "engine", None)
+        if eng is None or not hasattr(eng, "push_event"):
+            return
+        eng.push_event("preview_off_all")
+        iid = self._preview_iid()
+        for note, vel in self._preview_held.items():
+            eng.push_event("preview_on", iid, note, vel)
+
+    def _handle_midi_notes(self):
+        """Teclado MIDI: preview en cualquier pantalla (y en play) + live."""
+        if self.player is None:
+            return
+        ed = self.editor_screen
+        if self.sm.current == "editor" and ed.current == "instrument":
+            self._remember_preview_instr()
+        events = self._midi_notes.poll()
+        if events:
+            self._preview_midi_notes(events)
+        if self.midi_live:
+            self._paint_midi_notes(events)
 
     def _ensure_midi_ports(self):
         """Reconexión en caliente: LPK25/LPD8 en cualquier puerto USB y
@@ -1441,50 +1521,12 @@ class Robotracker2App(App):
         if self.sm.current == "editor":
             self.editor_screen.toast_msg(msg)
 
-    def _preview_midi_notes(self, events):
-        """Las notas del teclado MIDI suenan con el instrumento actual."""
-        if not events or self.player is None:
-            return
-        self.player._ensure_stream()
-        iid = self.editor_screen.instrument_menu.instr_id
-        eng = self.player.engine
-        for kind, note, vel in events:
-            if kind == "on":
-                self._preview_held[note] = vel
-                eng.push_event("preview_on", iid, note, vel)
-            else:
-                self._preview_held.pop(note, None)
-                eng.push_event("preview_off", note)
-
-    def _instrument_preview_panic(self):
-        if self.player is not None:
-            self.player.engine.push_event("preview_off_all")
-
-    def _retrigger_preview(self):
-        """Al cambiar de instrumento, las teclas aún pulsadas suenan con
-        el nuevo (y se cortan las voces del anterior)."""
-        if not self._instr_preview or self.player is None:
-            return
-        eng = self.player.engine
-        eng.push_event("preview_off_all")
-        iid = self.editor_screen.instrument_menu.instr_id
-        for note, vel in self._preview_held.items():
-            eng.push_event("preview_on", iid, note, vel)
-
     def _tick(self, dt):
         self._ensure_midi_ports()
         for accion in self._midi_ctrl.drain():
             self._midi_action(accion)
+        self._handle_midi_notes()
         ed = self.editor_screen
-        on_instr = (self.sm.current == "editor" and ed.current == "instrument")
-        self._sync_instrument_preview(on_instr)
-        midi_events = []
-        if self.midi_live or on_instr:
-            midi_events = self._midi_notes.poll()
-        if on_instr:
-            self._preview_midi_notes(midi_events)
-        elif self.midi_live:
-            self._paint_midi_notes(midi_events)
         p = self.player
         while True:
             try:
@@ -1595,6 +1637,8 @@ class Robotracker2App(App):
         self._song_dir = song_dir
         self._play_start = None
         self._robot_play.reset()
+        self._preview_instr = None
+        self._preview_held.clear()
         self.editor_screen.live_grid.reset()
         self.dirty = False
         self._pads_dirty = False

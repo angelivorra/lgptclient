@@ -15,9 +15,10 @@ Réplica en Python/numpy del comportamiento del reproductor original
     re-lee en cada trigger y en cada bloque de render, así la edición en
     el editor (robotracker2/mixer) se oye al instante, también en la nota
     que está sonando.
-  - Comandos: VOLM, KILL, DLAY, LEGA, SLID, TABL, STOP, HOP, CHRD
+  - Comandos: VOLM, KILL, FADE, DLAY, LEGA, SLID, TABL, STOP, HOP, CHRD
     (acorde sobre la nota de la fila: samples polifónicos, MIDI y vocoder).
     SLID desliza el pitch hasta una nota destino en N steps de phrase.
+    FADE apaga la nota: 0 filas = ya (declick); N = rampa a silencio en N filas.
   - Tablas (1 fila por tick, 3 columnas de comandos).
   - Instrumentos MIDI (0x80-0x8F) y comandos MDCC/MDPG/MVEL: se emiten a
     un sink MidiOut (puerto MIDI real en el reproductor).
@@ -51,6 +52,7 @@ NETCC_CHANNEL = 9           # canal virtual para CC de pots_red (ver _apply_netc
 TICKS_PER_STEP = 6          # AUDIO_SLICES_PER_STEP del upstream
 KRATE = 100                 # KRATE_SAMPLE_COUNT del upstream
 SLID_STEPS_MAX = 16         # duración máxima del slide (steps de phrase)
+FADE_ROWS_MAX = 16          # duración máxima del FADE (filas de phrase)
 
 
 def slid_pack(note: int, steps: int) -> int:
@@ -405,6 +407,26 @@ class Voice:
         self.vol_target = 0.0
         self.vol_kinc = -self.vol_cur * KRATE / self.declick
 
+    def set_fade(self, ramp_samples: float):
+        """FADE: rampa el volumen actual a 0 en `ramp_samples`. 0 samples
+        usa el declick (~4 ms). No reinicia si ya está apagándose (el
+        comando se reejecuta cada tick mientras dura la fila)."""
+        if self.releasing:
+            return
+        if ramp_samples <= 0:
+            self.start_release()
+            return
+        if self.vol_cur <= 0.5:
+            self.vol_target = 0.0
+            self.vol_kinc = 0.0
+            self.releasing = True
+            self.active = False
+            return
+        self.releasing = True
+        self.vol_target = 0.0
+        ramp = max(float(self.declick), float(ramp_samples))
+        self.vol_kinc = -self.vol_cur * KRATE / ramp
+
     def set_lega(self, value: int, last_note: int):
         """LEGA sspp: glide logarítmico. pp=0 => glide desde la última nota."""
         pitch = value & 0xFF
@@ -738,6 +760,8 @@ class TablePlayback:
                 self.hopped[c] = hopped
                 if cmd == "KILL":
                     ch.time_to_live = (param & 0xFF) + 1
+                elif cmd == "FADE":
+                    engine._apply_fade(ch, param)
                 elif cmd == "GROV":
                     self.groove = param & 0x1F
                     self.g_pos = 0
@@ -1186,6 +1210,7 @@ class Channel:
         "last_instr", "last_note", "table",
         "cc_vol", "cc_pan", "cc_pitch", "cc_cutoff",
         "kind", "midi_def", "midi_notes", "midi_ticks", "midi_vel",
+        "midi_fade",
         "groove", "g_pos", "g_ticks",
         "fx_amounts", "fx_objs", "fx_gain", "fx_presence", "fx_mix",
         "vocoder_out",
@@ -1250,6 +1275,7 @@ class Channel:
         self.midi_def: Optional[MidiDef] = None
         self.midi_notes: list[int] = []        # notas MIDI sonando (acorde)
         self.midi_ticks = -1                   # cuenta atrás de note length
+        self.midi_fade = False                 # FADE ya armado (no reiniciar)
         self.midi_vel: Optional[int] = None    # velocity (MVEL)
         # Estado de groove del canal (Groove::ChannelGroove del upstream)
         self.groove = 0                        # groove seleccionado (GROV)
@@ -1484,6 +1510,7 @@ class Engine:
             ch.kind = None
             ch.midi_def = None
             ch.midi_ticks = -1
+            ch.midi_fade = False
             ch.midi_vel = None
             ch.table.stop()
             ch.time_to_start = 0
@@ -2090,6 +2117,35 @@ class Engine:
         else:
             self._set_phrase_pos(ch, hop if hop >= 0 else 0)
 
+    def _fade_row_ticks(self, ch: Channel, rows: int) -> int:
+        """Ticks de groove que cubren las próximas `rows` filas."""
+        ticks = 0
+        pos = ch.g_pos
+        for _ in range(max(0, rows)):
+            ticks += self._groove_len(ch.groove, pos)
+            pos = (pos + 1) % 16
+            if self.groove_data[ch.groove * 16 + pos] == 0xFF:
+                pos = 0
+        return ticks
+
+    def _apply_fade(self, ch: Channel, param: int):
+        """FADE nn: apaga la nota. nn=0 ya (declick); nn>0 rampa a 0 en nn
+        filas. Se reejecuta cada tick: no reinicia un fade ya en curso."""
+        rows = param & 0xFF
+        if ch.kind == "sample" and ch.voices:
+            if rows <= 0:
+                self._cut_voice(ch)
+            else:
+                ramp = self._fade_row_ticks(ch, rows) * self.samples_per_tick
+                for v in ch.voices:
+                    v.set_fade(ramp)
+        elif ch.kind == "midi" and ch.midi_notes:
+            if rows <= 0:
+                self._midi_stop_note(ch)
+            elif not ch.midi_fade:
+                ch.midi_fade = True
+                ch.midi_ticks = max(1, self._fade_row_ticks(ch, rows))
+
     def _cut_voice(self, ch: Channel):
         """Corta las voces sample del canal con declick: las pasa a fundido
         de salida (ch.releases) en vez de silenciarlas en seco."""
@@ -2124,6 +2180,7 @@ class Engine:
                 self.midi_out.note_on(mdef.channel, note, vel)
         ch.midi_notes = list(notes)
         ch.midi_ticks = mdef.note_length if mdef.note_length > 0 else -1
+        ch.midi_fade = False
 
     def _midi_stop_note(self, ch: Channel):
         if ch.midi_notes and ch.midi_def is not None and self.midi_out is not None:
@@ -2131,6 +2188,7 @@ class Engine:
                 self.midi_out.note_off(ch.midi_def.channel, note)
         ch.midi_notes = []
         ch.midi_ticks = -1
+        ch.midi_fade = False
 
     def _get_hop(self, ch: Channel, pos: int) -> int:
         row = ch.phrase * 16 + pos
@@ -2346,6 +2404,8 @@ class Engine:
             return
         if cmd == "KILL":
             ch.time_to_live = (param & 0xFF) + 1
+        elif cmd == "FADE":
+            self._apply_fade(ch, param)
         elif cmd == "TABL":
             tid = param & 0x7F
             if tid in self.project.tables:

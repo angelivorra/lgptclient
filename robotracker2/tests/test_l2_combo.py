@@ -38,11 +38,15 @@ def _run(app):
     # --- flujo del usuario: L2 + B + A ---
     # 1) pulsa L2
     app._dispatch(L2, {L2})
-    # 2) pulsa B (con L2 mantenido)
+    # 2) pulsa B (con L2 mantenido) — cicla selección, no borra al soltar
     app._dispatch(B, {B, L2})
     # 3) suelta B
     app._release(B)
-    # 4) pulsa A (con L2 mantenido)
+    assert g.view.chain_at(r, t) == 0x05, \
+        f"L2+S no debe borrar al soltar: {g.view.chain_at(r, t)}"
+    if g.has_selection:
+        g.cancel_selection()
+    # 4) pulsa A (con L2, sin selección): no escribe
     app._dispatch(A, {A, L2})
     # 5) suelta A
     app._release(A)
@@ -95,6 +99,16 @@ def _run(app):
         f"repetición de S sin Ctrl no debe borrar: {g.view.chain_at(r, t)}"
     print("  repetición de S tras soltar Ctrl no borra OK")
 
+    # SONG: Ctrl izquierdo + A con selección corta el bloque
+    g.view.set_value(r, t, 0x05)
+    g.cycle_selection()
+    app._dispatch(A, {A, L2})
+    app._release(A)
+    assert g.view.chain_at(r, t) == EMPTY, "Ctrl izq+A debe cortar en SONG"
+    assert not g.has_selection
+    print("  L2+A corta la selección en SONG OK")
+    g.view.set_value(r, t, 0x05)
+
     # S solo (sin Ctrl) sigue borrando al soltar
     app._fresh_press = True
     app._dispatch(B, {B})
@@ -102,6 +116,69 @@ def _run(app):
     assert g.view.chain_at(r, t) == EMPTY, \
         f"S sola debe borrar, quedó {g.view.chain_at(r, t)}"
     print("  S sola sigue borrando al soltar OK")
+
+    # PHRASE: Ctrl izquierdo (L2) + A con selección corta el bloque.
+    # En el PC "Ctrl+A" es casi siempre el Ctrl izquierdo, que antes no cortaba.
+    ed = app.editor_screen
+    ed.goto("phrase")
+    pg = ed.phrase_grid
+    assert pg.pv is not None
+    t = pg.track
+    pg.pv.set_note(0, t, 60)
+    pg.pv.set_instr(0, t, 0x10)
+    pg.cursor_step, pg.cursor_col = 0, 0
+    pg.cycle_selection()
+    assert pg.has_selection
+    app._dispatch(A, {A, L2})
+    app._release(A)
+    assert pg._note(0) is None, "Ctrl izq+A debe cortar la nota"
+    assert pg._instr(0) is None, "Ctrl izq+A debe cortar el instrumento"
+    assert not pg.has_selection, "cortar cancela la selección"
+    hint = pg._selection_hint() or ""
+    assert "PORTAPAPELES" in hint and "pegar" in hint, hint
+    pg.cursor_step = 1
+    app._dispatch(A, {A, L2})
+    app._release(A)
+    assert pg._note(1) == 60, "Ctrl izq+A sin selección pega la nota"
+    assert pg._instr(1) == 0x10, "Ctrl izq+A pega también el instrumento"
+    print("  L2+A (Ctrl izq) corta la selección en PHRASE OK")
+    print("  L2+A pega el bloque y el hint de portapapeles OK")
+
+    pg.pv.set_note(0, t, 60)
+    pg.pv.set_instr(0, t, 0x10)
+    pg.cursor_step, pg.cursor_col = 0, 0
+    pg.cycle_selection()
+    app._dispatch(A, {A, R2})
+    app._release(A)
+    assert pg._note(0) is None, "Ctrl der+A debe seguir cortando"
+    print("  R2+A sigue cortando la selección en PHRASE OK")
+
+    ed.goto("chain")
+    cg = ed.chain_grid
+    assert cg.cv is not None
+    cg.cursor_step, cg.cursor_col = 0, 0
+    cg._set(0, 0, 0x10)
+    cg.cycle_selection()
+    app._dispatch(A, {A, L2})
+    app._release(A)
+    assert cg._get(0, 0) is None, "Ctrl izq+A debe cortar en CHAIN"
+    assert not cg.has_selection
+    print("  L2+A corta la selección en CHAIN OK")
+
+    # Copiar/cortar en una chain y pegar en otra (otra celda de SONG).
+    # Antes set_context vaciaba el portapapeles al cambiar de chain.
+    ed.goto("song")
+    sg = ed.song_grid
+    sg.cursor_row = min(sg.cursor_row + 1, 255)
+    ed.goto("chain")
+    assert cg.clipboard is not None, "el bloque no debe perderse al cambiar de chain"
+    hint = cg._selection_hint() or ""
+    assert "PORTAPAPELES" in hint, hint
+    cg.cursor_step, cg.cursor_col = 0, 0
+    app._dispatch(A, {A, L2})
+    app._release(A)
+    assert cg._get(0, 0) == 0x10, "Ctrl+A debe pegar el bloque en la otra chain"
+    print("  pegar el bloque en otra chain OK")
 
 
 def main():

@@ -55,6 +55,17 @@ def _run(app):
     assert pg._cmd(0, 1) == "SLID", pg._cmd(0, 1)
     print("  picker de FX: A+arr abre, A elige OK")
 
+    # arr en el primero va al último; abj en el último vuelve al primero
+    pg.edit(UP)
+    assert pg.fx_picker is not None
+    pg.fx_picker = 0
+    pg.fx_picker_move(-1)
+    assert pg.fx_picker == len(pg.fx_commands) - 1, pg.fx_picker
+    pg.fx_picker_move(1)
+    assert pg.fx_picker == 0, pg.fx_picker
+    pg.close_fx_picker()
+    print("  picker de FX: wrap primero/último OK")
+
     pg.edit(DOWN)
     assert pg.fx_picker is not None
     before = pg._cmd(0, 1)
@@ -102,6 +113,20 @@ def _run(app):
     note, steps = slid_unpack(pg._prm(0, 1))
     assert steps == 4
     print("  SLID muestra nota+tiempo y se edita por ejes OK")
+
+    # FADE: param visible como filas decimales; A+izq/dcha ±1, A+arr/abj ±4
+    pg.pv.set_fx_cmd(0, t, 1, "FADE")
+    pg.pv.set_fx_param(0, t, 1, 0)
+    pg.cursor_col = 3
+    assert pg._field_text(0, 3) == "00", pg._field_text(0, 3)
+    pg.edit(RIGHT)
+    assert pg._prm(0, 1) == 1
+    assert pg._field_text(0, 3) == "01"
+    pg.edit(UP)
+    assert pg._prm(0, 1) == 5
+    pg.edit(DOWN)
+    assert pg._prm(0, 1) == 1
+    print("  FADE muestra filas y se edita por ejes OK")
 
 
 def main():

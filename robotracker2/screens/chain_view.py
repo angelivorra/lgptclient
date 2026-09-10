@@ -69,13 +69,15 @@ class ChainGrid(Widget):
 
     # -- contexto -------------------------------------------------------
     def set_context(self, project, song_row, track):
+        same_song = self.project is project
         self.project = project
         self.cv = ChainView(project, song_row)
         self.song_row = song_row
         self.track = track
         self.cursor_step = 0
         self.cursor_col = 0
-        self.clipboard = None
+        if not same_song:
+            self.clipboard = None          # el bloque se conserva entre chains
         self.sel_stage = 0
         self.sel_anchor = None
         self._last_a_tap = 0.0
@@ -275,11 +277,13 @@ class ChainGrid(Widget):
         return (0, 0, CHAIN_LEN - 1, 1)         # todo
 
     def _selection_hint(self):
-        """Operaciones disponibles con la selección activa (None sin ella)."""
-        if self.sel_stage == 0:
-            return None
-        return ("SELECCIÓN: B copiar · R2+A duplicar phrase · "
-                "R2+B ciclar · BACK cancelar")
+        """Franja inferior: selección activa, o cómo pegar el bloque."""
+        if self.sel_stage > 0:
+            return ("SELECCIÓN: B copiar · Ctrl+A cortar · "
+                    "R2+A duplicar phrase · Ctrl+S ciclar · BACK cancelar")
+        if self.clipboard is not None:
+            return "PORTAPAPELES: Ctrl+A pegar"
+        return None
 
     def _changed(self):
         if self.on_change:

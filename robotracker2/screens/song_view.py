@@ -229,11 +229,13 @@ class SongGrid(Widget):
                 NUM_TRACKS - 1)
 
     def _selection_hint(self):
-        """Operaciones disponibles con la selección activa (None sin ella)."""
-        if self.sel_stage == 0:
-            return None
-        return ("SELECCIÓN: B copiar · R2+A duplicar chain · "
-                "R2+B ciclar · BACK cancelar")
+        """Franja inferior: selección activa, o cómo pegar el bloque."""
+        if self.sel_stage > 0:
+            return ("SELECCIÓN: B copiar · Ctrl+A cortar · "
+                    "R2+A duplicar chain · Ctrl+S ciclar · BACK cancelar")
+        if self.clipboard is not None:
+            return "PORTAPAPELES: Ctrl+A pegar"
+        return None
 
     # -- helpers --------------------------------------------------------
     def _changed(self):

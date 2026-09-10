@@ -18,6 +18,9 @@ A = "a"
 B = "b"
 R2 = "r2"        # hombro derecho (PC: Ctrl derecho) — SELECCIÓN:
 #                  R2+B = Ctrl+S (selección), R2+A = Ctrl+A (cortar/pegar)
+#                  En SONG/CHAIN/PHRASE, el Ctrl izquierdo (L2) también
+#                  corta (A) y cicla la selección (S); en SONG, L2+S con
+#                  play mutea en vez de ciclar.
 L2 = "l2"        # hombro izquierdo (PC: Ctrl izquierdo) — NAVEGAR entre
 #                  pantallas (L2+dpad) y mute (L2+S en SONG mientras suena)
 START = "start"
