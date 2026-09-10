@@ -210,5 +210,20 @@ class TestEstadoAudio(unittest.TestCase):
         self.assertGreater(CARGA_AVISO, 0.5)
 
 
+class TestSingletonCmdline(unittest.TestCase):
+    def test_reconoce_el_player(self):
+        from lgpt_player import _cmdline_is_player
+        raw = b".venv/bin/python\0lgpt_player.py\0--device\0default\0"
+        self.assertTrue(_cmdline_is_player(raw))
+        self.assertTrue(_cmdline_is_player(
+            b"/usr/bin/python3\0/home/angel/git/lgptclient/sinte/lgpt_player.py\0"))
+
+    def test_ignora_grep_y_shell(self):
+        from lgpt_player import _cmdline_is_player
+        self.assertFalse(_cmdline_is_player(
+            b"/usr/bin/zsh\0-c\0pgrep -a -f lgpt_player.py\0"))
+        self.assertFalse(_cmdline_is_player(b"rg\0lgpt_player.py\0"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -22,7 +22,8 @@ class ScheduledTask:
     """Tarea programada para ejecutar en un momento específico."""
     due_mono: float = field(compare=True)
     seq: int = field(compare=False)
-    callback: Callable = field(compare=False)
+    epoch: int = field(compare=False, default=0)
+    callback: Callable = field(compare=False, default=None)
     args: Tuple = field(compare=False, default_factory=tuple)
     kwargs: dict = field(compare=False, default_factory=dict)
     description: str = field(compare=False, default="")
@@ -34,6 +35,7 @@ class Scheduler:
     def __init__(self):
         self._heap: List[ScheduledTask] = []
         self._seq = 0
+        self._epoch = 0
         self._new_task_event = asyncio.Event()
         self._running = False
         self._runner_task = None
@@ -68,6 +70,7 @@ class Scheduler:
         task = ScheduledTask(
             due_mono=due_mono,
             seq=self._seq,
+            epoch=self._epoch,
             callback=callback,
             args=args,
             kwargs=kwargs,
@@ -105,6 +108,10 @@ class Scheduler:
         """
         count = len(self._heap)
         self._heap.clear()
+        # Las tareas ya sacadas del heap (asyncio.create_task) siguen vivas:
+        # al subir la época, _execute_task las descarta. Si no, un STOP deja
+        # pasar un play_scene/imagen de la canción y la pantalla se queda ahí.
+        self._epoch += 1
         if count > 0:
             logger.info(f"🗑️  Cola limpiada: {count} tareas pendientes eliminadas")
         return count
@@ -173,6 +180,9 @@ class Scheduler:
     
     async def _execute_task(self, task: ScheduledTask):
         """Ejecuta una tarea programada."""
+        if task.epoch != self._epoch:
+            logger.debug(f"⏭️  Tarea #{task.seq} anulada (STOP)")
+            return
         try:
             logger.debug(f"▶️  Ejecutando tarea #{task.seq}: {task.description}")
             

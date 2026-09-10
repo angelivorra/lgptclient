@@ -10,7 +10,6 @@ Recibe eventos del cliente TCP y los procesa:
 - Eventos END: Fin de canción, vuelve a idle
 """
 import logging
-import threading
 import time
 from typing import Optional
 
@@ -60,9 +59,10 @@ class EventOrchestrator:
         self._connected = False  # True → conectado al servidor
         self._playing   = False  # True → reproduciendo una canción (entre START y STOP/END)
 
-        # Estado del bucle de animación idle
-        self._idle_thread: Optional[threading.Thread] = None
-        self._idle_stop   = threading.Event()
+        # Bucle idle: el DisplayExecutor loopea solo (loop:true). Un hilo
+        # que reencolaba play_animation cada ciclo dejaba comandos sueltos
+        # que pintaban frames de ojos a mitad de la canción.
+        self._idle_active = False
 
         self.current_bpm: float = 0.0
 
@@ -97,7 +97,7 @@ class EventOrchestrator:
         if debug != self._debug:
             self._debug = debug
             # Si estamos en idle, cambiar la pantalla según el nuevo modo
-            if self._status_screen_active or self._idle_thread is not None:
+            if not self._playing:
                 self._show_idle()
         logger.info(f"⚙️  Config aplicada: debug={debug}, ruido={ruido}, pantalla={pantalla}")
 
@@ -126,7 +126,7 @@ class EventOrchestrator:
             self._start_idle_animation(DISCONNECTED_CC, DISCONNECTED_VALUE, "desconectado")
 
     def _start_idle_animation(self, cc: int, value: int, mode_name: str):
-        """Arranca el bucle de animación idle para el modo dado."""
+        """Arranca la animación idle. El display la repite solo (loop)."""
         if not self._pantalla:
             return
 
@@ -145,24 +145,14 @@ class EventOrchestrator:
             self.start_status_screen()
             return
 
-        duration = anim_config.frame_interval * len(anim_config.frames)
-        self._idle_stop.clear()
-
-        def _loop():
-            while not self._idle_stop.is_set():
-                self.display_executor.play_animation(anim_config)
-                self._idle_stop.wait(timeout=duration)
-
-        self._idle_thread = threading.Thread(target=_loop, daemon=True, name="idle-anim")
-        self._idle_thread.start()
+        self._idle_active = True
+        self.display_executor.play_animation(anim_config, source="idle")
         logger.info(f"🎬 Animación {mode_name} activa ({cc:03d}/{value:03d})")
 
     def _stop_production_idle(self):
-        """Detiene el bucle de animación idle de producción."""
-        if self._idle_thread and self._idle_thread.is_alive():
-            self._idle_stop.set()
-            self._idle_thread.join(timeout=1.0)
-        self._idle_thread = None
+        """Deja de considerar idle activo. El display ignora source=idle
+        en cuanto set_live(True) (y vacía la cola de comandos)."""
+        self._idle_active = False
 
     def start_status_screen(self):
         """Inicia la pantalla de estado (modo debug idle)."""
@@ -186,16 +176,18 @@ class EventOrchestrator:
     def handle_nota(self, server_ts_ms: int, note: int, channel: int, velocity: int):
         self.stats['notas_recibidas'] += 1
 
+        # Visuales aunque la nota no tenga GPIO (bombo/caja de la partitura
+        # MIDI). Si no, se oye el golpe y la pantalla no se entera.
+        self._schedule_hit_visual(server_ts_ms, note, velocity)
+
         pins = self.config.get_pins_for_note(note)
         if not pins:
             self.stats['notas_sin_mapeo'] += 1
-            logger.debug(f"Nota {note} sin mapeo GPIO - ignorando")
+            logger.debug(f"Nota {note} sin mapeo GPIO - ignorando GPIO")
             return
 
         self.stats['notas_mapeadas'] += 1
         logger.debug(f"🎵 NOTA {note} → {len(pins)} pin(es): {pins}")
-
-        self._schedule_hit_visual(server_ts_ms, note, velocity)
 
         for pin in pins:
             try:
@@ -249,18 +241,26 @@ class EventOrchestrator:
         self.stats['gpio_programados'] += 1
 
     def _hit_kinds_for_note(self, note: int) -> list:
-        """Bombo/caja/crash a partir de los nombres de pin de esta robota."""
-        pins = self.config.get_pins_for_note(note)
-        if not pins:
-            return []
-        blob = " ".join(
-            self.config.get_pin_config(p).nombre.lower() for p in pins)
+        """Bombo/caja/crash a partir de los pines, o de la nota MIDI."""
         kinds = []
-        if "bombo" in blob:
+        pins = self.config.get_pins_for_note(note)
+        if pins:
+            blob = " ".join(
+                self.config.get_pin_config(p).nombre.lower() for p in pins)
+            if "bombo" in blob:
+                kinds.append("kick")
+            if "caja" in blob:
+                kinds.append("snare")
+            if "crash" in blob or "platillo" in blob:
+                kinds.append("crash")
+        if kinds:
+            return kinds
+        # Fallback: mismas notas que NOTAS.md / cliente.maleta.json
+        if note in (36, 39, 41, 42, 62, 64, 66, 70):
             kinds.append("kick")
-        if "caja" in blob:
+        if note in (37, 38, 39, 43, 63, 64, 65, 67, 71):
             kinds.append("snare")
-        if "crash" in blob or "platillo" in blob:
+        if note in (40, 42, 43, 66, 67, 72):
             kinds.append("crash")
         return kinds
 
@@ -319,7 +319,7 @@ class EventOrchestrator:
         logger.debug(f"   ⏰ Programado para ejecutar en {delta_ms:.1f}ms")
 
     def _execute_animation(self, anim_config, cc: int, value: int):
-        if not self._pantalla:
+        if not self._pantalla or not self._playing:
             return
         try:
             self.display_executor.play_animation(anim_config)
@@ -328,7 +328,7 @@ class EventOrchestrator:
             logger.error(f"❌ Error reproduciendo animación {cc:03d}/{value:03d}: {e}")
 
     def _execute_image(self, image_data: bytes, cc: int, value: int):
-        if not self._pantalla:
+        if not self._pantalla or not self._playing:
             return
         try:
             self.display_executor.show_image(image_data, cc, value)
@@ -337,7 +337,7 @@ class EventOrchestrator:
             logger.error(f"❌ Error mostrando imagen {cc:03d}/{value:03d}: {e}")
 
     def _execute_scene(self, name: str):
-        if not self._pantalla:
+        if not self._pantalla or not self._playing:
             return
         try:
             self._stop_production_idle()
@@ -354,6 +354,7 @@ class EventOrchestrator:
         self._stop_production_idle()
         if self._status_screen_active:
             self.stop_status_screen()
+        self.display_executor.set_live(True)
         # Escena live al mismo reloj que el audio. Sin MDCC en la canción.
         if self._pantalla:
             if self.current_bpm > 0:
@@ -375,6 +376,7 @@ class EventOrchestrator:
             f"Cola limpiada: {cancelled} eventos cancelados"
         )
         self._playing = False
+        self.display_executor.set_live(False)
         self._show_idle()
 
     def handle_bpm(self, server_ts_ms: int, bpm: float):
@@ -392,6 +394,7 @@ class EventOrchestrator:
     def handle_end(self, server_ts_ms: int):
         logger.info(f"⏹️  END recibido (ts={server_ts_ms}) - Canción terminada")
         self._playing = False
+        self.display_executor.set_live(False)
         self._show_idle()
 
     def cleanup(self):

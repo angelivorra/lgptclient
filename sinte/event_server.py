@@ -310,6 +310,10 @@ class EventMidiOut:
 
     def transport_start(self):
         self.server.emit("START", self._ts())
+        engine = self._engine_ref.get("engine")
+        tempo = getattr(engine, "tempo", None) if engine is not None else None
+        if tempo:
+            self.server.emit("BPM", self._ts(), tempo)
 
     def transport_stop(self, finished: bool):
         self.server.emit("END" if finished else "STOP", self._ts())

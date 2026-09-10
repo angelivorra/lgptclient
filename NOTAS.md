@@ -16,9 +16,9 @@ y luego
     - 6 : zero
 
 Escenas procedurales: no hay que tocar la canción ni el tracker. Al START
-la Pi arranca sola una escena que respira al BPM y pega flashes con
-bombo/caja/crash (las notas ya mapeadas a GPIO). Un MDCC de imagen o
-animación (instrumentos 80/81) sigue pudiendo pintar un clip encima.
+la Pi arranca sola un plasma al BPM con flashes de bombo (rojo), caja
+(cian) y crash (blanco). Un MDCC de imagen o animación (instrumentos 80/81)
+pinta encima un rato y, al terminar, vuelve el plasma.
 
 
 

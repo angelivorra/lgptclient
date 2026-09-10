@@ -26,10 +26,12 @@ from __future__ import annotations
 
 import argparse
 import collections
+import fcntl
 import math
 import os
 import queue
 import random
+import signal
 import sys
 import threading
 import time
@@ -52,6 +54,7 @@ from midi_control import _pick_port, apply_song_config, build_song_pots, \
 
 DEFAULT_SONGS_DIR = "/home/angel/Documentos/canciones/"
 CONFIG_PATH = Path(__file__).resolve().parent / "lttileplayer.toml"
+LOCK_PATH = Path("/tmp/lgpt_player.lock")
 
 # -- Calibración de motores por el controlador (Akai LPD8 mk2, notas fijas) --
 # Dentro de la calibración se reutilizan los transportes (anterior/siguiente/
@@ -551,6 +554,7 @@ class Player:
     def _load_song(self, index: int):
         self._unload_engine()
         project_dir = self.projects[index]
+        self._set_notice(f"cargando {display_name(project_dir.name)}")
         engine = Engine(project_dir, sample_rate=self.args.samplerate,
                         audio_delay=self.args.delay,
                         wavs_dir=self.args.wavs_dir)
@@ -1626,6 +1630,70 @@ class Player:
 
 
 
+def _cmdline_is_player(raw: bytes) -> bool:
+    """True si el cmdline de /proc es un lgpt_player.py (no un grep)."""
+    parts = raw.split(b"\0")
+    if not any(p == b"lgpt_player.py" or p.endswith(b"/lgpt_player.py")
+               for p in parts):
+        return False
+    exe = parts[0] if parts else b""
+    return b"python" in exe
+
+
+def _other_player_pids():
+    """PIDs de otros lgpt_player.py. Los arrancados antes del lock no lo
+    tienen y siguen mezclando audio si no se cierran a mano."""
+    me = os.getpid()
+    pids = []
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        if pid == me:
+            continue
+        try:
+            raw = (entry / "cmdline").read_bytes()
+        except (OSError, PermissionError):
+            continue
+        if raw and _cmdline_is_player(raw):
+            pids.append(pid)
+    return pids
+
+
+def _acquire_singleton():
+    """Un solo player por máquina. Dos instancias mezclan el audio en
+    PipeWire (parece que suenan dos canciones a la vez) y pelean el 8888."""
+    fd = open(LOCK_PATH, "a+")
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("[player] ya hay un reproductor en marcha; no arranco otro.",
+              file=sys.stderr)
+        sys.exit(1)
+    stale = _other_player_pids()
+    for pid in stale:
+        print(f"[player] cerrando reproductor anterior (pid {pid})",
+              file=sys.stderr)
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            continue
+    deadline = time.time() + 2.0
+    while stale and time.time() < deadline:
+        time.sleep(0.1)
+        stale = [p for p in stale if Path(f"/proc/{p}").exists()]
+    for pid in stale:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    fd.seek(0)
+    fd.truncate()
+    fd.write(f"{os.getpid()}\n")
+    fd.flush()
+    return fd
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--config", default=str(CONFIG_PATH),
@@ -1715,6 +1783,9 @@ def main():
 
     prioridad = sube_prioridad()
     print(f"[audio] prioridad: {prioridad}")
+    # El fd tiene que vivir: al cerrarse, flock se suelta y otro player
+    # podría arrancar encima y mezclar el audio.
+    args._lock_fd = _acquire_singleton()
     Player(args).run()
 
 
