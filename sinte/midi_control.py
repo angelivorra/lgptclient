@@ -321,6 +321,7 @@ def apply_song_config(engine, cfg: dict, pad_volume_default: float,
     que sí tiene su banco global wavs_dir/pads.json), se recarga ese banco
     para que la mesa siga funcionando como hasta ahora."""
     engine.muted = set(cfg.get("mute", []))
+    engine.snap_mute_gains()
     # Compensación de presencia al final de la cadena de FX (ver
     # Engine.render/Channel.fx_presence): opt-in por canal, solo para
     # la pista en la que se esté trabajando, no global.

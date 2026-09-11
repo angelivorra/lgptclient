@@ -585,6 +585,7 @@ class Player:
                           pads_dir=getattr(self.args, "pads_dir", None))
         if getattr(self.args, "mute_override", None) is not None:
             engine.muted = set(self.args.mute_override)
+            engine.snap_mute_gains()
         pots, pots_red = build_song_pots(self.args.hw_pots, cfg)
         # open_midi_input capturó estas listas por referencia al abrir el
         # puerto: se mutan en sitio, nunca se reasignan.

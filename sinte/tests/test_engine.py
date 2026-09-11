@@ -317,7 +317,8 @@ class TestVoices(unittest.TestCase):
         self.assertFalse(engine.playing)
         self.assertTrue(engine.finished)
         out = engine.render(512)
-        self.assertEqual(float(np.abs(out).max()), 0.0)
+        # Declick de salida: el bloque puede tener cola, el final ya no.
+        self.assertLess(float(np.abs(out[-1]).max()), 0.02)
 
     def test_table_volm(self):
         engine = make_engine()
@@ -416,12 +417,56 @@ class TestVoices(unittest.TestCase):
     def test_muted_channel(self):
         engine = make_engine()
         engine.muted = {0}
+        engine.snap_mute_gains()
         note_row(engine.project, 0)
         engine._process_tick()
         out = engine.render(512)
         self.assertEqual(float(np.abs(out).max()), 0.0)
         # el secuenciador sigue vivo aunque el canal esté muteado
         self.assertIsNotNone(engine.channels[0].voice)
+
+    def test_mute_unmute_sin_click(self):
+        """Silenciar o reactivar en vivo rampa ~4 ms: sin salto de muestra."""
+        engine = make_engine()
+        note_row(engine.project, 0)
+        engine._process_tick()
+        engine.render(2048)
+        engine.push_event("mute", 0, True)
+        silenced = engine.render(512)
+        jump = float(np.abs(np.diff(silenced.mean(axis=1))).max())
+        self.assertLess(jump, 0.08, f"click al mute: salto {jump:.3f}")
+        self.assertLess(float(np.abs(silenced[-1]).max()), 0.02)
+        engine.push_event("mute", 0, False)
+        restored = engine.render(512)
+        jump = float(np.abs(np.diff(restored.mean(axis=1))).max())
+        self.assertLess(jump, 0.08, f"click al unmute: salto {jump:.3f}")
+        self.assertGreater(float(np.abs(restored[-1]).max()), 0.05)
+
+    def test_nota_entra_sin_click(self):
+        """Un WAV que no parte de 0 no debe entrar a palo seco."""
+        engine = make_engine()
+        engine.bank.samples["test.wav"] = Sample(
+            np.ones((SAMPLE_RATE, 1), dtype=np.float32) * 0.8, SAMPLE_RATE)
+        note_row(engine.project, 0)
+        engine.project.instrument_bank[0]["params"]["loopmode"] = "loop"
+        engine.project.instrument_bank[0]["params"]["end"] = "0"
+        engine._process_tick()
+        out = engine.render(512)
+        first = float(np.abs(out[0]).max())
+        later = float(np.abs(out[400:]).max())
+        self.assertLess(first, 0.05, f"click al disparar: {first:.3f}")
+        self.assertGreater(later, 0.1)
+
+    def test_stop_sin_click(self):
+        engine = make_engine()
+        note_row(engine.project, 0)
+        engine._process_tick()
+        engine.render(2048)
+        engine.push_event("stop")
+        silenced = engine.render(512)
+        jump = float(np.abs(np.diff(silenced.mean(axis=1))).max())
+        self.assertLess(jump, 0.08, f"click al stop: salto {jump:.3f}")
+        self.assertLess(float(np.abs(silenced[-1]).max()), 0.02)
 
 
 class TestMidiOut(unittest.TestCase):

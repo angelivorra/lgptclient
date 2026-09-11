@@ -70,9 +70,10 @@ def slid_unpack(param: int) -> tuple[int, int]:
     elif steps > SLID_STEPS_MAX:
         steps = SLID_STEPS_MAX
     return note, steps
-# Anti-click: micro-rampa al cortar una voz (nota nueva) o al saltar el
-# volumen de golpe (VOLM con velocidad 0). No es un efecto: solo evita el
-# chasquido del salto brusco de amplitud. ~4 ms es inaudible como fundido.
+# Anti-click: micro-rampa (~4 ms, inaudible como fundido) al cortar una
+# voz, al disparar (el WAV no parte de 0), al terminar un oneshot, al
+# mute y al stop. No es un efecto: solo evita el chasquido de un salto
+# de amplitud.
 DECLICK_SECONDS = 0.004
 # Tope de aceleración del knob de tempo. Las canciones ya van rápidas, así
 # que interesa que se note sin desmadrarse: +12% son 180->202 BPM.
@@ -327,6 +328,7 @@ class Voice:
         "f_active", "f_mix", "f_scream", "f_mode", "f_cut_base", "f_reso_base",
         "f_speed", "f_height", "f_delay", "f_low", "f_band", "sr",
         "k_rem", "active", "_samples_per_tick", "declick", "releasing",
+        "attack_pos",
     )
 
     def __init__(self, sample: Sample, idef: InstrumentDef, note: int,
@@ -400,6 +402,7 @@ class Voice:
         self._samples_per_tick = samples_per_tick
         self.declick = max(1, int(DECLICK_SECONDS * out_sr))
         self.releasing = False        # True = fade de salida al robar la voz
+        self.attack_pos = 0           # samples ya recorridos del fade-in
 
     # -- comandos ---------------------------------------------------------
 
@@ -614,7 +617,6 @@ class Voice:
             read = pos_arr
         i0 = read.astype(np.int64)
         frac = (read - i0).astype(np.float32)
-        i0_raw = i0
         if self.ds_shift:
             i0 = i0 & ~((1 << self.ds_shift) - 1)
         i1 = i0 + 1
@@ -626,7 +628,12 @@ class Voice:
 
         x = self.data[i0] * (1.0 - frac)[:, None] + self.data[i1] * frac[:, None]
         if not self.loop:
-            x[i0_raw >= self.end - 1] = 0.0
+            # Fade-out en los últimos `declick` samples de salida (no un
+            # cero de golpe cuando el WAV no acaba en silencio).
+            spd = speed if isinstance(speed, np.ndarray) else float(speed)
+            rem_src = (self.end - 1) - pos_arr
+            rem_out = rem_src / np.maximum(spd, 1e-6)
+            x *= np.clip(rem_out / self.declick, 0.0, 1.0).astype(np.float32)[:, None]
 
         # Crush (predrive + reducción de bits), dominio float [-1,1] ~ 16 bits
         x *= self.drive_gain
@@ -642,6 +649,13 @@ class Voice:
         elif self.vol_kinc < 0.0:
             v = np.maximum(v, self.vol_target)
         x *= (v * (1.0 / 255.0) * self.vol_scale * self.cc_vol)[:, None]
+
+        # Fade-in al disparar: el sample (y el filtro scream) no entran
+        # a palo seco si el WAV no parte de 0.
+        if self.attack_pos < self.declick:
+            idx = self.attack_pos + np.arange(n, dtype=np.float32)
+            x *= np.clip(idx / self.declick, 0.0, 1.0)[:, None]
+            self.attack_pos += n
 
         # Filtro: LGPT/scream (upstream) o SVF barato (lp/hp/bp/notch)
         if self.f_active:
@@ -1314,7 +1328,7 @@ class Channel:
         "midi_fade",
         "groove", "g_pos", "g_ticks",
         "fx_amounts", "fx_objs", "fx_gain", "fx_presence", "fx_mix",
-        "vocoder_out",
+        "vocoder_out", "mute_gain",
     )
 
     @property
@@ -1394,6 +1408,9 @@ class Channel:
         # además de sonar (o no, si está muteada) emite el acorde por
         # midi_out.chord_on().
         self.vocoder_out = False
+        # Ganancia de mute (0-1). El mute en vivo rampa ~4 ms para no
+        # chasquear; al cargar/arrancar se ajusta de golpe (snap_mute_gains).
+        self.mute_gain = 1.0
 
 
 # --------------------------------------------------------------------------
@@ -1499,7 +1516,7 @@ class Engine:
 
         self.events: queue.SimpleQueue = queue.SimpleQueue()
         self.unsupported_cmds: set[str] = set()
-        self.muted: set[int] = set()    # canales silenciados (índice 0-7)
+        self.muted: set[int] = set()    # canales silenciados (índice 0-8)
         # Delay de audio POR CANAL (segundos): el secuenciador y los
         # eventos MIDI van en tiempo real (t=0); el audio sale retrasado.
         # La modulación del controlador (vol/pan/drive/LP) se aplica a la
@@ -1605,8 +1622,7 @@ class Engine:
         step 0. En PHRASE se ignora y arranca en el step 0."""
         for ch in self.channels:
             ch.playing = False
-            ch.voice = None
-            ch.release = None
+            self._cut_voice(ch)
             self._midi_stop_note(ch)
             ch.kind = None
             ch.midi_def = None
@@ -1647,6 +1663,36 @@ class Engine:
         self.playing = True
         self.unsupported_cmds.clear()
         self._transport("transport_start")
+        self.snap_mute_gains()
+
+    def snap_mute_gains(self):
+        """Deja mute_gain en 0 o 1 según `muted`, sin rampa.
+
+        Para carga de canción y play: un canal que ya nace muteado no
+        debe soplar 4 ms. El mute en vivo (push_event) sí rampa.
+        """
+        for ch in self.channels:
+            ch.mute_gain = 0.0 if ch.idx in self.muted else 1.0
+
+    def _apply_mute_ramp(self, ch: Channel, block: np.ndarray) -> None:
+        """Multiplica el bloque por una rampa de mute (~DECLICK_SECONDS)."""
+        target = 0.0 if ch.idx in self.muted else 1.0
+        g0 = ch.mute_gain
+        n = len(block)
+        if n <= 0:
+            return
+        if g0 == target:
+            if target == 0.0:
+                block[:] = 0.0
+            return
+        step = 1.0 / max(1, int(DECLICK_SECONDS * self.sr))
+        t = np.arange(1, n + 1, dtype=np.float32)
+        if target < g0:
+            gains = np.maximum(g0 - step * t, target)
+        else:
+            gains = np.minimum(g0 + step * t, target)
+        block *= gains[:, None]
+        ch.mute_gain = float(gains[-1])
 
     def _start_loop(self, from_step: int = 0):
         """Arranca solo el canal objetivo de `loop_scope` en su chain/phrase
@@ -1757,11 +1803,7 @@ class Engine:
                 n = min(frames - off, int(self.tick_phase))
                 if n > 0:
                     for ch in self.channels:
-                        if ch.idx in self.muted:
-                            continue
-                        buf = self._stage[ch.idx]
-                        self._render_voice_list(ch, ch.voices, buf, off, n)
-                        self._render_voice_list(ch, ch.releases, buf, off, n)
+                        self._render_channel_audio(ch, self._stage[ch.idx], off, n)
                     off += n
                     self.tick_phase -= n
                 if self.tick_phase < 1.0:
@@ -1769,6 +1811,11 @@ class Engine:
                     self._tick_offset = off
                     self._process_tick()
                     self.tick_phase = self.samples_per_tick + frac
+        else:
+            # Pausa/stop: el secuenciador no avanza, pero las voces (y el
+            # declick de un stop) siguen sonando para no cortar en seco.
+            for ch in self.channels:
+                self._render_channel_audio(ch, self._stage[ch.idx], 0, frames)
         # 2. t+1: salida del delay, efectos del controlador y mezcla
         out = np.zeros((frames, 2), dtype=np.float32)
         for ch in self.channels:
@@ -1806,6 +1853,7 @@ class Engine:
                 x = ch.cc_pan / 254.0
                 block[:, 0] *= min(1.0, 2.0 * (1.0 - x))
                 block[:, 1] *= min(1.0, 2.0 * x)
+            self._apply_mute_ramp(ch, block)
             out += block
         out *= self.master
         # Pad sampler: suena directo (sin delay ni FX de canal) y DESPUÉS del
@@ -1834,6 +1882,14 @@ class Engine:
             self.current_lyric = ""
             self._lyric_expires_at = None
         return out
+
+    def _render_channel_audio(self, ch: Channel, buf, off: int, n: int):
+        """Voces + colas de declick de un canal. Si está muteado y ya en
+        silencio, no renderiza (durante la rampa de mute sí)."""
+        if ch.idx in self.muted and ch.mute_gain <= 0.0:
+            return
+        self._render_voice_list(ch, ch.voices, buf, off, n)
+        self._render_voice_list(ch, ch.releases, buf, off, n)
 
     def _render_voice_list(self, ch: Channel, voices: list, buf, off: int,
                            n: int):
@@ -2012,8 +2068,7 @@ class Engine:
                 self.playing = False
                 self.finished = True
                 for ch in self.channels:
-                    ch.voice = None
-                    ch.release = None
+                    self._cut_voice(ch)
                     self._midi_stop_note(ch)
                 self._transport("transport_stop", False)
 
@@ -2514,6 +2569,8 @@ class Engine:
         elif cmd == "STOP":
             self.playing = False
             self.finished = True
+            for c in self.channels:
+                self._cut_voice(c)
             self._transport("transport_stop", True)   # fin natural -> END
         elif cmd in ("HOP ", "DLAY", "CHRD"):
             pass                    # se procesan en el avance de step/trigger
