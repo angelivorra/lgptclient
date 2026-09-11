@@ -6,6 +6,7 @@ o con pytest: .venv/bin/python -m pytest tests/
 """
 
 import math
+import random
 import sys
 import unittest
 from pathlib import Path
@@ -937,6 +938,71 @@ class TestChrd(unittest.TestCase):
         engine._process_tick()
         for v in engine.channels[0].voices:
             self.assertNotEqual(v.vol_target, 255.0)
+
+
+class TestArpr(unittest.TestCase):
+    """ARPR: una nota al azar del acorde, de la tónica a la octava."""
+
+    def test_una_voz_en_el_pool(self):
+        engine = make_engine()
+        engine._rng = random.Random(0)
+        note_row(engine.project, 0, note=60)
+        engine.project.cmd1[0] = "ARPR"
+        engine.project.param1[0] = 0          # maj
+        engine._process_tick()
+        self.assertEqual(len(engine.channels[0].voices), 1)
+        self.assertIn(engine.channels[0].voice.note, {60, 64, 67, 72})
+        self.assertNotIn("ARPR", engine.unsupported_cmds)
+        self.assertEqual(engine.channels[0].arp_root, 60)
+
+    def test_fila_vacia_sigue_la_tonica(self):
+        engine = make_engine()
+        engine._rng = random.Random(1)
+        note_row(engine.project, 0, note=60)
+        engine.project.cmd1[0] = "ARPR"
+        engine.project.param1[0] = 0
+        engine.project.cmd1[1] = "ARPR"
+        engine.project.param1[1] = 0
+        engine._process_tick()
+        self.assertEqual(engine.channels[0].arp_root, 60)
+        for _ in range(TICKS_PER_STEP):
+            engine._process_tick()
+        engine._process_tick()               # paso 1, sin nota
+        self.assertEqual(len(engine.channels[0].voices), 1)
+        self.assertIn(engine.channels[0].voice.note, {60, 64, 67, 72})
+        self.assertEqual(engine.channels[0].arp_root, 60)
+
+    def test_vacio_sin_tonica_no_dispara(self):
+        engine = make_engine()
+        engine.project.cmd1[0] = "ARPR"
+        engine.project.param1[0] = 0
+        engine._process_tick()
+        self.assertIsNone(engine.channels[0].voice)
+
+    def test_midi_una_nota(self):
+        engine = make_engine()
+        engine._rng = random.Random(0)
+        engine.midi_out = MidiCollector()
+        note_row(engine.project, 0, note=60, instr=0x80)
+        engine.project.cmd1[0] = "ARPR"
+        engine.project.param1[0] = 0
+        engine._process_tick()
+        ons = [e for e in engine.midi_out.events if e[0] == "note_on"]
+        self.assertEqual(len(ons), 1)
+        self.assertIn(ons[0][2], {60, 64, 67, 72})
+
+    def test_varia_con_la_semilla(self):
+        heard = set()
+        for seed in range(24):
+            engine = make_engine()
+            engine._rng = random.Random(seed)
+            note_row(engine.project, 0, note=60)
+            engine.project.cmd1[0] = "ARPR"
+            engine.project.param1[0] = 0
+            engine._process_tick()
+            heard.add(engine.channels[0].voice.note)
+        self.assertGreater(len(heard), 1)
+        self.assertTrue(heard <= {60, 64, 67, 72})
 
 
 class TestSlid(unittest.TestCase):

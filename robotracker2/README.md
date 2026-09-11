@@ -97,7 +97,9 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    chain y la phrase (estilo Piggy). El ciclado de **comandos FX** solo ofrece los
    usados en las canciones de `songs/` más los filtros (`FX_USED` en
    `phrase_view.py`: VOLM, KILL, FADE, DLAY, LEGA, TABL, STOP, MDCC, MDPG,
-   PTCH, RTRG, SLID, CHRD, FCUT, FRES, FMOD). **FCUT/FRES/FMOD** se muestran
+   PTCH, RTRG, SLID, CHRD, ARPR, FCUT, FRES, FMOD). **ARPR** es un arpegio
+   random: una nota del acorde por fila (de la tónica a la octava; en filas
+   vacías sigue la última tónica). **FCUT/FRES/FMOD** se muestran
    con palabras (sordo/abierto, limpio/silba, grave/agudo…) no en hex.
    **FADE**
    apaga la nota en N filas (0 = ya, con declick; 3 = rampa el volumen a 0 en 3

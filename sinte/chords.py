@@ -62,3 +62,23 @@ def expand_chord_notes(root: int, intervals: tuple[int, ...]) -> list[int]:
         if 0 <= n < 128:
             notes.append(n)
     return notes
+
+
+def arp_pool_intervals(param: int) -> tuple[int, ...]:
+    """Grados del acorde en [0, 12]: tónica, tensiones bajo la octava, octava."""
+    degrees = [0]
+    for t in chord_intervals(param):
+        if 0 < t < 12:
+            degrees.append(t)
+    degrees.append(12)
+    return tuple(sorted(set(degrees)))
+
+
+def arp_pool_notes(root: int, param: int) -> list[int]:
+    """Notas MIDI del arpegio: `root` .. `root+12`, solo grados del acorde."""
+    out = []
+    for t in arp_pool_intervals(param):
+        n = root + t
+        if 0 <= n < 128:
+            out.append(n)
+    return out or [root]

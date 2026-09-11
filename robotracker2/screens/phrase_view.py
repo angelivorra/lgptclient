@@ -76,7 +76,7 @@ MAX_NOTE = 131                     # (9+2)*12 - 1
 
 # Comandos FX que se pueden ciclar. Todos de 4 chars (requisito de set_fx_cmd).
 FX_USED = ["VOLM", "KILL", "FADE", "DLAY", "LEGA", "TABL", "STOP", "MDCC", "MDPG",
-           "PTCH", "RTRG", "SLID", "CHRD", "FCUT", "FRES", "FMOD"]
+           "PTCH", "RTRG", "SLID", "CHRD", "ARPR", "FCUT", "FRES", "FMOD"]
 FX_HELP = {
     "VOLM": "volumen de la nota",
     "KILL": "corta la nota (ticks)",
@@ -91,6 +91,7 @@ FX_HELP = {
     "RTRG": "repite la nota",
     "SLID": "slide a nota destino",
     "CHRD": "acorde sobre la nota",
+    "ARPR": "arpegio random del acorde",
     **PHRASE_FILTER_HELP,
 }
 PICK_ROW_H = dp(34)
@@ -398,7 +399,7 @@ class PhraseGrid(Widget):
             self._edit_cmd(step, _WHICH[kind], delta)
         else:
             which = _WHICH[kind]
-            if self._cmd(step, which) == "CHRD":
+            if self._cmd(step, which) in ("CHRD", "ARPR"):
                 d = 1 if delta > 0 else -1
                 cur = self.pv.fx_param_at(step, self.track, which)
                 self.pv.set_fx_param(step, self.track, which,
@@ -499,7 +500,7 @@ class PhraseGrid(Widget):
             self.pv.set_fx_cmd(step, self.track, which,
                                cmds[(cmds.index(cur) + d) % len(cmds)])
         new = self._cmd(step, which)
-        if new == "CHRD":
+        if new in ("CHRD", "ARPR") and cur not in ("CHRD", "ARPR"):
             self.pv.set_fx_param(step, self.track, which, 0)
         elif new == "SLID":
             self.pv.set_fx_param(step, self.track, which,
@@ -593,7 +594,7 @@ class PhraseGrid(Widget):
         which = _WHICH[kind]
         prev = self._cmd(self.cursor_step, which)
         self.pv.set_fx_cmd(self.cursor_step, self.track, which, cmd)
-        if cmd == "CHRD" and prev != "CHRD":
+        if cmd in ("CHRD", "ARPR") and prev not in ("CHRD", "ARPR"):
             self.pv.set_fx_param(self.cursor_step, self.track, which, 0)
         elif cmd == "SLID" and prev != "SLID":
             self.pv.set_fx_param(self.cursor_step, self.track, which,
@@ -834,7 +835,7 @@ class PhraseGrid(Widget):
         which = _WHICH[kind]
         if raw is None:
             return "...."
-        if self._cmd(step, which) == "CHRD":
+        if self._cmd(step, which) in ("CHRD", "ARPR"):
             return chord_label(raw)
         if self._cmd(step, which) == "SLID":
             note, steps = slid_unpack(raw)

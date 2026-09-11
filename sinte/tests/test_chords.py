@@ -9,6 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from chords import (  # noqa: E402
     CHORD_TYPES,
+    arp_pool_intervals,
+    arp_pool_notes,
     chord_intervals,
     chord_label,
     cycle_chord,
@@ -45,6 +47,18 @@ class TestChordTypes(unittest.TestCase):
         self.assertEqual(expand_chord_notes(60, (4, 7)), [60, 64, 67])
         # 120 + 14 = 134, fuera
         self.assertEqual(expand_chord_notes(120, (4, 14)), [120, 124])
+
+    def test_arp_pool_maj(self):
+        self.assertEqual(arp_pool_intervals(0), (0, 4, 7, 12))
+        self.assertEqual(arp_pool_notes(60, 0), [60, 64, 67, 72])
+
+    def test_arp_pool_nona_no_pasa_de_octava(self):
+        # add9 = 4, 7, 14 → 14 queda fuera del rango tónica..octava
+        add9 = next(i for i, (n, _) in enumerate(CHORD_TYPES) if n == "add9")
+        self.assertEqual(arp_pool_intervals(add9), (0, 4, 7, 12))
+
+    def test_arp_pool_recorta_midi(self):
+        self.assertEqual(arp_pool_notes(120, 0), [120, 124, 127])
 
 
 if __name__ == "__main__":

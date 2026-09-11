@@ -16,7 +16,9 @@ Réplica en Python/numpy del comportamiento del reproductor original
     el editor (robotracker2/mixer) se oye al instante, también en la nota
     que está sonando.
   - Comandos: VOLM, KILL, FADE, DLAY, LEGA, SLID, TABL, STOP, HOP, CHRD
-    (acorde sobre la nota de la fila: samples polifónicos, MIDI y vocoder).
+    (acorde sobre la nota de la fila: samples polifónicos, MIDI y vocoder),
+    ARPR (arpegio random: una nota del acorde por fila, de la tónica a la
+    octava; en filas vacías sigue con la última tónica).
     SLID desliza el pitch hasta una nota destino en N steps de phrase.
     FADE apaga la nota: 0 filas = ya (declick); N = rampa a silencio en N filas.
     FCUT/FRES/FMOD cambian corte, canto y tipo del filtro de la voz.
@@ -36,6 +38,7 @@ from __future__ import annotations
 
 import json
 import queue
+import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,7 +47,7 @@ from typing import Optional
 import numpy as np
 import soundfile as sf
 
-from chords import chord_intervals, expand_chord_notes
+from chords import arp_pool_notes, chord_intervals, expand_chord_notes
 from filter_ui import SVF_MODES, mode_from_param, normalize_mode
 from lgpt_parser import CHANNEL_COUNT, LGPTProject, expand_song
 
@@ -1328,7 +1331,7 @@ class Channel:
         "midi_fade",
         "groove", "g_pos", "g_ticks",
         "fx_amounts", "fx_objs", "fx_gain", "fx_presence", "fx_mix",
-        "vocoder_out", "mute_gain",
+        "vocoder_out", "mute_gain", "arp_root",
     )
 
     @property
@@ -1411,6 +1414,9 @@ class Channel:
         # Ganancia de mute (0-1). El mute en vivo rampa ~4 ms para no
         # chasquear; al cargar/arrancar se ajusta de golpe (snap_mute_gains).
         self.mute_gain = 1.0
+        # Tónica del ARPR (nota escrita + transpose). Las filas vacías con
+        # ARPR siguen arpegiando sobre esta, no sobre la última nota random.
+        self.arp_root: Optional[int] = None
 
 
 # --------------------------------------------------------------------------
@@ -1516,6 +1522,7 @@ class Engine:
 
         self.events: queue.SimpleQueue = queue.SimpleQueue()
         self.unsupported_cmds: set[str] = set()
+        self._rng = random.Random()
         self.muted: set[int] = set()    # canales silenciados (índice 0-8)
         # Delay de audio POR CANAL (segundos): el secuenciador y los
         # eventos MIDI van en tiempo real (t=0); el audio sale retrasado.
@@ -1633,6 +1640,7 @@ class Engine:
             ch.time_to_start = 0
             ch.time_to_live = 0
             ch.last_instr = None
+            ch.arp_root = None
             ch.groove = 0
             ch.g_pos = 0
             ch.g_ticks = self._groove_len(0, 0)
@@ -2360,11 +2368,28 @@ class Engine:
         row = ch.phrase * 16 + ch.phrase_pos
         note = self.project.notes[row]
         instr = self.project.instruments[row]
-        if note == 0xFF:
-            return
+        arp_param = self._arpr_param(row)
         clean = instr != 0xFF
-        if clean:
-            ch.last_instr = instr
+
+        if note == 0xFF:
+            # Fila vacía + ARPR: sigue sobre la última tónica.
+            if arp_param is None or ch.arp_root is None:
+                return
+            root = ch.arp_root
+        else:
+            if clean:
+                ch.last_instr = instr
+            if ch.last_instr is None:
+                ch.last_instr = 0
+            t = 0
+            if ch.chain != 0xFF:
+                tb = self.project.transposes[ch.chain * 16 + ch.chain_pos]
+                t = tb - 256 if tb > 127 else tb
+            root = (note + t + self.transpose) % 256
+            if root >= 128:
+                return
+            ch.arp_root = root if arp_param is not None else None
+
         if ch.last_instr is None:
             ch.last_instr = 0
         # Re-parseo en cada trigger: el banco es el objeto vivo del editor
@@ -2383,14 +2408,10 @@ class Engine:
                 ch.last_instr, bank["params"])
         else:
             return                            # tipo de instrumento desconocido
-        t = 0
-        if ch.chain != 0xFF:
-            tb = self.project.transposes[ch.chain * 16 + ch.chain_pos]
-            t = tb - 256 if tb > 127 else tb
-        final = (note + t + self.transpose) % 256
-        if final >= 128:
-            return
-        notes = self._chord_notes(row, final)
+        if arp_param is not None:
+            notes = [self._arpr_pick(root, arp_param)]
+        else:
+            notes = self._chord_notes(row, root)
         # Corta la(s) voz(es) sample (con declick) y/o las notas MIDI
         self._cut_voice(ch)
         self._midi_stop_note(ch)
@@ -2410,19 +2431,36 @@ class Engine:
             # Vocoder: la raíz sigue yendo por note_on (NOTA); el acorde
             # completo va por ACRD. Sin vocoder, el MIDI lleva todas las
             # notas (acorde audible en un synth).
-            midi_notes = [final] if ch.vocoder_out else notes
+            sounded = notes[0]
+            midi_notes = [sounded] if ch.vocoder_out else notes
             self._midi_start_notes(ch, mdef, midi_notes)
             ch.kind = "midi"
-        ch.last_note = final
+        ch.last_note = notes[0]
         if ch.vocoder_out and self.midi_out is not None:
             vel = ch.midi_vel if ch.midi_vel is not None else 100
-            self.midi_out.chord_on(ch.idx, self._vocoder_notes(row, final), vel)
+            if arp_param is not None:
+                acrd = notes
+            else:
+                acrd = self._vocoder_notes(row, root)
+            self.midi_out.chord_on(ch.idx, acrd, vel)
         if clean:
             table = idef.table if idef is not None else mdef.table
             if table >= 0 and table in self.project.tables:
                 ch.table.start(self.project.tables[table])
             else:
                 ch.table.stop()
+
+    def _arpr_param(self, row: int) -> int | None:
+        """Parámetro de ARPR en la fila (tipo de acorde), o None."""
+        for cmd, param in ((self.project.cmd1[row], self.project.param1[row]),
+                           (self.project.cmd2[row], self.project.param2[row])):
+            if cmd == "ARPR":
+                return param
+        return None
+
+    def _arpr_pick(self, root: int, param: int) -> int:
+        """Una nota al azar del acorde, de `root` a la octava de arriba."""
+        return self._rng.choice(arp_pool_notes(root, param))
 
     def _chrd_intervals(self, row: int) -> tuple[int, ...] | None:
         """Intervalos de un CHRD en la fila, o None si no hay comando."""
@@ -2572,7 +2610,7 @@ class Engine:
             for c in self.channels:
                 self._cut_voice(c)
             self._transport("transport_stop", True)   # fin natural -> END
-        elif cmd in ("HOP ", "DLAY", "CHRD"):
+        elif cmd in ("HOP ", "DLAY", "CHRD", "ARPR"):
             pass                    # se procesan en el avance de step/trigger
         elif cmd == "GROV":
             groove = param & 0xFF

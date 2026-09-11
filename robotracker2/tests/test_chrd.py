@@ -24,6 +24,7 @@ def _run(app):
     pg = ed.phrase_grid
     t = pg.track
     assert "CHRD" in FX_USED, "CHRD debe poder ciclarse en PHRASE"
+    assert "ARPR" in FX_USED, "ARPR debe poder ciclarse en PHRASE"
 
     pg.pv.set_note(0, t, 60)
     pg.pv.set_instr(0, t, 0)
@@ -44,6 +45,16 @@ def _run(app):
     assert pg._prm(0, 1) == 1
     assert pg._field_text(0, 3).strip() == "min"
     print("  CHRD cicla tipos maj/min en PHRASE OK")
+
+    pg.pv.set_fx_cmd(0, t, 1, "ARPR")
+    pg.pv.set_fx_param(0, t, 1, 0)
+    pg.cursor_col = 3
+    assert pg._field_text(0, 3).strip() == "maj"
+    pg.edit(RIGHT)
+    assert pg._field_text(0, 3).strip() == "min"
+    print("  ARPR cicla tipos maj/min en PHRASE OK")
+
+    pg.pv.set_fx_cmd(0, t, 1, "CHRD")
 
     # A+arr/abj sobre el comando abre la lista con explicación
     pg.cursor_col = 2
