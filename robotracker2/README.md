@@ -97,9 +97,12 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    chain y la phrase (estilo Piggy). El ciclado de **comandos FX** solo ofrece los
    usados en las canciones de `songs/` más los filtros (`FX_USED` en
    `phrase_view.py`: VOLM, KILL, FADE, DLAY, LEGA, TABL, STOP, MDCC, MDPG,
-   PTCH, RTRG, SLID, CHRD, ARPR, FCUT, FRES, FMOD). **ARPR** es un arpegio
-   random: una nota del acorde por fila (de la tónica a la octava; en filas
-   vacías sigue la última tónica). **FCUT/FRES/FMOD** se muestran
+   PTCH, RTRG, SLID, CHRD, ARPR, GLCH, FCUT, FRES, FMOD). **ARPR** es un arpegio
+   random: una nota del acorde por fila (de la tónica a la octava); con
+   una sola línea sigue en cada fila vacía hasta la próxima nota escrita.
+   **GLCH** es un glitch: captura un trozo y lo repite (A+izq/dcha
+   intensidad, A+arr/abj duración en filas).
+   **FCUT/FRES/FMOD** se muestran
    con palabras (sordo/abierto, limpio/silba, grave/agudo…) no en hex.
    **FADE**
    apaga la nota en N filas (0 = ya, con declick; 3 = rampa el volumen a 0 en 3
@@ -455,7 +458,9 @@ robotracker2/odin/install.sh [usuario@]IP_de_la_odin
 El navegador de samples usa `samples/` en la raíz del repo, con
 subcarpetas (`drums/kick`, `bass/acid`, `synth/lead`…). Sin voces.
 `install.sh` la sincroniza siempre a `/storage/samples`. Las canciones
-siguen sonando desde `sinte/songs/<canción>/samples/`.
+(con `lgptsav.dat`, `robotraca.json` y `samples/`) van a
+`/storage/sinte/songs/`. Lo que suena al reproducir sigue siendo
+`sinte/songs/<canción>/samples/`.
 
 ## Estructura
 
@@ -478,7 +483,7 @@ siguen sonando desde `sinte/songs/<canción>/samples/`.
 | `screens/chain_view.py` | Chain: 16 steps × phrase/transpose (canvas) |
 | `screens/phrase_view.py` | Phrase: 16 steps × nota/instr/fx1/fx2 (canal 8: HIT/SCREEN) |
 | `screens/tracks_view.py` | TRACKS: tipo/icono de cada pista (robotraca.json) |
-| `screens/track_icons.py` | Glifos vectoriales de los 6 tipos de pista |
+| `screens/track_icons.py` | Iconos Phosphor de los 6 tipos de pista |
 | `screens/groove_view.py` | Groove: 16 steps de ticks, 32 grooves (canvas) |
 | `screens/table_view.py` | Table: 16 filas × 3 FX (canvas) |
 | `screens/instrument_view.py` | Instrument: menú de parámetros (canvas) |

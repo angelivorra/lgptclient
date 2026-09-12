@@ -17,7 +17,9 @@ if str(SINTE_DIR) not in sys.path:
 
 from lgpt_parser import (CHANNEL_COUNT, EXTRA_TRACK, LGPTProject,  # noqa: E402
                          expand_song, note_byte_to_name)
-from lgpt_engine import EFFECT_PRESETS, Engine, slid_pack, slid_unpack  # noqa: E402
+from lgpt_engine import (  # noqa: E402
+    EFFECT_PRESETS, Engine, glch_pack, glch_unpack, slid_pack, slid_unpack,
+)
 from chords import CHORD_TYPES, chord_label, cycle_chord  # noqa: E402
 from filter_ui import (  # noqa: E402
     FILTER_MODES, PHRASE_FILTER_HELP, SVF_MODES, clamp255, cut_label,
@@ -36,7 +38,7 @@ __all__ = ["LGPTProject", "EFFECT_PRESETS", "Engine",
            "CHANNEL_COUNT", "EXTRA_TRACK", "expand_song",
            "note_byte_to_name", "save_project",
            "CHORD_TYPES", "chord_label", "cycle_chord",
-           "slid_pack", "slid_unpack",
+           "slid_pack", "slid_unpack", "glch_pack", "glch_unpack",
            "FILTER_MODES", "PHRASE_FILTER_HELP", "SVF_MODES", "clamp255",
            "cut_label", "field_help", "mode_from_param", "mode_index",
            "mode_label", "normalize_mode", "res_label", "type_label",

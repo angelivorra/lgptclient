@@ -18,7 +18,10 @@ Réplica en Python/numpy del comportamiento del reproductor original
   - Comandos: VOLM, KILL, FADE, DLAY, LEGA, SLID, TABL, STOP, HOP, CHRD
     (acorde sobre la nota de la fila: samples polifónicos, MIDI y vocoder),
     ARPR (arpegio random: una nota del acorde por fila, de la tónica a la
-    octava; en filas vacías sigue con la última tónica).
+    octava; con una sola línea sigue en cada fila vacía hasta la próxima
+    nota escrita).
+    GLCH (glitch: captura un trozo y lo repite; intensidad + duración en
+    filas).
     SLID desliza el pitch hasta una nota destino en N steps de phrase.
     FADE apaga la nota: 0 filas = ya (declick); N = rampa a silencio en N filas.
     FCUT/FRES/FMOD cambian corte, canto y tipo del filtro de la voz.
@@ -73,6 +76,24 @@ def slid_unpack(param: int) -> tuple[int, int]:
     elif steps > SLID_STEPS_MAX:
         steps = SLID_STEPS_MAX
     return note, steps
+
+
+GLCH_ROWS_MAX = 16
+
+
+def glch_pack(intensity: int, rows: int) -> int:
+    """Param de GLCH: byte alto = intensidad 0-255, bajo = filas 1-16."""
+    return ((int(intensity) & 0xFF) << 8) | max(1, min(GLCH_ROWS_MAX, int(rows)))
+
+
+def glch_unpack(param: int) -> tuple[int, int]:
+    intensity = (int(param) >> 8) & 0xFF
+    rows = int(param) & 0xFF
+    if rows < 1:
+        rows = 1
+    elif rows > GLCH_ROWS_MAX:
+        rows = GLCH_ROWS_MAX
+    return intensity, rows
 # Anti-click: micro-rampa (~4 ms, inaudible como fundido) al cortar una
 # voz, al disparar (el WAV no parte de 0), al terminar un oneshot, al
 # mute y al stop. No es un efecto: solo evita el chasquido de un salto
@@ -1244,6 +1265,131 @@ class TranceGateFx:
         self._phase = (self._phase + inc * n) % (2.0 * np.pi)
 
 
+class ChannelGlitch:
+    """Stutter/glitch de un canal: captura un trozo y lo repite.
+
+    Intensidad 0-1: trozos más cortos, más wet, a veces revés o agujero.
+    Duración en ticks de groove (la arma el comando GLCH). Va después
+    de la cadena de FX para romper el sonido ya procesado.
+    """
+
+    def __init__(self, sr: int):
+        self.sr = sr
+        self.ticks_left = 0
+        self.key = None
+        self.intensity = 0.0
+        self._cap = None
+        self._cap_pos = 0
+        self._slice_n = 0
+        self._buf = None
+        self._pos = 0
+        self._play = None
+        self._release = 0
+        self._rng = random.Random()
+
+    @property
+    def active(self) -> bool:
+        return self.ticks_left > 0 or self._release > 0
+
+    def trigger(self, intensity: float, ticks: int, tempo: float):
+        self.intensity = max(0.0, min(1.0, float(intensity)))
+        self.ticks_left = max(1, int(ticks))
+        self._release = 0
+        beat = self.sr * 60.0 / max(float(tempo), 1.0)
+        long_n = max(64, int(beat / 2.0))     # corchea
+        short_n = max(32, int(beat / 32.0))   # 1/64
+        ratio = short_n / long_n
+        self._slice_n = max(32, int(long_n * (ratio ** self.intensity)))
+        self._cap = np.zeros((self._slice_n, 2), dtype=np.float32)
+        self._cap_pos = 0
+        self._buf = None
+        self._play = None
+        self._pos = 0
+
+    def tick(self):
+        if self.ticks_left > 0:
+            self.ticks_left -= 1
+            if self.ticks_left == 0:
+                self._release = max(1, int(DECLICK_SECONDS * self.sr))
+
+    def stop(self):
+        self.ticks_left = 0
+        self._release = 0
+        self._cap = None
+        self._buf = None
+        self._play = None
+
+    def apply(self, block: np.ndarray):
+        if not self.active or self._slice_n <= 0:
+            return
+        n = len(block)
+        wet_out = np.empty_like(block)
+        i = 0
+        while i < n:
+            if self._buf is None:
+                take = min(n - i, self._slice_n - self._cap_pos)
+                self._cap[self._cap_pos:self._cap_pos + take] = block[i:i + take]
+                wet_out[i:i + take] = block[i:i + take]
+                self._cap_pos += take
+                i += take
+                if self._cap_pos >= self._slice_n:
+                    self._buf = self._cap
+                    self._window(self._buf)
+                    if self.intensity > 0.7:
+                        self._crush(self._buf)
+                    self._new_repeat()
+            else:
+                take = min(n - i, self._slice_n - self._pos)
+                wet_out[i:i + take] = self._play[self._pos:self._pos + take]
+                self._pos += take
+                i += take
+                if self._pos >= self._slice_n:
+                    self._new_repeat()
+        wet = self.intensity
+        if self._release > 0:
+            fade = min(self._release, n)
+            ramp = np.linspace(1.0, max(0.0, 1.0 - fade / self._release),
+                               fade, dtype=np.float32)
+            wet_out[:fade] = (block[:fade] * (1.0 - wet * ramp[:, None])
+                              + wet_out[:fade] * (wet * ramp[:, None]))
+            if fade < n:
+                wet_out[fade:] = block[fade:]
+            self._release -= fade
+            if self._release <= 0:
+                self.stop()
+            block[:fade] = wet_out[:fade]
+            return
+        if wet <= 0.001:
+            return
+        block[:] = block * (1.0 - wet) + wet_out * wet
+
+    def _new_repeat(self):
+        self._pos = 0
+        sl = self._buf
+        if sl is None:
+            return
+        if self.intensity > 0.35 and self._rng.random() < 0.22 * self.intensity:
+            self._play = np.zeros_like(sl)
+            return
+        if self.intensity > 0.5 and self._rng.random() < 0.35 * self.intensity:
+            sl = sl[::-1]
+        self._play = sl
+
+    def _window(self, buf: np.ndarray):
+        n = len(buf)
+        fade = min(max(8, int(DECLICK_SECONDS * self.sr)), n // 4)
+        if fade < 2:
+            return
+        w = np.linspace(0.0, 1.0, fade, dtype=np.float32)
+        buf[:fade] *= w[:, None]
+        buf[-fade:] *= w[::-1, None]
+
+    def _crush(self, buf: np.ndarray):
+        bits = 4.0 + 4.0 * (1.0 - self.intensity)
+        step = 2.0 ** (1.0 - bits)
+        np.clip(np.round(buf / step) * step, -1.0, 1.0, out=buf)
+
+
 # Presets disponibles para los pots (target = "canal:nombre"). El orden de
 # este dict es el orden de la cadena de efectos: drive (valve / bass_drive
 # pointer-cast) -> filtro (acid / acid_lfo) -> delay -> metal -> bode, para que el
@@ -1331,7 +1477,7 @@ class Channel:
         "midi_fade",
         "groove", "g_pos", "g_ticks",
         "fx_amounts", "fx_objs", "fx_gain", "fx_presence", "fx_mix",
-        "vocoder_out", "mute_gain", "arp_root",
+        "vocoder_out", "mute_gain", "arp_root", "arp_param", "glitch",
     )
 
     @property
@@ -1414,9 +1560,12 @@ class Channel:
         # Ganancia de mute (0-1). El mute en vivo rampa ~4 ms para no
         # chasquear; al cargar/arrancar se ajusta de golpe (snap_mute_gains).
         self.mute_gain = 1.0
-        # Tónica del ARPR (nota escrita + transpose). Las filas vacías con
-        # ARPR siguen arpegiando sobre esta, no sobre la última nota random.
+        # ARPR enganchado: tónica (nota escrita + transpose) y tipo de
+        # acorde. Una sola fila con ARPR sigue disparando en cada fila
+        # vacía, siempre sobre esta tónica, no sobre la última random.
         self.arp_root: Optional[int] = None
+        self.arp_param: Optional[int] = None
+        self.glitch: Optional[ChannelGlitch] = None
 
 
 # --------------------------------------------------------------------------
@@ -1641,6 +1790,10 @@ class Engine:
             ch.time_to_live = 0
             ch.last_instr = None
             ch.arp_root = None
+            ch.arp_param = None
+            if ch.glitch is not None:
+                ch.glitch.stop()
+                ch.glitch.key = None
             ch.groove = 0
             ch.g_pos = 0
             ch.g_ticks = self._groove_len(0, 0)
@@ -1855,6 +2008,8 @@ class Engine:
                 ch.fx_gain = 1.0
             block, _ = self._apply_fx_pass(
                 ch, block, after_presence=True, capture_dry=False)
+            if ch.glitch is not None and ch.glitch.active:
+                ch.glitch.apply(block)
             if ch.cc_vol != 1.0:
                 block *= ch.cc_vol
             if ch.cc_pan is not None:
@@ -2141,6 +2296,9 @@ class Engine:
                 if self._groove_trigger(ch):
                     self._advance_step(ch)
         for ch in self.channels:
+            if ch.glitch is not None:
+                ch.glitch.tick()
+        for ch in self.channels:
             if ch.time_to_start > 0:
                 ch.time_to_start -= 1
                 if ch.time_to_start == 0:
@@ -2204,6 +2362,8 @@ class Engine:
     def _set_phrase_pos(self, ch: Channel, pos: int):
         ch.phrase_pos = pos
         ch.time_to_start = 1
+        if ch.glitch is not None:
+            ch.glitch.key = None
         row = ch.phrase * 16 + pos
         if self.project.cmd1[row] == "DLAY":
             ch.time_to_start = (self.project.param1[row] & 0xF) + 1
@@ -2292,6 +2452,19 @@ class Engine:
                 pos = 0
         return ticks
 
+    def _apply_glitch(self, ch: Channel, param: int):
+        """GLCH: arma el stutter una vez por fila (el comando se relee
+        cada tick y no debe reiniciar la captura)."""
+        key = (ch.song_pos, ch.chain_pos, ch.phrase, ch.phrase_pos)
+        if ch.glitch is not None and ch.glitch.key == key:
+            return
+        intensity, rows = glch_unpack(param)
+        if ch.glitch is None:
+            ch.glitch = ChannelGlitch(self.sr)
+        ch.glitch.trigger(intensity / 255.0, self._fade_row_ticks(ch, rows),
+                          self.tempo)
+        ch.glitch.key = key
+
     def _apply_fade(self, ch: Channel, param: int):
         """FADE nn: apaga la nota. nn=0 ya (declick); nn>0 rampa a 0 en nn
         filas. Se reejecuta cada tick: no reinicia un fade ya en curso."""
@@ -2323,6 +2496,11 @@ class Engine:
 
     def _stop_channel(self, ch: Channel):
         ch.playing = False
+        ch.arp_root = None
+        ch.arp_param = None
+        if ch.glitch is not None:
+            ch.glitch.stop()
+            ch.glitch.key = None
         self._cut_voice(ch)
         self._midi_stop_note(ch)
 
@@ -2372,10 +2550,15 @@ class Engine:
         clean = instr != 0xFF
 
         if note == 0xFF:
-            # Fila vacía + ARPR: sigue sobre la última tónica.
-            if arp_param is None or ch.arp_root is None:
+            # Fila vacía: si ARPR está enganchado, otra nota del acorde.
+            if ch.arp_root is None:
+                return
+            if arp_param is not None:
+                ch.arp_param = arp_param
+            if ch.arp_param is None:
                 return
             root = ch.arp_root
+            prev = ch.last_note
         else:
             if clean:
                 ch.last_instr = instr
@@ -2388,7 +2571,13 @@ class Engine:
             root = (note + t + self.transpose) % 256
             if root >= 128:
                 return
-            ch.arp_root = root if arp_param is not None else None
+            if arp_param is not None:
+                ch.arp_root = root
+                ch.arp_param = arp_param
+            else:
+                ch.arp_root = None
+                ch.arp_param = None
+            prev = None
 
         if ch.last_instr is None:
             ch.last_instr = 0
@@ -2408,8 +2597,8 @@ class Engine:
                 ch.last_instr, bank["params"])
         else:
             return                            # tipo de instrumento desconocido
-        if arp_param is not None:
-            notes = [self._arpr_pick(root, arp_param)]
+        if ch.arp_param is not None:
+            notes = [self._arpr_pick(root, ch.arp_param, prev)]
         else:
             notes = self._chord_notes(row, root)
         # Corta la(s) voz(es) sample (con declick) y/o las notas MIDI
@@ -2438,7 +2627,7 @@ class Engine:
         ch.last_note = notes[0]
         if ch.vocoder_out and self.midi_out is not None:
             vel = ch.midi_vel if ch.midi_vel is not None else 100
-            if arp_param is not None:
+            if ch.arp_param is not None:
                 acrd = notes
             else:
                 acrd = self._vocoder_notes(row, root)
@@ -2458,9 +2647,19 @@ class Engine:
                 return param
         return None
 
-    def _arpr_pick(self, root: int, param: int) -> int:
-        """Una nota al azar del acorde, de `root` a la octava de arriba."""
-        return self._rng.choice(arp_pool_notes(root, param))
+    def _arpr_pick(self, root: int, param: int,
+                   last: Optional[int] = None) -> int:
+        """Una nota al azar del acorde, de `root` a la octava de arriba.
+
+        En filas siguientes evita repetir `last` si el acorde tiene más
+        de un grado, para que el arpegio cambie de verdad cada paso.
+        """
+        pool = arp_pool_notes(root, param)
+        if last is not None and len(pool) > 1:
+            alt = [n for n in pool if n != last]
+            if alt:
+                pool = alt
+        return self._rng.choice(pool)
 
     def _chrd_intervals(self, row: int) -> tuple[int, ...] | None:
         """Intervalos de un CHRD en la fila, o None si no hay comando."""
@@ -2610,6 +2809,8 @@ class Engine:
             for c in self.channels:
                 self._cut_voice(c)
             self._transport("transport_stop", True)   # fin natural -> END
+        elif cmd == "GLCH":
+            self._apply_glitch(ch, param)
         elif cmd in ("HOP ", "DLAY", "CHRD", "ARPR"):
             pass                    # se procesan en el avance de step/trigger
         elif cmd == "GROV":

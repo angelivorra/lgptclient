@@ -955,22 +955,56 @@ class TestArpr(unittest.TestCase):
         self.assertNotIn("ARPR", engine.unsupported_cmds)
         self.assertEqual(engine.channels[0].arp_root, 60)
 
-    def test_fila_vacia_sigue_la_tonica(self):
+    def test_fila_vacia_sigue_sin_repetir_comando(self):
         engine = make_engine()
         engine._rng = random.Random(1)
         note_row(engine.project, 0, note=60)
         engine.project.cmd1[0] = "ARPR"
         engine.project.param1[0] = 0
-        engine.project.cmd1[1] = "ARPR"
-        engine.project.param1[1] = 0
+        engine._process_tick()
+        first = engine.channels[0].voice.note
+        self.assertEqual(engine.channels[0].arp_root, 60)
+        for _ in range(TICKS_PER_STEP):
+            engine._process_tick()
+        engine._process_tick()               # paso 1, vacío: otra nota
+        self.assertEqual(len(engine.channels[0].voices), 1)
+        second = engine.channels[0].voice.note
+        self.assertIn(second, {60, 64, 67, 72})
+        self.assertNotEqual(second, first)
+        self.assertEqual(engine.channels[0].arp_root, 60)
+
+    def test_cambia_en_cada_fila_vacia(self):
+        engine = make_engine()
+        engine._rng = random.Random(3)
+        note_row(engine.project, 0, note=60)
+        engine.project.cmd1[0] = "ARPR"
+        engine.project.param1[0] = 0
+        heard = []
+        engine._process_tick()
+        heard.append(engine.channels[0].voice.note)
+        for _ in range(3):
+            for _ in range(TICKS_PER_STEP):
+                engine._process_tick()
+            engine._process_tick()
+            heard.append(engine.channels[0].voice.note)
+        self.assertTrue(set(heard) <= {60, 64, 67, 72})
+        self.assertTrue(all(a != b for a, b in zip(heard, heard[1:])))
+
+    def test_nota_escrita_corta_el_arpegio(self):
+        engine = make_engine()
+        engine._rng = random.Random(0)
+        note_row(engine.project, 0, note=60)
+        engine.project.cmd1[0] = "ARPR"
+        engine.project.param1[0] = 0
+        note_row(engine.project, 1, note=65)
         engine._process_tick()
         self.assertEqual(engine.channels[0].arp_root, 60)
         for _ in range(TICKS_PER_STEP):
             engine._process_tick()
-        engine._process_tick()               # paso 1, sin nota
-        self.assertEqual(len(engine.channels[0].voices), 1)
-        self.assertIn(engine.channels[0].voice.note, {60, 64, 67, 72})
-        self.assertEqual(engine.channels[0].arp_root, 60)
+        engine._process_tick()
+        self.assertEqual(engine.channels[0].voice.note, 65)
+        self.assertIsNone(engine.channels[0].arp_root)
+        self.assertIsNone(engine.channels[0].arp_param)
 
     def test_vacio_sin_tonica_no_dispara(self):
         engine = make_engine()

@@ -51,9 +51,10 @@ from robots import (HIT_NOTES, ROBOT_INSTR, ROBOT_TRACK, ayuda_preview_path,
 from screens.hit_icons import draw_hit_icon
 from screens.track_icons import draw_track_icon
 from sinte_bridge import (FILTER_MODES, PHRASE_FILTER_HELP, chord_label,
-                          clamp255, cut_label, cycle_chord, mode_from_param,
-                          mode_index, mode_label, note_byte_to_name,
-                          res_label, slid_pack, slid_unpack)
+                          clamp255, cut_label, cycle_chord, glch_pack,
+                          glch_unpack, mode_from_param, mode_index,
+                          mode_label, note_byte_to_name, res_label,
+                          slid_pack, slid_unpack)
 from theme import (COLOR_ACCENT, COLOR_BEAT, COLOR_BG, COLOR_BORDER, COLOR_EMPTY,
                    COLOR_FX1, COLOR_FX2, COLOR_HEADER_BG, COLOR_HEADER_TXT,
                    COLOR_HINT, COLOR_HINT_BG, COLOR_HIT, COLOR_INSTR,
@@ -76,7 +77,7 @@ MAX_NOTE = 131                     # (9+2)*12 - 1
 
 # Comandos FX que se pueden ciclar. Todos de 4 chars (requisito de set_fx_cmd).
 FX_USED = ["VOLM", "KILL", "FADE", "DLAY", "LEGA", "TABL", "STOP", "MDCC", "MDPG",
-           "PTCH", "RTRG", "SLID", "CHRD", "ARPR", "FCUT", "FRES", "FMOD"]
+           "PTCH", "RTRG", "SLID", "CHRD", "ARPR", "GLCH", "FCUT", "FRES", "FMOD"]
 FX_HELP = {
     "VOLM": "volumen de la nota",
     "KILL": "corta la nota (ticks)",
@@ -91,7 +92,8 @@ FX_HELP = {
     "RTRG": "repite la nota",
     "SLID": "slide a nota destino",
     "CHRD": "acorde sobre la nota",
-    "ARPR": "arpegio random del acorde",
+    "ARPR": "arpegio random: una línea, otra nota cada fila",
+    "GLCH": "glitch: intensidad y filas",
     **PHRASE_FILTER_HELP,
 }
 PICK_ROW_H = dp(34)
@@ -406,6 +408,8 @@ class PhraseGrid(Widget):
                                      cycle_chord(cur, d))
             elif self._cmd(step, which) == "SLID":
                 self._edit_slid(step, which, button)
+            elif self._cmd(step, which) == "GLCH":
+                self._edit_glch(step, which, button)
             elif self._cmd(step, which) == "FADE":
                 self._edit_fade(step, which, button)
             elif self._cmd(step, which) in ("FCUT", "FRES"):
@@ -505,6 +509,8 @@ class PhraseGrid(Widget):
         elif new == "SLID":
             self.pv.set_fx_param(step, self.track, which,
                                  self._slid_default_param(step))
+        elif new == "GLCH":
+            self.pv.set_fx_param(step, self.track, which, glch_pack(0x80, 2))
         elif new == "FADE":
             self.pv.set_fx_param(step, self.track, which, 0)
         elif new == "FCUT":
@@ -527,6 +533,15 @@ class PhraseGrid(Widget):
         else:
             steps = max(1, min(16, steps + (1 if button == UP else -1)))
         self.pv.set_fx_param(step, self.track, which, slid_pack(note, steps))
+
+    def _edit_glch(self, step, which, button):
+        """A+izq/dcha: intensidad ±16. A+arr/abj: duración en filas ±1."""
+        inten, rows = glch_unpack(self.pv.fx_param_at(step, self.track, which))
+        if button in (LEFT, RIGHT):
+            inten = max(0, min(255, inten + (16 if button == RIGHT else -16)))
+        else:
+            rows = max(1, min(16, rows + (1 if button == UP else -1)))
+        self.pv.set_fx_param(step, self.track, which, glch_pack(inten, rows))
 
     def _edit_fade(self, step, which, button):
         """A+izq/dcha: filas ±1. A+arr/abj: filas ±4. 0 = apagar ya."""
@@ -599,6 +614,9 @@ class PhraseGrid(Widget):
         elif cmd == "SLID" and prev != "SLID":
             self.pv.set_fx_param(self.cursor_step, self.track, which,
                                  self._slid_default_param(self.cursor_step))
+        elif cmd == "GLCH" and prev != "GLCH":
+            self.pv.set_fx_param(self.cursor_step, self.track, which,
+                                 glch_pack(0x80, 2))
         elif cmd == "FADE" and prev != "FADE":
             self.pv.set_fx_param(self.cursor_step, self.track, which, 0)
         elif cmd == "FCUT" and prev != "FCUT":
@@ -798,6 +816,9 @@ class PhraseGrid(Widget):
         elif self._cmd(step, _WHICH[kind]) == "SLID":
             self.pv.set_fx_param(step, self.track, _WHICH[kind],
                                  self._slid_default_param(step))
+        elif self._cmd(step, _WHICH[kind]) == "GLCH":
+            self.pv.set_fx_param(step, self.track, _WHICH[kind],
+                                 glch_pack(0x80, 2))
         elif self._cmd(step, _WHICH[kind]) == "FCUT":
             self.pv.set_fx_param(step, self.track, _WHICH[kind], 128)
         elif self._cmd(step, _WHICH[kind]) == "FMOD":
@@ -840,6 +861,9 @@ class PhraseGrid(Widget):
         if self._cmd(step, which) == "SLID":
             note, steps = slid_unpack(raw)
             return f"{note_byte_to_name(note)} {steps:02d}"
+        if self._cmd(step, which) == "GLCH":
+            inten, rows = glch_unpack(raw)
+            return f"{inten:02X} {rows:02d}"
         if self._cmd(step, which) == "FADE":
             return f"{raw & 0xFF:02d}"
         if self._cmd(step, which) == "FCUT":

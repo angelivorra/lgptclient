@@ -25,6 +25,7 @@ def _run(app):
     t = pg.track
     assert "CHRD" in FX_USED, "CHRD debe poder ciclarse en PHRASE"
     assert "ARPR" in FX_USED, "ARPR debe poder ciclarse en PHRASE"
+    assert "GLCH" in FX_USED, "GLCH debe poder ciclarse en PHRASE"
 
     pg.pv.set_note(0, t, 60)
     pg.pv.set_instr(0, t, 0)
@@ -53,6 +54,19 @@ def _run(app):
     pg.edit(RIGHT)
     assert pg._field_text(0, 3).strip() == "min"
     print("  ARPR cicla tipos maj/min en PHRASE OK")
+
+    from sinte_bridge import glch_pack, glch_unpack
+    pg.pv.set_fx_cmd(0, t, 1, "GLCH")
+    pg.pv.set_fx_param(0, t, 1, glch_pack(0x80, 2))
+    pg.cursor_col = 3
+    assert pg._field_text(0, 3) == "80 02"
+    pg.edit(UP)
+    inten, rows = glch_unpack(pg._prm(0, 1))
+    assert (inten, rows) == (0x80, 3)
+    pg.edit(RIGHT)
+    inten, rows = glch_unpack(pg._prm(0, 1))
+    assert (inten, rows) == (0x90, 3)
+    print("  GLCH edita intensidad y filas OK")
 
     pg.pv.set_fx_cmd(0, t, 1, "CHRD")
 
