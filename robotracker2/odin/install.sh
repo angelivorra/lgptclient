@@ -28,7 +28,7 @@ ssh "$HOST" '
 # writer/MIDI). El resto de /storage/sinte (player, songs, venv) no se toca.
 echo ">> Copiando módulos de sinte que usa robotracker2..."
 for f in lgpt_parser.py lgpt_engine.py lgpt_writer.py midi_control.py \
-         chords.py filter_ui.py ladspa_fx.py play_stats.py; do
+         chords.py filter_ui.py ladspa_fx.py play_stats.py master_eq.py; do
   scp "$REPO/sinte/$f" "$HOST:/storage/sinte/$f"
 done
 

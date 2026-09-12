@@ -25,6 +25,8 @@ del proyecto.
   lo usa robotracker para guardar.
 - `lgpt_engine.py` — motor de audio puro (numpy): voces, secuenciador,
   mixer. Sin dependencia de tarjeta de audio (testable headless).
+- `master_eq.py` — EQ gráfico de 7 bandas de la mezcla (nativo, por
+  canción en `robotraca.json` clave `eq`). Mismo código en Pi, sinte y Odin.
 - `play_stats.py` — al pulsar Play (sinte y robotracker2) escribe
   `songs/<canción>/play_stats.txt` con CPU/RAM/temp, xruns y tiempos de
   render de la última pasada. Se sobrescribe en cada Play. `PLAY_STATS=0`

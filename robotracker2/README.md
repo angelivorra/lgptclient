@@ -21,7 +21,7 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    ```
    EFECTOS  PROJECT LIVE      GROOVE
    PADS     SONG    CHAIN     PHRASE    INSTRUMENT
-   TRACKS   CONFIG            TABLE     TABLE
+   TRACKS   CONFIG  EQ        TABLE     TABLE
    ```
 
 
@@ -33,10 +33,11 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    guardar: lgptsav.dat, pads, knobs o pistas) y a la derecha una tira fija
    **D S C P I**: **D** = PADS (TRACKS pinta su **N** magenta en la columna D),
    **S** = SONG, **C** = CHAIN (CONFIG pinta su
-   **C** magenta en la columna S; no es la misma C), **P** = PHRASE,
+   **C** magenta en la columna S; no es la misma C; EQ pinta su **Q**
+   magenta en la columna C), **P** = PHRASE,
    **I** = INSTRUMENT. El color indica la altura: **azul** = fila media,
    **cian** = fila de arriba (PROJECT/GROOVE/EFECTOS/LIVE), **magenta** = fila de
-   abajo (TABLE/CONFIG/TRACKS), mostrando en esa celda su letra (P/G/T/C/E/N).
+   abajo (TABLE/CONFIG/TRACKS/EQ), mostrando en esa celda su letra (P/G/T/C/E/N/Q).
    En el chip activo, una **raya blanca arriba y/o abajo** indica si
    **Ctrl+flecha** puede subir o bajar de fila; izquierda/derecha se leen
    en la tira D S C P I.
@@ -412,6 +413,17 @@ elige pista (y baja a **GUARDAR**) · **izq/dcha** cicla el tipo · **A
 sobre GUARDAR** persiste. Como PADS/EFECTOS, los cambios viven en memoria
 hasta guardar.
 
+### Pantalla EQ (mezcla, 7 bandas)
+
+Debajo de CHAIN (L2+abajo desde CHAIN, **Q** magenta en la columna C). EQ
+gráfico nativo de la mezcla final (±12 dB en 60 / 150 / 400 / 1k / 2k5 /
+6k / 12k). El mismo código corre en Pi, sinte y Odin (no usa LADSPA). Se
+guarda por canción en `robotraca.json`, clave `"eq"`; si está plano no se
+escribe. Controles: **izq/dcha** elige banda · **arr/abj** baja a
+**GUARDAR** · **A+arr/abj** ±1 dB · **A+izq/dcha** ±3 dB · **A sobre
+GUARDAR** persiste. Se oye al instante; como PADS/EFECTOS, vive en
+memoria hasta guardar.
+
 ## Ejecutar
 
 Usa el venv propio (`robotracker2/.venv`, con Kivy/numpy/sounddevice). Si no
@@ -497,5 +509,6 @@ subcarpetas (`drums/kick`, `bass/acid`, `synth/lead`…). Sin voces.
 | `screens/image_browser.py` | Navegador visual de `images/` (evento de pantalla) |
 | `screens/project_view.py` | Menú PROJECT (tempo/master/load/save/exit) |
 | `screens/config_view.py` | Menú CONFIG (interfaces MIDI de entrada) |
+| `screens/eq_view.py` | EQ: 7 bandas de la mezcla (robotraca.json) |
 | `screens/confirm.py` | Diálogo modal de cambios sin guardar |
 

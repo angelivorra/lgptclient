@@ -14,12 +14,14 @@ sinte_bridge). Solo depende de lgpt_engine (y de mido, importado dentro de
     `pots`/`pots_red` se rellenan por canción y se evalúan en cada mensaje)
   - load_song_cfg / apply_song_config / build_song_pots: aplicación de
     robotraca.json de la canción (mute/vocoder/presence/fx/fx_mix/master/
-    pad_volume) y construcción de los targets de knobs por canción.
+    eq/pad_volume) y construcción de los targets de knobs por canción.
 """
 
 import json
 import queue
 from pathlib import Path
+
+from master_eq import parse_eq
 
 from lgpt_engine import CHANNEL_COUNT, EFFECT_PRESETS, NETCC_CHANNEL
 
@@ -313,7 +315,7 @@ def apply_song_config(engine, cfg: dict, pad_volume_default: float,
                       song_dir=None, pads_dir=None):
     """Aplica a `engine` la config de la canción (robotraca.json):
     mute de canales, presence, vocoder, cantidades y mezcla de efectos,
-    master y volumen de pads. Sin JSON: todo a los valores por defecto.
+    master, EQ de 7 bandas y volumen de pads. Sin JSON: todo a defecto.
 
     Los pads NO tienen configuración global, solo por canción: la clave
     "pads" del robotraca.json se resuelve contra la biblioteca de pads
@@ -383,6 +385,10 @@ def apply_song_config(engine, cfg: dict, pad_volume_default: float,
             engine.master = engine.base_master * float(master) / 100.0
         except (TypeError, ValueError):
             print(f"[config] master inválido: {master!r}")
+    # EQ gráfico de la mezcla (7 dB). Sin clave = plano. getattr: el
+    # engine viejo de la Odin puede no traer master_eq.
+    if hasattr(engine, "master_eq") and engine.master_eq is not None:
+        engine.master_eq.set_gains(parse_eq(cfg.get("eq")))
     _apply_pad_volume(engine, cfg.get("pad_volume", pad_volume_default),
                       pad_volume_default)
     # Pads SIEMPRE POR CANCIÓN: {"pads": {"1": "nom.wav"}} resueltos contra

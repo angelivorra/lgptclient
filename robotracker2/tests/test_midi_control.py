@@ -33,6 +33,17 @@ from songs import DEFAULT_SONGS  # noqa: E402
 HW_POTS = {f"pot{i}": {"cc": f"cc:0:{69 + i}"} for i in range(1, 9)}
 
 
+class StubEQ:
+    def __init__(self):
+        self.gains = [0.0] * 7
+        self.active = False
+
+    def set_gains(self, gains):
+        from sinte_bridge import parse_eq
+        self.gains = parse_eq(gains)
+        self.active = any(abs(x) >= 0.05 for x in self.gains)
+
+
 class StubChannel:
     def __init__(self, idx):
         self.idx = idx
@@ -57,6 +68,10 @@ class StubEngine:
         self.reloads = 0            # veces que se pidió el banco global
         self.pad_bank = None        # (meta, base) del último load_pad_bank
         self.events = []            # push_event recibidos
+        self.master_eq = StubEQ()
+
+    def snap_mute_gains(self):
+        pass
 
     def push_event(self, *args):
         self.events.append(args)
@@ -105,7 +120,8 @@ def test_midictrl_set_song():
                "vocoder": [3],
                "pad_volume": {"1": 27},
                "pads": {"1": "hola.wav", "4": "adios.wav"},
-               "pots": {"pot2": "5:bode"}}
+               "pots": {"pot2": "5:bode"},
+               "eq": [3, 0, 0, -1, 0, 0, 0]}
         song_dir = Path(tmp) / "song"
         song_dir.mkdir()
         (song_dir / "robotraca.json").write_text(json.dumps(cfg))
@@ -128,6 +144,9 @@ def test_midictrl_set_song():
         assert spec == ("control_change", 0, 71) and idx == 1
         assert target == ((5,), "bode", 1.0)
         assert ctrl.engine_ref["engine"] is engine
+        assert engine.master_eq.gains[0] == 3.0
+        assert engine.master_eq.gains[3] == -1.0
+        assert ctrl.eq_gains()[0] == 3.0
         # sin robotraca.json: sin mute, knobs sin targets, pads VACÍOS
         # (sin banco global: load_pad_bank con dict vacío, nunca reload)
         ctrl.set_song(engine, Path(tmp))
@@ -135,7 +154,36 @@ def test_midictrl_set_song():
         assert ctrl.pots == []
         assert engine.pad_bank == ({}, pads_dir), engine.pad_bank
         assert engine.reloads == 0, "sin 'pads' no se recarga ningún banco"
+        assert engine.master_eq.gains == [0.0] * 7
+        assert not engine.master_eq.active
     print("  MidiControl.set_song OK")
+
+
+def test_set_eq_band():
+    """set_eq_band: en vivo al engine; plano quita la clave; clamp ±12."""
+    engine = StubEngine()
+    with tempfile.TemporaryDirectory() as tmp:
+        song_dir = Path(tmp) / "song"
+        song_dir.mkdir()
+        cfg_file = song_dir / "robotraca.json"
+        cfg_file.write_text("{}")
+        ctrl = MidiControl(buttons={}, hw_pots={}, pad_volume=60)
+        ctrl.set_song(engine, song_dir)
+        assert ctrl.eq_gains() == [0.0] * 7
+        ctrl.set_eq_band(0, 3)
+        assert ctrl.eq_gains()[0] == 3.0
+        assert engine.master_eq.gains[0] == 3.0
+        assert ctrl._cfg["eq"][0] == 3.0
+        assert json.loads(cfg_file.read_text()) == {}, \
+            "sin save() el robotraca.json no cambia"
+        ctrl.set_eq_band(0, -3)
+        assert "eq" not in ctrl._cfg
+        assert engine.master_eq.gains == [0.0] * 7
+        ctrl.set_eq_band(0, 20)
+        assert ctrl.eq_gains()[0] == 12.0
+        ctrl.set_eq_band(6, -30)
+        assert ctrl.eq_gains()[6] == -12.0
+    print("  MidiControl.set_eq_band OK")
 
 
 def test_assign_pad_y_volumen():
@@ -512,6 +560,7 @@ def main():
 
     test_build_song_pots()
     test_midictrl_set_song()
+    test_set_eq_band()
     test_assign_pad_y_volumen()
     test_sync_mute_persiste()
     test_midictrl_botones_parseados()

@@ -6,13 +6,14 @@ columna). En INSTRUMENT, con el foco en el ID esas flechas recorren el
 banco (izq/dcha ±1, arr/abj ±16); en el resto de campos (nombre del
 sample, …) vuelven a cambiar de pantalla.
 La cabecera muestra a la izquierda el nombre de la pantalla + la canción
-(` *` si hay cambios sin guardar: lgptsav.dat, pads, knobs o pistas) y a la
+(` *` si hay cambios sin guardar: lgptsav.dat, pads, knobs, eq o pistas) y a la
 derecha la tira fija D S C P I: D = PADS (TRACKS pinta su N magenta en la
 columna D), S = SONG, C = CHAIN (LIVE pinta su V cian en la columna C;
-CONFIG pinta su C magenta en la columna S), P = PHRASE, I = INSTRUMENT. El
+CONFIG pinta su C magenta en la columna S; EQ pinta su Q magenta en la
+columna C), P = PHRASE, I = INSTRUMENT. El
 color indica la altura: azul = fila media, cian = fila de
 arriba (PROJECT/GROOVE/EFECTOS/LIVE), magenta = fila de abajo
-(TABLE/CONFIG/TRACKS), mostrando en esa celda su letra (P/G/T/C/E/V/N). En
+(TABLE/CONFIG/TRACKS/EQ), mostrando en esa celda su letra (P/G/T/C/E/V/N/Q). En
 el chip activo, una raya blanca arriba y/o abajo marca
 si Ctrl+flecha puede subir o bajar de fila; izquierda/derecha se leen
 en la tira D S C P I.
@@ -35,6 +36,7 @@ from screens.instrument_view import InstrumentMenu
 from screens.live_view import LiveGrid
 from screens.pads_view import PadsGrid
 from screens.phrase_view import PhraseGrid
+from screens.eq_view import EqGrid
 from screens.pots_view import PotsGrid
 from screens.project_view import ProjectMenu
 from screens.song_view import SongGrid
@@ -178,6 +180,8 @@ class EditorScreen(Screen):
         self._dirty_cb = on_change
         self.pots_grid = PotsGrid(size_hint=(1, 1),
                                   pos_hint={"x": 0, "y": 0})
+        self.eq_grid = EqGrid(size_hint=(1, 1),
+                              pos_hint={"x": 0, "y": 0})
         self.pads_grid = PadsGrid(size_hint=(1, 1),
                                   pos_hint={"x": 0, "y": 0})
         self.tracks_grid = TracksGrid(size_hint=(1, 1),
@@ -431,6 +435,7 @@ class EditorScreen(Screen):
         views = {
             "song": self.song_grid,
             "pots": self.pots_grid,
+            "eq": self.eq_grid,
             "pads": self.pads_grid,
             "tracks": self.tracks_grid,
             "chain": self.chain_grid,

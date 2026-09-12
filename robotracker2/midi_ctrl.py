@@ -16,7 +16,7 @@ cablea
 `open_midi_input` evalúa `engine_ref` y `pots` en CADA mensaje, así que
 cambiar de canción no requiere reabrir el puerto: set_song muta esas listas
 en sitio y además aplica la config de la canción al engine
-(mute/vocoder/presence/fx/fx_mix/master/pad_volume/pads).
+(mute/vocoder/presence/fx/fx_mix/master/eq/pad_volume/pads).
 
 Los pads son SOLO por canción (clave "pads" del robotraca.json resuelta
 contra la biblioteca de pads, pads/ en la raíz del repo): sin la clave, la
@@ -32,9 +32,10 @@ reconstruye al momento con set_pot_canal/set_pot_efecto.
 import queue
 from pathlib import Path
 
-from sinte_bridge import EFFECT_PRESETS, _apply_pad_volume, \
-    apply_song_config, build_song_pots, load_song_cfg, open_midi_input, \
-    parse_button_spec, parse_pot_target, save_song_cfg
+from sinte_bridge import EFFECT_PRESETS, EQ_BANDS, EQ_MAX_DB, EQ_MIN_DB, \
+    _apply_pad_volume, apply_song_config, build_song_pots, eq_to_cfg, \
+    load_song_cfg, open_midi_input, parse_button_spec, parse_pot_target, \
+    parse_eq, save_song_cfg
 from tracks import cycle_kind, parse_tracks, slot_of, track_at_slot
 from lgpt_model import NUM_TRACKS
 
@@ -132,6 +133,27 @@ class MidiControl:
             return
         self._cfg["mute"] = sorted(engine.muted)
 
+    def eq_gains(self):
+        """Las 7 bandas en dB (plano si no hay canción)."""
+        if self._cfg is None:
+            return parse_eq(None)
+        return parse_eq(self._cfg.get("eq"))
+
+    def set_eq_band(self, index, delta):
+        """Suma `delta` dB a la banda y lo aplica en vivo al engine."""
+        if self._cfg is None or not 0 <= index < EQ_BANDS:
+            return
+        gains = parse_eq(self._cfg.get("eq"))
+        gains[index] = max(EQ_MIN_DB, min(EQ_MAX_DB, gains[index] + delta))
+        dumped = eq_to_cfg(gains)
+        if dumped is None:
+            self._cfg.pop("eq", None)
+        else:
+            self._cfg["eq"] = dumped
+        engine = self.engine_ref.get("engine")
+        if engine is not None and getattr(engine, "master_eq", None) is not None:
+            engine.master_eq.set_gains(gains)
+
     # -- pads sampler por canción (pantalla PADS) ------------------------
     def _save(self):
         if self._cfg is not None and self._song_dir is not None:
@@ -182,8 +204,8 @@ class MidiControl:
 
     def save(self):
         """Persiste en el robotraca.json de la canción la configuración en
-        memoria (pads/pad_volume de PADS, pots/fx_mix de POTS, tracks de
-        TRACKS y mute de SONG). Hasta que la app llama a esto (A sobre la
+        memoria (pads/pad_volume de PADS, pots/fx_mix de POTS, eq de EQ,
+        tracks de TRACKS y mute de SONG). Hasta que la app llama a esto (A sobre la
         fila GUARDAR de cada pantalla o Guardar de la canción) los cambios
         viven solo en self._cfg y en el engine."""
         self._save()

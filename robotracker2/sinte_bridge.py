@@ -29,6 +29,9 @@ from filter_ui import (  # noqa: E402
 from lgpt_writer import save_project  # noqa: E402
 # Control MIDI (botones + knobs) y aplicación de robotraca.json: la misma
 # maquinaria que usan sinte/lgpt_player y mixer (ver sinte/midi_control.py).
+from master_eq import (  # noqa: E402
+    EQ_BANDS, EQ_LABELS, EQ_MAX_DB, EQ_MIN_DB, parse_eq, eq_to_cfg,
+)
 from midi_control import _apply_pad_volume, apply_song_config, \
     build_song_pots, load_song_cfg, match_button, match_pot, \
     open_midi_input, parse_button_spec, parse_pot_target, \
@@ -45,4 +48,6 @@ __all__ = ["LGPTProject", "EFFECT_PRESETS", "Engine",
            "SINTE_DIR", "_apply_pad_volume", "apply_song_config",
            "build_song_pots", "load_song_cfg", "match_button", "match_pot",
            "open_midi_input", "parse_button_spec", "parse_pot_target",
-           "record_hw_pot_cc", "save_song_cfg"]
+           "record_hw_pot_cc", "save_song_cfg",
+           "EQ_BANDS", "EQ_LABELS", "EQ_MAX_DB", "EQ_MIN_DB",
+           "parse_eq", "eq_to_cfg"]

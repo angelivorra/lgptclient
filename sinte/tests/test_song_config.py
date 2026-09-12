@@ -265,5 +265,29 @@ class TestFxNoDisponible(unittest.TestCase):
         self.assertTrue(np.isfinite(out).all())
 
 
+class TestEqEnApplySongConfig(unittest.TestCase):
+    """El campo "eq" del robotraca.json se aplica al cargar la canción."""
+
+    def aplicar(self, cfg: dict):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp)
+            (project_dir / "robotraca.json").write_text(json.dumps(cfg))
+            engine = make_engine()
+            Player._apply_song_config(make_player_sin_audio(),
+                                      project_dir, engine)
+            return engine
+
+    def test_eq_field(self):
+        engine = self.aplicar({"eq": [4, 0, 0, -2, 0, 0, 1]})
+        self.assertEqual(engine.master_eq.gains[0], 4.0)
+        self.assertEqual(engine.master_eq.gains[3], -2.0)
+        self.assertTrue(engine.master_eq.active)
+
+    def test_sin_eq_queda_plano(self):
+        engine = self.aplicar({})
+        self.assertEqual(engine.master_eq.gains, [0.0] * 7)
+        self.assertFalse(engine.master_eq.active)
+
+
 if __name__ == "__main__":
     unittest.main()

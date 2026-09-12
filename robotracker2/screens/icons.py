@@ -32,6 +32,7 @@ GLYPH = {
     "volume": "\ue44a",          # speaker-high
     "empty": "\ue3d4",           # plus
     "effects": "\ue434",         # sliders-horizontal
+    "eq": "\ue1c2",              # equalizer
     "fx": "\ue6b6",              # magic-wand
     "mix": "\ue3b6",             # percent
     "wet": "\ue210",             # drop

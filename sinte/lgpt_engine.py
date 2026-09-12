@@ -53,6 +53,7 @@ import soundfile as sf
 from chords import arp_pool_notes, chord_intervals, expand_chord_notes
 from filter_ui import SVF_MODES, mode_from_param, normalize_mode
 from lgpt_parser import CHANNEL_COUNT, LGPTProject, expand_song
+from master_eq import GraphicEQ
 from play_stats import PlayLog
 
 SAMPLE_RATE = 44100
@@ -1707,6 +1708,8 @@ class Engine:
             self._load_pad_samples(self.wavs_dir)
         # Última reproducción: <canción>/play_stats.txt (robotracker2 y sinte).
         self.play_log = PlayLog(project.dir, sample_rate)
+        # EQ de la mezcla (7 bandas, por canción). Siempre nativo.
+        self.master_eq = GraphicEQ(sample_rate)
 
     def load_pad_bank(self, meta: dict, base: Path):
         """Banco de pads desde `meta` ({"1": "rel.wav", ...}, claves 1-8),
@@ -2036,6 +2039,8 @@ class Engine:
             if not pv.active:
                 self.pad_voice = None
         self._render_preview(out, frames)
+        # EQ de la canción (salida completa: master + pads + preview).
+        self.master_eq.apply(out)
         if self.master_chain is not None:
             self.master_chain.apply(out)
         np.clip(out, -1.0, 1.0, out=out)
