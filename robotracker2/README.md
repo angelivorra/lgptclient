@@ -197,9 +197,13 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    = paso grande, A+izq/dcha = paso fino (estilo LGPT); los enums ciclan. Solo
    se muestran los params que el engine implementa — el resto (Print FX, FX
    amount, Feedback mix, interpol, slices…) **se conserva en el XML** al
-   guardar. Al entrar **desde PHRASE va al instrumento del step**. El
-   teclado MIDI (interfaz **MIDI Notas** de CONFIG) suena ese instrumento
-   **en cualquier pantalla y durante el play**: se recuerda el último que
+   guardar. Al entrar **desde PHRASE va al instrumento del step**; si
+   ese id no está en el banco, lo crea vacío (Sample, o Midi en 80–8F)
+   para cargarle un sample. **Ctrl+flechas** cambian de pantalla
+   (PHRASE / TABLE), no recorren el banco: eso va con **A+dir** en el
+   selector. El teclado MIDI (interfaz **MIDI Notas** de CONFIG) suena ese
+   instrumento **en cualquier pantalla y durante el play**: se recuerda el
+   último que
    hayas tenido abierto en INSTRUMENT. En **Sample**,
    **A abre el navegador de samples** (`screens/sample_browser.py`): navega la
    biblioteca, **previsualiza** al pasar por cada .wav y **A carga** (copia el
@@ -210,7 +214,7 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    recordando la posición del cursor en cada una. Se guarda (writer
    extendido para INSTRUMENTBANK).
 9. **PROJECT** (`screens/project_view.py`): menú reducido — **Tempo** y
-   **Master** editables (izq/dcha ±1, A+izq/dcha ±10), **Load Song**,
+   **Master** editables (izq/dcha ±1; con A, izq/dcha ±1 y arr/abj ±10), **Load Song**,
    **Save Song** (persiste el `.dat`), **Exit** y las dos acciones Compact:
    **Compact Sequencer** borra in-place (sin renumerar, como el LGPT
    original) las chains que la song no usa y las phrases que ninguna chain

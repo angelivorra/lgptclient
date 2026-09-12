@@ -95,6 +95,19 @@ def _run(app):
         f"fue {ed.instrument_menu.instr_id:02X}")
     print(f"  PHRASE -> INSTRUMENT hereda {other:02X} del step anterior OK")
 
+    # id que no está en el banco: se crea y se abre (no cae al 00)
+    missing = next(i for i in range(0x50, 0x80)
+                   if i not in ed.project.instrument_bank)
+    g.cursor_step = 0
+    g.pv.set_instr(0, g.track, missing)
+    ed.goto("instrument")
+    assert ed.instrument_menu.instr_id == missing, (
+        f"debe abrir el {missing:02X} nuevo, "
+        f"fue {ed.instrument_menu.instr_id:02X}")
+    assert missing in ed.project.instrument_bank
+    assert ed.project.instrument_bank[missing]["type"] == "Sample"
+    print(f"  PHRASE -> INSTRUMENT crea el {missing:02X} si no existía OK")
+
 
 def main():
     from robotracker2 import Robotracker2App  # noqa: E402

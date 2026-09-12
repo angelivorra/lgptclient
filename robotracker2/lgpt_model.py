@@ -56,6 +56,17 @@ SAMPLE_INSTR_DEFAULTS = {
     "effect amount": "0",
 }
 
+# 80–8F son MIDI (canal de robotas en 80); el resto, Sample.
+MIDI_INSTR_LO = 0x80
+MIDI_INSTR_HI = 0x8F
+MIDI_INSTR_DEFAULTS = {
+    "channel": "1",
+    "note length": "0",
+    "volume": "255",
+    "table": "-1",
+    "table automation": "false",
+}
+
 EMPTY = 0xFF
 SONG_ROWS = 256
 CHAIN_LEN = 16
@@ -264,6 +275,31 @@ def load_project(project_dir: Path) -> LGPTProject:
     project = LGPTProject(Path(project_dir))
     project.load()
     return project
+
+
+def ensure_instrument(project: LGPTProject, iid) -> bool:
+    """Crea el instrumento `iid` si no está en el banco.
+
+    Sample vacío fuera de 80–8F; Midi en ese rango. `iid` 00–FE.
+    Devuelve True si lo ha creado. No toca uno que ya exista.
+    """
+    try:
+        iid = int(iid)
+    except (TypeError, ValueError):
+        return False
+    if not 0 <= iid <= 0xFE or iid in project.instrument_bank:
+        return False
+    if MIDI_INSTR_LO <= iid <= MIDI_INSTR_HI:
+        project.instrument_bank[iid] = {
+            "type": "Midi",
+            "params": dict(MIDI_INSTR_DEFAULTS),
+        }
+    else:
+        project.instrument_bank[iid] = {
+            "type": "Sample",
+            "params": dict(SAMPLE_INSTR_DEFAULTS),
+        }
+    return True
 
 
 def _ensure_width(project: LGPTProject):

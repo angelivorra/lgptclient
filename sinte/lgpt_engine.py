@@ -1931,6 +1931,17 @@ class Engine:
     def _tick_samples(self) -> float:
         return 60.0 * self.sr * 2.0 / self.tempo / 8.0 / TICKS_PER_STEP
 
+    def set_base_tempo(self, bpm: int):
+        """Tempo de la canción (PROJECT). El knob de tempo sigue acelerando
+        encima (`tempo_scale`). El siguiente tick ya usa el valor nuevo,
+        así que no hay salto."""
+        bpm = max(10, min(255, int(bpm)))
+        if bpm == self.base_tempo:
+            return
+        self.base_tempo = bpm
+        self.tempo = self.base_tempo * self.tempo_scale
+        self.samples_per_tick = self._tick_samples()
+
     def set_tempo_scale(self, scale: float):
         """Acelera el secuenciador sobre el tempo de la canción (knob de
         tempo). Solo cambia el reloj de pasos: los samples siguen sonando a

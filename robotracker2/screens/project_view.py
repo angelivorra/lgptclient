@@ -3,7 +3,8 @@
 Versión reducida de la pantalla Project de LGPT (sin Drive/Type/Transpose/
 Scale/MIDI/Render). Campos:
 
-  Tempo / Master        -> valores editables (izq/dcha ±1, A+izq/dcha ±10)
+  Tempo / Master        -> valores editables (izq/dcha ±1; A+izq/dcha ±1,
+                            A+arr/abj ±10, como en el resto)
   Compact Sequencer / Compact Instruments  -> acciones (Save Song As: pendiente)
   Load Song / Save Song / Save Song As     -> acciones
   Exit                                      -> salir
@@ -64,6 +65,9 @@ class ProjectMenu(Widget):
     def _first_selectable(self):
         return next(i for i, it in enumerate(ITEMS) if it[1] != "gap")
 
+    def current_item(self):
+        return ITEMS[self.index]
+
     def move(self, delta):
         i = self.index
         while True:
@@ -81,6 +85,19 @@ class ProjectMenu(Widget):
         lo, hi = LIMITS[key]
         cur = int(self.project.project.get(key, "0"))
         cur = max(lo, min(hi, cur + delta * step))
+        self.project.project[key] = str(cur)
+        if self.on_change:
+            self.on_change()
+        self._redraw()
+
+    def adjust_by(self, amount):
+        """Suma `amount` al valor (A+dir: ±1 / ±10)."""
+        key, typ, _label, _icon = ITEMS[self.index]
+        if typ != "value" or self.project is None:
+            return
+        lo, hi = LIMITS[key]
+        cur = int(self.project.project.get(key, "0"))
+        cur = max(lo, min(hi, cur + amount))
         self.project.project[key] = str(cur)
         if self.on_change:
             self.on_change()

@@ -109,6 +109,19 @@ class TestTiming(unittest.TestCase):
         self.assertAlmostEqual(engine.samples_per_tick, expected)
         self.assertAlmostEqual(engine.samples_per_tick, 918.75)
 
+    def test_set_base_tempo_recalcula_el_reloj(self):
+        engine = make_engine("120")
+        engine.set_tempo_scale(1.06)
+        engine.set_base_tempo(140)
+        self.assertEqual(engine.base_tempo, 140)
+        self.assertAlmostEqual(engine.tempo, 140 * 1.06)
+        expected = 60.0 * SAMPLE_RATE * 2.0 / engine.tempo / 8.0 / TICKS_PER_STEP
+        self.assertAlmostEqual(engine.samples_per_tick, expected)
+        engine.set_base_tempo(9)
+        self.assertEqual(engine.base_tempo, 10)
+        engine.set_base_tempo(300)
+        self.assertEqual(engine.base_tempo, 255)
+
     def test_step_advance_every_6_ticks(self):
         # La fila 0 dura 6 ticks (0-5); el avance ocurre en el tick 6
         engine = make_engine("120")

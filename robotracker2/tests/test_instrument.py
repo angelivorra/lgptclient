@@ -13,8 +13,8 @@ comprobar:
   (writer actualiza VALUE en sitio y no toca lo demás)
 - cargar un sample pone el recorte de principio a fin y loopmode none;
   A+arr en End no pasa del largo del WAV
-- L2+dpad recorre el banco solo con el foco en el ID; en el nombre del
-  sample (u otro campo) vuelve a cambiar de pantalla (PHRASE/TABLE)
+- L2+dpad siempre cambia de pantalla (PHRASE/TABLE), también con el
+  foco en el ID; el banco se recorre con A+dir
 """
 
 import os
@@ -251,24 +251,22 @@ def _e2e(app, song):
     assert m.pos_in_ids == pos
     print("  selector de instrumento cicla OK")
 
-    # --- L2+dpad recorre el banco y no salta de pantalla ------------------
+    # --- L2+dpad siempre cambia de pantalla (también en el ID) ----------
     m.select_instrument(sample_iid)
     _navigate(m, 0, 0)
     pos = m.pos_in_ids
-    ids = m.instr_ids
-    app._dispatch(RIGHT, {RIGHT, L2})
-    assert ed.current == "instrument", "L2+dcha en el ID no debe irse"
-    assert m.pos_in_ids == (pos + 1) % len(ids), (m.pos_in_ids, pos)
+    assert m.field_key() == "__instr__"
     app._dispatch(LEFT, {LEFT, L2})
-    assert ed.current == "instrument", "L2+izq en el ID no debe ir a PHRASE"
-    assert m.pos_in_ids == pos
-    app._dispatch(UP, {UP, L2})
-    assert ed.current == "instrument"
-    assert m.pos_in_ids == (pos + 16) % len(ids)
+    assert ed.current == "phrase", "L2+izq en el ID va a PHRASE"
+    assert m.pos_in_ids == pos, "L2+izq no debe ciclar el banco"
+    ed.goto("instrument")
+    m.select_instrument(sample_iid)
+    _navigate(m, 0, 0)
     app._dispatch(DOWN, {DOWN, L2})
-    assert ed.current == "instrument", "L2+abj en el ID no debe ir a TABLE"
-    assert m.pos_in_ids == pos
-    print("  L2+dpad en el ID cicla instrumentos OK")
+    assert ed.current == "instrument_table", "L2+abj en el ID va a TABLE"
+    ed.goto("instrument")
+    m.select_instrument(sample_iid)
+    print("  L2+dpad en el ID cambia de pantalla OK")
 
     ri, si = _row_of(m, "sample")
     _navigate(m, ri, si)

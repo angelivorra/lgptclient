@@ -2,9 +2,8 @@
 
 Navegación entre pantallas con L+dpad (Ctrl+flechas en PC) según `navmap`
 (arriba/abajo = celda inmediata; izquierda/derecha = principal de la
-columna). En INSTRUMENT, con el foco en el ID esas flechas recorren el
-banco (izq/dcha ±1, arr/abj ±16); en el resto de campos (nombre del
-sample, …) vuelven a cambiar de pantalla.
+columna). En INSTRUMENT, Ctrl+flechas también cambian de pantalla
+(PHRASE a la izquierda, TABLE abajo); el banco se recorre con A+dir.
 La cabecera muestra a la izquierda el nombre de la pantalla + la canción
 (` *` si hay cambios sin guardar: lgptsav.dat, pads, knobs, eq o pistas) y a la
 derecha la tira fija D S C P I: D = PADS (TRACKS pinta su N magenta en la
@@ -458,14 +457,7 @@ class EditorScreen(Screen):
     def _nav_dirs(self):
         """Direcciones con pantalla vecina (según `navmap`): encienden
         las rayas del chip activo.
-
-        En INSTRUMENT, con el foco en el ID, Ctrl+flechas recorre el
-        banco: no se pintan las rayas. En el nombre del sample y el
-        resto de campos sí (PHRASE a la izquierda, TABLE abajo).
         """
-        if (self.current == "instrument"
-                and self.instrument_menu.field_key() == "__instr__"):
-            return set()
         return {name for (dx, dy), name in zip(_DIR_DELTAS, DIR_NAMES)
                 if neighbor(self.current, dx, dy)}
 

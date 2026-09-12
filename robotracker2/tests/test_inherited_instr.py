@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lgpt_model import (EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView,  # noqa: E402
+                        SAMPLE_INSTR_DEFAULTS, ensure_instrument,
                         inherited_instr, nudge_cell)
 from sinte_bridge import LGPTProject  # noqa: E402
 
@@ -79,6 +80,19 @@ def test_inherited_and_select():
         assert nudge_cell(pv, 1, 0, 0x10, col="instr")
         assert p.instruments[1] == 0x10
         print("  A+dcha ±1 / A+arr ±0x10 hex OK")
+
+        assert 0x50 not in p.instrument_bank
+        assert ensure_instrument(p, 0x50)
+        assert p.instrument_bank[0x50]["type"] == "Sample"
+        assert p.instrument_bank[0x50]["params"]["sample"] == ""
+        for key, val in SAMPLE_INSTR_DEFAULTS.items():
+            assert p.instrument_bank[0x50]["params"][key] == val, key
+        assert not ensure_instrument(p, 0x50), "no recrea uno que ya existe"
+        assert ensure_instrument(p, 0x81)
+        assert p.instrument_bank[0x81]["type"] == "Midi"
+        assert not ensure_instrument(p, 0xFF)
+        assert not ensure_instrument(p, None)
+        print("  ensure_instrument crea Sample/Midi y no pisa OK")
 
 
 if __name__ == "__main__":

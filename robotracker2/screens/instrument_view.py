@@ -15,6 +15,7 @@ from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
+from lgpt_model import ensure_instrument
 from sinte_bridge import (FILTER_MODES, cut_label, field_help, mode_label,
                           note_byte_to_name, res_label, type_label)
 from theme import (COLOR_ACCENT, COLOR_BG, COLOR_BORDER, COLOR_HDR, COLOR_HINT,
@@ -115,17 +116,24 @@ class InstrumentMenu(Widget):
         return f"{self.instr_id:02X}" if self.instr_ids else "--"
 
     def select_instrument(self, iid):
-        if self.project is not None:
-            self.instr_ids = sorted(self.project.instrument_bank)
+        """Abre `iid`. Si no está en el banco, lo crea (Sample vacío o
+        Midi en 80–8F) para poder cargarle un sample desde PHRASE."""
+        if self.project is None:
+            return
         try:
             iid = int(iid)
         except (TypeError, ValueError):
             return
-        if iid in self.instr_ids:
-            self.pos_in_ids = self.instr_ids.index(iid)
-            self._reset_cursor()
-            self._wave_key = None
-            self._redraw()
+        created = ensure_instrument(self.project, iid)
+        self.instr_ids = sorted(self.project.instrument_bank)
+        if iid not in self.instr_ids:
+            return
+        self.pos_in_ids = self.instr_ids.index(iid)
+        self._reset_cursor()
+        self._wave_key = None
+        self._redraw()
+        if created and self.on_change:
+            self.on_change()
 
     def field_key(self):
         return self._layout()[self.row_idx][1][self.slot][0]

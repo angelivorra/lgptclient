@@ -69,6 +69,7 @@ from screens.confirm import ConfirmDialog
 from screens.load_song import LoadSongScreen
 from screens.editor import EditorScreen
 from screens.image_browser import ImageBrowser
+from screens.project_view import LIMITS as PROJECT_VALUE_LIMITS
 from screens.sample_browser import SampleBrowser
 from theme import setup_window
 
@@ -89,6 +90,8 @@ _YES_NO_OPTS = [("yes", "Sí"), ("no", "No")]
 
 # Botón lógico del dpad -> desplazamiento en la rejilla de pantallas (L+dir).
 NAV_DELTA = {UP: (0, -1), DOWN: (0, 1), LEFT: (-1, 0), RIGHT: (1, 0)}
+# A+dpad sobre un valor decimal: izq/dcha fino, arr/abj de 10 en 10.
+A_DIR_DELTA = {LEFT: -1, RIGHT: 1, UP: 10, DOWN: -10}
 
 
 class Robotracker2App(App):
@@ -413,18 +416,7 @@ class Robotracker2App(App):
     def _dispatch_editor(self, button, active):
         ed = self.editor_screen
         # Navegación entre pantallas (global en el editor): L2 (Ctrl izq) + dpad.
-        # En INSTRUMENT, con el foco en el ID del instrumento el mismo combo
-        # recorre el banco (izq/dcha ±1, arr/abj ±16). En cualquier otro
-        # campo (el nombre del sample, volumen, …) vuelve a cambiar de
-        # pantalla: Ctrl+izq a PHRASE, Ctrl+abj a TABLE.
         if button in DPAD and L2 in active:
-            if (ed.current == "instrument"
-                    and ed.instrument_menu.field_key() == "__instr__"):
-                d = 1 if button in (RIGHT, UP) else -1
-                ed.instrument_menu.cycle_instrument(
-                    d, coarse=button in (UP, DOWN))
-                self._retrigger_preview()
-                return True
             ed.navigate(*NAV_DELTA[button])
             return True
         if button == START:                 # play/stop (global en el editor)
@@ -547,7 +539,7 @@ class Robotracker2App(App):
             delta = 1 if dpad in (UP, RIGHT) else -1
             self._midi_ctrl.set_pot_efecto(pot, delta)
         else:
-            delta = {LEFT: -1, RIGHT: 1, UP: 10, DOWN: -10}[dpad]
+            delta = A_DIR_DELTA[dpad]
             self._midi_ctrl.set_pot_mix(pot, delta)
         g.set_state(self._midi_ctrl.pots_state())
         self._pots_dirty = True
@@ -1112,14 +1104,25 @@ class Robotracker2App(App):
 
     def _dispatch_project(self, button, active):
         m = self.editor_screen.project_menu
+        key, typ, _label, _icon = m.current_item()
+        if button in DPAD and A in active and typ == "value":
+            delta = A_DIR_DELTA[button]
+            if key == "tempo":
+                self._nudge_tempo(delta)
+            else:
+                m.adjust_by(delta)
+            self._a_consumed = True
+            return True
         if button == UP:
             m.move(-1)
         elif button == DOWN:
             m.move(1)
         elif button in (LEFT, RIGHT):
-            m.adjust(1 if button == RIGHT else -1, coarse=(A in active))
-            if A in active:
-                self._a_consumed = True
+            delta = 1 if button == RIGHT else -1
+            if typ == "value" and key == "tempo":
+                self._nudge_tempo(delta)
+            else:
+                m.adjust(delta)
         elif button == A:
             self._a_consumed = False                 # tap activa la acción
         elif button == BACK:
@@ -1682,6 +1685,24 @@ class Robotracker2App(App):
         """Asterisco en cabecera si hay cambios de canción, pads, knobs, eq
         o pistas."""
         self.editor_screen.set_unsaved(self._session_dirty())
+
+    def _nudge_tempo(self, delta):
+        """BPM de la canción (PROJECT, A+dir). En vivo + dirty."""
+        ed = self.editor_screen
+        if ed.project is None:
+            return
+        lo, hi = PROJECT_VALUE_LIMITS["tempo"]
+        cur = int(ed.project.project.get("tempo", "125"))
+        new = max(lo, min(hi, cur + delta))
+        if new == cur:
+            return
+        ed.project.project["tempo"] = str(new)
+        engine = getattr(self.player, "engine", None)
+        if engine is not None:
+            engine.set_base_tempo(new)
+        self._mark_dirty()
+        ed.project_menu._redraw()
+        ed.refresh_header()
 
     def _mark_dirty(self):
         self.dirty = True
