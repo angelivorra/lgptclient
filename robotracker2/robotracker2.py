@@ -1230,7 +1230,9 @@ class Robotracker2App(App):
         if opts is None:
             opts = _CONFIRM_OPTS
         self.dialog = ConfirmDialog(message, opts, on_proceed,
-                                    selected=len(opts) - 1)  # última (segura)
+                                    selected=len(opts) - 1,  # última (segura)
+                                    on_choose=self._dialog_choose,
+                                    on_cancel=self._close_dialog)
         self.root_layout.add_widget(self.dialog)
 
     def _close_dialog(self):

@@ -8,38 +8,42 @@ Scale/MIDI/Render). Campos:
   Load Song / Save Song / Save Song As     -> acciones
   Exit                                      -> salir
 
-El cursor (arriba/abajo) salta los separadores. A (tap) activa la acción; en un
-valor no hace nada. Editar un valor muta `project.project` y marca dirty.
+Cada acción es un botón con icono Phosphor. El cursor (arriba/abajo) salta
+los separadores. A (tap) activa la acción; en un valor no hace nada.
+Editar un valor muta `project.project` y marca dirty.
 """
 
 from kivy.graphics import Color, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
-from theme import COLOR_ACCENT, COLOR_BG, COLOR_ITEM, COLOR_VALUE, core_label
+from screens.icons import draw_icon
+from theme import (COLOR_ACCENT, COLOR_BG, COLOR_ERROR, COLOR_HEADER_BG,
+                   COLOR_ITEM, COLOR_VALUE, core_label)
 
-FONT = dp(24)
-ITEM_H = dp(42)
-GAP = dp(22)
-PAD_TOP = dp(48)
+FONT = dp(20)
+FONT_VAL = dp(18)
+PAD = dp(24)
+GAP = dp(14)
 
-# (clave, tipo, etiqueta); tipo: "value" | "action" | "gap"
+# (clave, tipo, etiqueta, icono Phosphor); tipo: "value" | "action" | "gap"
 ITEMS = [
-    ("tempo", "value", "Tempo"),
-    ("master", "value", "Master"),
-    (None, "gap", None),
-    ("compact_seq", "action", "Compact Sequencer"),
-    ("compact_instr", "action", "Compact Instruments"),
-    (None, "gap", None),
-    ("load", "action", "Load Song"),
-    ("save", "action", "Save Song"),
-    ("save_as", "action", "Save Song As"),
-    (None, "gap", None),
-    ("exit", "action", "Exit"),
+    ("tempo", "value", "Tempo", "tempo"),
+    ("master", "value", "Master", "master"),
+    (None, "gap", None, None),
+    ("compact_seq", "action", "Compactar secuencia", "compact_seq"),
+    ("compact_instr", "action", "Compactar instrumentos", "compact_instr"),
+    (None, "gap", None, None),
+    ("load", "action", "Cargar", "load"),
+    ("save", "action", "Guardar", "save"),
+    ("save_as", "action", "Guardar como", "save_as"),
+    (None, "gap", None, None),
+    ("exit", "action", "Salir", "exit"),
 ]
 
-# límites de los valores editables
 LIMITS = {"tempo": (10, 255), "master": (0, 255)}
+_BTN_BG = (0.14, 0.14, 0.15, 1)
+_BTN_EXIT = (0.22, 0.10, 0.10, 1)
 
 
 class ProjectMenu(Widget):
@@ -52,7 +56,6 @@ class ProjectMenu(Widget):
         self._tex = {}
         self.bind(pos=self._redraw, size=self._redraw)
 
-    # -- estado ---------------------------------------------------------
     def set_project(self, project):
         self.project = project
         self.index = self._first_selectable()
@@ -61,7 +64,6 @@ class ProjectMenu(Widget):
     def _first_selectable(self):
         return next(i for i, it in enumerate(ITEMS) if it[1] != "gap")
 
-    # -- navegación / edición ------------------------------------------
     def move(self, delta):
         i = self.index
         while True:
@@ -72,7 +74,7 @@ class ProjectMenu(Widget):
         self._redraw()
 
     def adjust(self, delta, coarse=False):
-        key, typ, _ = ITEMS[self.index]
+        key, typ, _label, _icon = ITEMS[self.index]
         if typ != "value" or self.project is None:
             return
         step = 10 if coarse else 1
@@ -85,56 +87,80 @@ class ProjectMenu(Widget):
         self._redraw()
 
     def activate(self):
-        key, typ, _ = ITEMS[self.index]
+        key, typ, _label, _icon = ITEMS[self.index]
         if typ == "action" and self.on_action:
             self.on_action(key)
 
-    # -- dibujo ---------------------------------------------------------
-    def _display(self, key, typ, label):
-        if typ == "value" and self.project is not None:
-            val = int(self.project.project.get(key, "0"))
-            if key == "tempo":
-                return f"{label}: {val}  [{val:02X}]"
-            return f"{label}: {val}"
-        return label
+    def _value_text(self, key):
+        val = int(self.project.project.get(key, "0")) if self.project else 0
+        if key == "tempo":
+            return f"{val}  [{val:02X}]"
+        return str(val)
 
-    def _texture(self, text):
-        tex = self._tex.get(text)
+    def _texture(self, text, font_size=FONT):
+        key = (text, font_size)
+        tex = self._tex.get(key)
         if tex is None:
-            tex = core_label(text, FONT).texture
-            self._tex[text] = tex
+            tex = core_label(text, font_size).texture
+            self._tex[key] = tex
         return tex
 
     def _redraw(self, *_):
         self.canvas.clear()
-        # bloque centrado: ancho = la etiqueta más ancha, alineadas a su izq.
-        maxw = dp(1)
-        for key, typ, label in ITEMS:
-            if typ != "gap":
-                maxw = max(maxw,
-                           self._texture(self._display(key, typ, label)).size[0])
-        x0 = self.center_x - maxw / 2
+        n_btns = sum(1 for it in ITEMS if it[1] != "gap")
+        n_gaps = sum(1 for it in ITEMS if it[1] == "gap")
+        avail = max(dp(200), self.height - PAD * 2)
+        btn_h = min(dp(56), max(dp(40),
+                                (avail - n_gaps * GAP) / n_btns))
+        btn_w = min(self.width - dp(48), dp(560))
+        x0 = self.x + (self.width - btn_w) / 2
+        radius = dp(12)
+        icon_s = min(dp(26), btn_h * 0.48)
         with self.canvas:
             Color(*COLOR_BG)
             Rectangle(pos=self.pos, size=self.size)
-            y = self.y + self.height - PAD_TOP
-            for i, (key, typ, label) in enumerate(ITEMS):
+            y = self.y + self.height - PAD - btn_h
+            for i, (key, typ, label, icon) in enumerate(ITEMS):
                 if typ == "gap":
                     y -= GAP
                     continue
-                tex = self._texture(self._display(key, typ, label))
-                tw, th = tex.size
                 selected = (i == self.index)
-                if selected:
-                    Color(*COLOR_ACCENT)
-                    RoundedRectangle(pos=(x0 - dp(12), y - dp(6)),
-                                     size=(tw + dp(24), th + dp(12)),
-                                     radius=[dp(8)])
-                    color = COLOR_BG
-                elif typ == "value":
-                    color = COLOR_VALUE
-                else:
-                    color = COLOR_ITEM
-                Color(*color)
-                Rectangle(texture=tex, size=(tw, th), pos=(x0, y))
-                y -= ITEM_H
+                self._draw_button(x0, y, btn_w, btn_h - dp(6), radius,
+                                  key, typ, label, icon, selected, icon_s)
+                y -= btn_h
+
+    def _draw_button(self, x, y, w, h, radius, key, typ, label, icon,
+                     selected, icon_s):
+        if selected:
+            bg = COLOR_ACCENT
+            ink = COLOR_BG
+            val_ink = COLOR_BG
+        elif key == "exit":
+            bg = _BTN_EXIT
+            ink = COLOR_ERROR
+            val_ink = COLOR_ERROR
+        elif typ == "value":
+            bg = COLOR_HEADER_BG
+            ink = COLOR_ITEM
+            val_ink = COLOR_VALUE
+        else:
+            bg = _BTN_BG
+            ink = COLOR_ITEM
+            val_ink = COLOR_VALUE
+        Color(*bg)
+        RoundedRectangle(pos=(x, y), size=(w, h), radius=[radius])
+        cx = x + dp(18) + icon_s / 2
+        cy = y + h / 2
+        draw_icon(cx, cy, icon_s, icon, ink)
+        tx = x + dp(18) + icon_s + dp(12)
+        tex = self._texture(label)
+        tw, th = tex.size
+        Color(*ink)
+        Rectangle(texture=tex, size=(tw, th),
+                  pos=(tx, y + (h - th) / 2))
+        if typ == "value":
+            vtex = self._texture(self._value_text(key), FONT_VAL)
+            vw, vh = vtex.size
+            Color(*val_ink)
+            Rectangle(texture=vtex, size=(vw, vh),
+                      pos=(x + w - vw - dp(18), y + (h - vh) / 2))

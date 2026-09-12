@@ -22,11 +22,14 @@ from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, UP
+from screens.icons import draw_icon
 from screens.track_icons import draw_track_icon
 from sinte_bridge import EFFECT_PRESETS
 from theme import (COLOR_ACCENT, COLOR_BG, COLOR_BORDER, COLOR_EMPTY,
-                   COLOR_HINT, COLOR_HINT_BG, COLOR_NAME, COLOR_OK,
-                   COLOR_ROW_CURSOR, COLOR_VOL, core_label)
+                   COLOR_HINT, COLOR_NAME, COLOR_OK, COLOR_VOL, core_label)
+
+_CARD = (0.14, 0.14, 0.15, 1)
+_CHIP = (0.10, 0.10, 0.11, 1)
 from tracks import DEFAULT_TRACKS, kind_at, track_caption
 
 POT_NOS = [1, 2, 5, 6]              # knobs configurables del controlador
@@ -136,15 +139,14 @@ class PotsGrid(Widget):
         with self.canvas:
             Color(*COLOR_BG)
             Rectangle(pos=self.pos, size=self.size)
-            w = min(self.width - dp(60), dp(640))
+            w = min(self.width - dp(48), dp(640))
             x0 = self.x + (self.width - w) / 2
-            top = self.y + self.height - dp(20)
-            self._text_left(x0, top - ROW_H, w, "EFECTOS", COLOR_ACCENT,
-                            h=ROW_H)
-            gap = dp(12)
+            top = self.y + self.height - dp(16)
+            self._draw_heading(x0, top - ROW_H, w, "effects", "EFECTOS")
+            gap = dp(14)
             cell_w = (w - gap) / 2
             grid_top = top - ROW_H - dp(4)
-            save_h = ROW_H
+            save_h = dp(52)
             grid_bottom = self.y + dp(8) + HINT_H + dp(8) + save_h
             cell_h = max(dp(140), (grid_top - grid_bottom - gap) / 2)
             for i in range(4):
@@ -152,42 +154,36 @@ class PotsGrid(Widget):
                 x = x0 + col * (cell_w + gap)
                 y = grid_top - (row + 1) * cell_h - row * gap
                 self._draw_pot(i, x, y, cell_w, cell_h)
-            y_save = grid_bottom - save_h
-            if self.cursor == self.SAVE_ROW:
-                Color(*COLOR_ROW_CURSOR)
-                Rectangle(pos=(x0, y_save), size=(w, save_h))
-                Color(*COLOR_OK)
-                RoundedRectangle(pos=(x0 + dp(3), y_save + dp(3)),
-                                 size=(w - dp(6), save_h - dp(6)),
-                                 radius=[dp(6)])
-                Color(*COLOR_ROW_CURSOR)
-                RoundedRectangle(pos=(x0 + dp(7), y_save + dp(7)),
-                                 size=(w - dp(14), save_h - dp(14)),
-                                 radius=[dp(4)])
-                self._text_center(x0, y_save, w, "GUARDAR", COLOR_OK,
-                                  h=save_h)
-            else:
-                self._text_center(x0, y_save, w, "GUARDAR", COLOR_HINT,
-                                  h=save_h)
+            self._draw_save(x0, grid_bottom - save_h, w, save_h - dp(6))
             self._draw_hint(x0, w)
             if self.picker is not None:
                 self._draw_picker()
 
+    def _draw_heading(self, x, y, w, icon, title):
+        draw_icon(x + dp(16), y + ROW_H / 2, dp(24), icon, COLOR_ACCENT)
+        self._text_left(x + dp(40), y, w, title, COLOR_ACCENT, h=ROW_H)
+
+    def _draw_save(self, x, y, w, h):
+        selected = self.cursor == self.SAVE_ROW
+        bg = COLOR_OK if selected else _CARD
+        ink = COLOR_BG if selected else COLOR_HINT
+        Color(*bg)
+        RoundedRectangle(pos=(x, y), size=(w, h), radius=[dp(12)])
+        draw_icon(x + w / 2 - dp(52), y + h / 2, dp(22), "save", ink)
+        self._text_center(x + dp(16), y, w, "GUARDAR", ink, h=h)
+
     def _draw_pot(self, i, x, y, w, h):
         selected = i == self.cursor
         canal, efecto, pct = self.pots[i]
-        Color(*COLOR_ROW_CURSOR)
-        RoundedRectangle(pos=(x, y), size=(w, h), radius=[dp(8)])
+        Color(*(COLOR_ACCENT if selected else _CARD))
+        RoundedRectangle(pos=(x, y), size=(w, h), radius=[dp(14)])
         if selected:
-            Color(*COLOR_ACCENT)
-            RoundedRectangle(pos=(x + dp(2), y + dp(2)),
-                             size=(w - dp(4), h - dp(4)), radius=[dp(7)])
-            Color(*COLOR_ROW_CURSOR)
-            RoundedRectangle(pos=(x + dp(6), y + dp(6)),
-                             size=(w - dp(12), h - dp(12)), radius=[dp(5)])
+            Color(*_CARD)
+            RoundedRectangle(pos=(x + dp(3), y + dp(3)),
+                             size=(w - dp(6), h - dp(6)), radius=[dp(12)])
         cx = x + w / 2
-        r = min(w * 0.28, (h - dp(72)) * 0.42)
-        cy = y + h - dp(18) - r
+        r = min(w * 0.26, (h - dp(76)) * 0.40)
+        cy = y + h - dp(22) - r
         cc = self.live_cc[i] if i < len(self.live_cc) else None
         live = cc is not None
         dial_pct = (cc / 127.0) * 100.0 if live else 0.0
@@ -196,61 +192,53 @@ class PotsGrid(Widget):
         else:
             dial_c = COLOR_BORDER
         self._draw_dial(cx, cy, r, dial_pct, dial_c)
+        ink = COLOR_ACCENT if selected else COLOR_NAME
         title = f"POT {POT_NOS[i]}" + (f"  {cc}" if live else "")
-        self._text_center(x, cy - dp(8), w, title,
-                          COLOR_ACCENT if selected else COLOR_BORDER,
-                          h=dp(22), font_size=FONT_SMALL)
+        draw_icon(x + dp(22), cy - dp(2), dp(16), "effects", ink)
+        self._text_left(x + dp(36), cy - dp(14), w - dp(48), title, ink,
+                        h=dp(22), font_size=FONT_SMALL)
         on = efecto is not None
-        # CANAL (icono + nº + nombre) · EFECTO · %
         e_txt = efecto if efecto else "—"
         p_txt = f"{pct}%" if on else "—"
-        col_w = (w - dp(16)) * 0.46, (w - dp(16)) * 0.32, (w - dp(16)) * 0.22
-        ly = y + dp(8)
-        lx = x + dp(8)
+        col_w = (w - dp(20)) * 0.44, (w - dp(20)) * 0.32, (w - dp(20)) * 0.24
+        ly = y + dp(10)
+        lx = x + dp(10)
+        chip_h = dp(34)
         for c, cw in enumerate(col_w):
             cell = selected and c == self.col
-            if cell:
-                Color(*COLOR_ACCENT)
-                RoundedRectangle(pos=(lx + dp(2), ly + dp(2)),
-                                 size=(cw - dp(4), dp(28)),
-                                 radius=[dp(4)])
-                Color(*COLOR_ROW_CURSOR)
-                RoundedRectangle(pos=(lx + dp(5), ly + dp(5)),
-                                 size=(cw - dp(10), dp(22)),
-                                 radius=[dp(3)])
+            Color(*(COLOR_ACCENT if cell else _CHIP))
+            RoundedRectangle(pos=(lx, ly), size=(cw - dp(4), chip_h),
+                             radius=[dp(10)])
             if c == 0:
-                self._draw_canal(lx, ly, cw, canal, cell)
+                self._draw_canal(lx, ly, cw - dp(4), canal, cell, chip_h)
             else:
                 txt = e_txt if c == 1 else p_txt
+                icon = "fx" if c == 1 else "mix"
                 if cell:
-                    color = COLOR_ACCENT
+                    color = COLOR_BG
                 elif txt == "—":
                     color = COLOR_EMPTY
                 elif c == 2:
                     color = COLOR_VOL
                 else:
                     color = COLOR_NAME
-                self._text_center(lx, ly, cw, txt, color, h=dp(32),
-                                  font_size=FONT_SMALL)
+                draw_icon(lx + dp(12), ly + chip_h / 2, dp(14), icon, color)
+                self._text_left(lx + dp(24), ly, cw - dp(28), txt, color,
+                                h=chip_h, font_size=FONT_SMALL)
             lx += cw
 
-    def _draw_canal(self, x, y, w, canal, selected):
-        """Icono + '3 DRUM' (o —) en la columna CANAL."""
+    def _draw_canal(self, x, y, w, canal, selected, h):
+        """Icono de pista + '3 DRUM' (o —) en la columna CANAL."""
+        color = COLOR_BG if selected else (COLOR_EMPTY if not canal else COLOR_NAME)
         if not canal:
-            color = COLOR_ACCENT if selected else COLOR_EMPTY
-            self._text_center(x, y, w, "—", color, h=dp(32),
-                              font_size=FONT_SMALL)
+            self._text_center(x, y, w, "—", color, h=h, font_size=FONT_SMALL)
             return
         kind = kind_at(self.tracks, canal - 1)
-        color = COLOR_ACCENT if selected else COLOR_NAME
-        s = dp(18)
-        cx = x + dp(10) + s / 2
-        cy = y + dp(16)
-        bg = COLOR_ROW_CURSOR
-        draw_track_icon(cx, cy, s, kind, color, bg=bg)
-        self._text_left(cx + s * 0.65, y, w - (cx + s * 0.65 - x),
+        s = dp(16)
+        draw_track_icon(x + dp(12), y + h / 2, s, kind, color, bg=_CHIP)
+        self._text_left(x + dp(24), y, w - dp(28),
                         track_caption(canal - 1, kind), color,
-                        h=dp(32), font_size=FONT_SMALL)
+                        h=h, font_size=FONT_SMALL)
 
     def _draw_dial(self, cx, cy, r, pct, color):
         Color(0.08, 0.08, 0.09, 1)
@@ -275,8 +263,8 @@ class PotsGrid(Widget):
 
     def _draw_hint(self, x0, w):
         y = self.y + dp(8)
-        Color(*COLOR_HINT_BG)
-        Rectangle(pos=(x0, y), size=(w, HINT_H))
+        Color(*_CARD)
+        RoundedRectangle(pos=(x0, y), size=(w, HINT_H), radius=[dp(10)])
         if self.picker is not None:
             hint = "lista EFECTO · arr/abj mueve · A elige · B cierra"
         elif self.cursor == self.SAVE_ROW:
@@ -284,7 +272,7 @@ class PotsGrid(Widget):
         else:
             hint = ("cruceta: knob / columna · "
                     + COL_HINTS[self.col])
-        self._text_left(x0 + dp(12), y, w - dp(24), hint, COLOR_ACCENT,
+        self._text_left(x0 + dp(14), y, w - dp(24), hint, COLOR_HINT,
                         h=HINT_H, font_size=FONT_SMALL)
 
     def _draw_picker(self):
@@ -293,32 +281,28 @@ class PotsGrid(Widget):
         ph = (n + 2) * PICK_ROW_H
         px = self.x + (self.width - pw) / 2
         py = self.y + (self.height - ph) / 2
-        Color(0, 0, 0, 0.55)
+        Color(0, 0, 0, 0.62)
         Rectangle(pos=self.pos, size=self.size)
-        Color(*COLOR_ROW_CURSOR)
-        Rectangle(pos=(px, py), size=(pw, ph))
-        Color(*COLOR_ACCENT)
-        RoundedRectangle(pos=(px + dp(3), py + dp(3)),
-                         size=(pw - dp(6), ph - dp(6)), radius=[dp(8)])
-        Color(*COLOR_ROW_CURSOR)
-        RoundedRectangle(pos=(px + dp(7), py + dp(7)),
-                         size=(pw - dp(14), ph - dp(14)), radius=[dp(6)])
-        self._text_center(px, py + (n + 1) * PICK_ROW_H, pw, "EFECTO",
-                          COLOR_ACCENT, h=PICK_ROW_H)
+        Color(*_CARD)
+        RoundedRectangle(pos=(px, py), size=(pw, ph), radius=[dp(16)])
+        draw_icon(px + dp(36), py + (n + 1) * PICK_ROW_H + PICK_ROW_H / 2,
+                  dp(20), "fx", COLOR_ACCENT)
+        self._text_left(px + dp(52), py + (n + 1) * PICK_ROW_H, pw - dp(70),
+                        "EFECTO", COLOR_ACCENT, h=PICK_ROW_H)
         for i, nombre in enumerate(EFFECT_CYCLE):
             y = py + (n - i) * PICK_ROW_H
             if i == self.picker:
-                Color(*COLOR_ROW_CURSOR)
-                Rectangle(pos=(px + dp(10), y + dp(3)),
-                          size=(pw - dp(20), PICK_ROW_H - dp(6)))
                 Color(*COLOR_ACCENT)
                 RoundedRectangle(pos=(px + dp(12), y + dp(5)),
                                  size=(pw - dp(24), PICK_ROW_H - dp(10)),
-                                 radius=[dp(4)])
-                color = COLOR_ACCENT
+                                 radius=[dp(10)])
+                color = COLOR_BG
+                icon = "yes"
             else:
                 color = COLOR_NAME
-            self._text_left(px + dp(40), y, pw - dp(80), nombre, color,
+                icon = "fx" if nombre != "off" else "cancel"
+            draw_icon(px + dp(36), y + PICK_ROW_H / 2, dp(18), icon, color)
+            self._text_left(px + dp(56), y, pw - dp(80), nombre, color,
                             h=PICK_ROW_H, font_size=FONT)
         self._text_center(px, py, pw, "A: elegir · B: cancelar", COLOR_HINT,
                           h=PICK_ROW_H, font_size=FONT_SMALL)

@@ -7,7 +7,7 @@
 # /storage/roms/ports/. Reutiliza el venv de robotracker (/storage/robotracker-
 # venv) y su sinte (/storage/sinte), que ya deben estar en el dispositivo.
 # Sincroniza la biblioteca de samples (samples/ con subcarpetas), pads/,
-# /storage/images y /storage/ayuda_imagenes.
+# /storage/images, /storage/ayuda_imagenes y las canciones con sus samples.
 set -euo pipefail
 
 HOST="${1:?uso: install.sh [usuario@]host}"
@@ -24,30 +24,13 @@ ssh "$HOST" '
            /storage/images /storage/ayuda_imagenes
 '
 
-# midi_control.py (control MIDI del reproductor, compartido con sinte) y
-# lgpt_writer.py (fix de Compact Instruments: quita los INSTRUMENT huérfanos;
-# aditivo, compatible con el sinte antiguo) van a /storage/sinte sin tocar
-# nada más de lo que robotracker usa.
-echo ">> Copiando sinte/midi_control.py y lgpt_writer.py a /storage/sinte ..."
-scp "$REPO/sinte/midi_control.py" "$HOST:/storage/sinte/midi_control.py"
-scp "$REPO/sinte/lgpt_writer.py" "$HOST:/storage/sinte/lgpt_writer.py"
-
-# El control MIDI usa atributos del engine (fx_presence, pad_volume_map...,
-# los mismos que mixer/sinte): avisar si el sinte de la Odin es más antiguo.
-ssh "$HOST" '
-  if ! grep -q "fx_presence" /storage/sinte/lgpt_engine.py \
-     || ! grep -q "pad_volume_map" /storage/sinte/lgpt_engine.py; then
-    echo "AVISO: /storage/sinte/lgpt_engine.py es antiguo (sin fx_presence"
-    echo "       o pad_volume_map). robotracker2 arrancará, pero el control"
-    echo "       MIDI (robotraca.json) fallará al cargar canciones."
-  fi
-  if ! grep -q "load_pad_bank" /storage/sinte/lgpt_engine.py; then
-    echo "AVISO: /storage/sinte/lgpt_engine.py no tiene load_pad_bank."
-    echo "       La pantalla PADS guardará (robotraca.json), pero los pads"
-    echo "       por canción no sonarán hasta actualizar el sinte de"
-    echo "       robotracker."
-  fi
-'
+# Módulos de sinte que importa robotracker2 (parser/engine/chords/filtro/
+# writer/MIDI). El resto de /storage/sinte (player, songs, venv) no se toca.
+echo ">> Copiando módulos de sinte que usa robotracker2..."
+for f in lgpt_parser.py lgpt_engine.py lgpt_writer.py midi_control.py \
+         chords.py filter_ui.py ladspa_fx.py; do
+  scp "$REPO/sinte/$f" "$HOST:/storage/sinte/$f"
+done
 
 # images/ (eventos de pantalla del canal de robotas) y ayuda_imagenes/ (sus
 # miniaturas ya renderizadas, para la vista previa del editor): pequeñas,
@@ -71,6 +54,16 @@ fi
 if [ -d "$REPO/pads" ]; then
     echo ">> Sincronizando pads/ (biblioteca de samples de los pads)..."
     rsync -a --delete "$REPO/pads/" "$HOST:/storage/pads/"
+fi
+# Canciones: lgptsav.dat, robotraca.json, textos y samples/ (lo que suena).
+# Sin --delete: no borra canciones que solo existan en la Odin.
+if [ -d "$REPO/sinte/songs" ]; then
+    echo ">> Sincronizando canciones (lgptsav / robotraca / samples)..."
+    rsync -a \
+      --exclude '*.bak' --exclude '*.dat.bak' --exclude '__pycache__' \
+      "$REPO/sinte/songs/" "$HOST:/storage/sinte/songs/"
+    echo "   canciones: $(ssh "$HOST" 'ls -d /storage/sinte/songs/lgpt_* 2>/dev/null | wc -l')"
+    echo "   samples de canción: $(ssh "$HOST" 'find /storage/sinte/songs -path "*/samples/*.wav" | wc -l') wav"
 fi
 
 echo ">> Sincronizando código a /storage/robotracker2 ..."

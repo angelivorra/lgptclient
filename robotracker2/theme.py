@@ -108,6 +108,8 @@ LabelBase.register(
     fn_bold=str(_FONTS / "DejaVuSansMono-Bold.ttf"),
 )
 LabelBase.register("Icons", str(_FONTS / "DejaVuSans.ttf"))
+TRACK_ICON_FONT = "TrackIcons"
+LabelBase.register(TRACK_ICON_FONT, str(_FONTS / "Phosphor.ttf"))
 
 
 def core_label(text, font_size, bold=True):
