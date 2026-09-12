@@ -33,6 +33,9 @@ from kivy.config import Config
 # Tamaño de ventana de reserva (fuera de fullscreen). Antes de crear la Window.
 Config.set("graphics", "width", "1280")
 Config.set("graphics", "height", "720")
+# En la Odin Kivy iría a 60 fps y el redibujado pelea el GIL con el audio.
+if os.environ.get("ROBOTRACKER2_EVDEV_GAMEPAD"):
+    Config.set("graphics", "maxfps", "30")
 _ICON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")
 if os.path.isfile(_ICON):
     Config.set("kivy", "window_icon", _ICON)
@@ -59,6 +62,7 @@ except ImportError:
     GamepadReader = None
 from songs import DEFAULT_SONGS, display_name, find_songs, load_project
 from tracks import track_at_slot
+from host import is_handheld
 from player import Player
 from robots import ROBOT_TRACK, RobotPlayback, screen_label
 from screens.confirm import ConfirmDialog
@@ -147,6 +151,7 @@ class Robotracker2App(App):
         self._preview_held = {}       # nota -> vel (teclas aún pulsadas)
         self._midi_ports_retry = 0.0  # hotplug: LPK25/LPD8 en cualquier USB
         self._midi_hotplug = True     # tests lo apagan (sin puertos reales)
+        self._tick_playing = False    # Odin: playhead más lento mientras suena
 
     def build(self):
         setup_window(self.fullscreen)
@@ -207,8 +212,19 @@ class Robotracker2App(App):
                         on_joy_button_up=self._on_joy_button_up,
                         on_joy_hat=self._on_joy_hat,
                         on_joy_axis=self._on_joy_axis)
+        self._tick_playing = False
         Clock.schedule_interval(self._tick, 1 / 30)   # playhead
         return self.root_layout
+
+    def _sync_tick_rate(self, playing):
+        """En la Odin, con Play el playhead baja a 10 Hz: el canvas de SONG
+        a 30 fps (densidad ×2) se comía el GIL y cortaba el audio. En el
+        PC se queda a 30."""
+        if not is_handheld() or playing == self._tick_playing:
+            return
+        self._tick_playing = playing
+        Clock.unschedule(self._tick)
+        Clock.schedule_interval(self._tick, 1 / 10 if playing else 1 / 30)
 
     # ------------------------------------------------------------------
     # Entrada -> botones lógicos
@@ -1541,6 +1557,7 @@ class Robotracker2App(App):
         if p is not None and ed.current == "song":
             ed.song_grid.set_muted(p.engine.muted)   # refleja mutes en vivo
         playing = self.sm.current == "editor" and p is not None and p.playing
+        self._sync_tick_rate(playing)
         if playing and self._play_start is not None:
             ed.set_play_indicator(True,
                                   time.monotonic() - self._play_start)
@@ -1565,11 +1582,15 @@ class Robotracker2App(App):
         self._robot_play.update(p.engine)
         if ed.current == "live":
             ed.live_grid.set_from(self._robot_play)
-            ed.live_grid.tick_pulse(dt)
+            if not is_handheld():
+                ed.live_grid.tick_pulse(dt)
         if ed.current == "song":
             ed.song_grid.set_play(
                 [c.song_pos if c.playing else None for c in chans])
-            ed.song_grid.tick_pulse(dt, hits)
+            # Destello por nota: redibuja la parrilla entera. En la Odin
+            # basta el playhead (set_play) para no comerse el callback.
+            if not is_handheld():
+                ed.song_grid.tick_pulse(dt, hits)
         elif ed.current == "chain":
             t = ed.chain_grid.track
             c = chans[t]

@@ -8,11 +8,36 @@ audio (tests headless) la UI sigue funcionando y el motivo queda en
 `audio_error`.
 """
 
+import os
 import threading
 
+from host import is_handheld
 from sinte_bridge import Engine
 
 SAMPLE_RATE = 44100
+# 2048 como lttileplayer.toml (Pi). En la Odin el callback pelea el GIL con
+# Kivy y ondemand deja los núcleos bajos: 4096 da ~93 ms de presupuesto.
+BLOCKSIZE_DESKTOP = 2048
+BLOCKSIZE_HANDHELD = 4096
+# Salto del reloj del DAC por encima de esto = xrun real (igual que el sinte).
+_DAC_JUMP_S = 0.002
+
+
+def audio_blocksize() -> int:
+    return BLOCKSIZE_HANDHELD if is_handheld() else BLOCKSIZE_DESKTOP
+
+
+def _boost_audio_thread():
+    """Prioridad del hilo de PortAudio. Solo en la Odin (root + handheld)."""
+    if not is_handheld():
+        return
+    try:
+        os.sched_setscheduler(0, os.SCHED_FIFO, os.sched_param(20))
+    except (OSError, PermissionError, AttributeError):
+        try:
+            os.nice(-5)
+        except OSError:
+            pass
 
 
 class Player:
@@ -23,10 +48,14 @@ class Player:
         # aplicado por MidiControl.set_song) y los botones sampleN suenan
         # lo que la canción tenga asignado.
         self.engine = Engine(project, wavs_dir=wavs_dir)
+        self.engine.play_log.set_source("robotracker2")
+        self.engine.play_log.set_blocksize(audio_blocksize())
         self._stream = None
         self._started = False
         self.audio_error = None
         self._stream_lock = threading.Lock()
+        self._expected_dac = None
+        self._prio_done = False
 
     def _ensure_stream(self):
         # Se llama desde el hilo de la UI (play) y desde el hilo del
@@ -36,19 +65,42 @@ class Player:
                 return True
             try:
                 import sounddevice as sd
-                # 2048 como lttileplayer.toml: scream y otros LADSPA pesados
-                # con el blocksize por defecto (~512) se pasan de presupuesto.
-                self._stream = sd.OutputStream(
+                bs = audio_blocksize()
+                self.engine.play_log.set_blocksize(bs)
+                kwargs = dict(
                     samplerate=SAMPLE_RATE, channels=2, dtype="float32",
-                    blocksize=2048,
-                    callback=self._audio_callback)
+                    blocksize=bs, callback=self._audio_callback)
+                if is_handheld():
+                    kwargs["latency"] = "high"
+                try:
+                    self._stream = sd.OutputStream(**kwargs)
+                except Exception:
+                    kwargs.pop("latency", None)
+                    self._stream = sd.OutputStream(**kwargs)
                 self._stream.start()
                 return True
             except Exception as exc:      # sin dispositivo de audio, etc.
                 self.audio_error = str(exc)
                 return False
 
-    def _audio_callback(self, outdata, frames, _time_info, _status):
+    def _audio_callback(self, outdata, frames, time_info, status):
+        if not self._prio_done:
+            self._prio_done = True
+            _boost_audio_thread()
+        log = self.engine.play_log
+        if status:
+            log.note_xrun(str(status))
+        dac = getattr(time_info, "outputBufferDacTime", None)
+        if dac is not None:
+            expected = self._expected_dac
+            if expected is not None:
+                drift = dac - expected
+                if drift > _DAC_JUMP_S:
+                    # Igual que el sinte: adelanta el secuenciador para que
+                    # el compás no quede desplazado tras el silencio del
+                    # driver. El engine anota el salto en play_stats.
+                    self.engine.catch_up(drift)
+            self._expected_dac = dac + frames / SAMPLE_RATE
         outdata[:] = self.engine.render(frames)
 
     def play_from(self, from_row=0):
@@ -89,6 +141,7 @@ class Player:
 
     def close(self):
         if self._stream is not None:
+            self.engine.play_log.finish("close")
             self.engine.panic()
             self._stream.stop()
             self._stream.close()

@@ -53,6 +53,7 @@ import soundfile as sf
 from chords import arp_pool_notes, chord_intervals, expand_chord_notes
 from filter_ui import SVF_MODES, mode_from_param, normalize_mode
 from lgpt_parser import CHANNEL_COUNT, LGPTProject, expand_song
+from play_stats import PlayLog
 
 SAMPLE_RATE = 44100
 MAX_PADS = 8                # pads de sampler (ver wavs_dir/pads.json)
@@ -1704,6 +1705,8 @@ class Engine:
         self.preview_midi: dict[int, MidiDef] = {}
         if self.wavs_dir:
             self._load_pad_samples(self.wavs_dir)
+        # Última reproducción: <canción>/play_stats.txt (robotracker2 y sinte).
+        self.play_log = PlayLog(project.dir, sample_rate)
 
     def load_pad_bank(self, meta: dict, base: Path):
         """Banco de pads desde `meta` ({"1": "rel.wav", ...}, claves 1-8),
@@ -1825,6 +1828,7 @@ class Engine:
         self.unsupported_cmds.clear()
         self._transport("transport_start")
         self.snap_mute_gains()
+        self.play_log.begin(tempo=self.tempo, from_row=from_row)
 
     def snap_mute_gains(self):
         """Deja mute_gain en 0 o 1 según `muted`, sin rampa.
@@ -1949,6 +1953,8 @@ class Engine:
             del controlador (volumen, pan, drive, LP), así que los pots
             se oyen al instante. El pitch se aplica en la voz (t=0).
         """
+        t0 = time.perf_counter()
+        was_playing = self.playing
         self._drain_events()
         # 1. t=0: render de voces por canal
         for ch in self.channels:
@@ -2044,6 +2050,17 @@ class Engine:
                 and self._samples_rendered >= self._lyric_expires_at):
             self.current_lyric = ""
             self._lyric_expires_at = None
+        voices = sum(len(ch.voices) + len(ch.releases) for ch in self.channels)
+        peak = float(np.max(np.abs(out))) if frames else 0.0
+        self.play_log.record_block(
+            frames, time.perf_counter() - t0, voices=voices, peak=peak)
+        if self.unsupported_cmds:
+            self.play_log.note_cmds(self.unsupported_cmds)
+        if was_playing and not self.playing:
+            if self.finished:
+                self.play_log.finish("stop")
+            else:
+                self.play_log.snapshot("pause")
         return out
 
     def _render_channel_audio(self, ch: Channel, buf, off: int, n: int):
@@ -2119,6 +2136,7 @@ class Engine:
         """
         if not self.playing or seconds <= 0.0:
             return
+        self.play_log.note_dac_jump(seconds * 1000.0, recovered=True)
         seconds = min(seconds, self._MAX_CATCH_UP_SECONDS)
         self.tick_phase -= seconds * self.sr
         while self.tick_phase < 1.0 and self.playing:
@@ -2911,3 +2929,5 @@ if __name__ == "__main__":
           f"({rendered / dt:.1f}x tiempo real, pico {peak:.3f})")
     if engine.unsupported_cmds:
         print("comandos ignorados:", sorted(engine.unsupported_cmds))
+    engine.play_log.finish("benchmark")
+    engine.play_log.flush()

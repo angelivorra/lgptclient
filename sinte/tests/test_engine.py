@@ -6,6 +6,7 @@ o con pytest: .venv/bin/python -m pytest tests/
 """
 
 import math
+import os
 import random
 import sys
 import unittest
@@ -1156,6 +1157,17 @@ class TestPreview(unittest.TestCase):
 
 
 class TestRealSongs(unittest.TestCase):
+    def setUp(self):
+        # Estas canciones viven fuera del repo; no dejar play_stats.txt ahí.
+        self._play_stats = os.environ.get("PLAY_STATS")
+        os.environ["PLAY_STATS"] = "0"
+
+    def tearDown(self):
+        if self._play_stats is None:
+            os.environ.pop("PLAY_STATS", None)
+        else:
+            os.environ["PLAY_STATS"] = self._play_stats
+
     def test_render_all_songs(self):
         for name in SONGS:
             with self.subTest(song=name):

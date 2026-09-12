@@ -26,6 +26,26 @@ export ROBOTRACKER2_EVDEV_GAMEPAD=1
 # Pantalla 1920x1080 de 7": densidad x2 (toda la UI usa dp).
 export KIVY_METRICS_DENSITY=2
 
+# ondemand deja los núcleos a ~900 MHz y el callback no llega a tiempo
+# (xruns). performance solo mientras corre el tracker; al salir se restaura.
+_GOV_BAK=/tmp/robotracker2-gov
+mkdir -p "$_GOV_BAK"
+for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+    [ -w "$g" ] || continue
+    cpu=$(basename "$(dirname "$g")")
+    cat "$g" > "$_GOV_BAK/$cpu" 2>/dev/null || true
+    echo performance > "$g" 2>/dev/null || true
+done
+_gov_restore() {
+    for f in "$_GOV_BAK"/cpu*; do
+        [ -f "$f" ] || continue
+        cpu=$(basename "$f")
+        cat "$f" > "/sys/devices/system/cpu/$cpu/cpufreq/scaling_governor" \
+            2>/dev/null || true
+    done
+}
+trap _gov_restore EXIT
+
 # La app abre ventana X11 (XWayland) titulada ROBOTRACKER2: fullscreen en Sway.
 # El helper del sistema (sway_fullscreen, en /etc/profile.d/001-functions)
 # solo reintenta 5 veces a 1s cada una (5s) antes de rendirse — insuficiente

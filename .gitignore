@@ -188,6 +188,9 @@ sinte/songs/lgpt_chiptune/
 sinte/songs/lgpt_cyberbass/
 # backups de save_project (LGPT)
 *.dat.bak
+# última reproducción (lo escribe el engine al pulsar Play)
+sinte/songs/*/play_stats.txt
+sinte/songs/*/play_stats.txt.tmp
 
 # Bounces locales para oír plugins LADSPA de distorsión (riff de bajo de
 # abducción). El generador sí se versiona; los WAV no.

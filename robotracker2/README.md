@@ -256,6 +256,9 @@ Usa el motor de `../sinte` sobre el proyecto en memoria (`player.py`), así que
 refleja las ediciones sin guardar. El loop de chain/phrase lo gestiona el
 propio motor (`Engine.loop_scope` en `../sinte/lgpt_engine.py`): solo se
 arranca ese canal y, al terminar la chain/phrase, vuelve a su step 0.
+Cada Play deja `play_stats.txt` en la carpeta de la canción (CPU, RAM,
+temperatura, xruns, tiempo de render): sirve para ver por qué se cortó
+el audio, en la Odin o en la Pi. `PLAY_STATS=0` lo apaga.
 
 
 **Mute (SONG, mientras suena)**: con **L2** (Ctrl izquierdo) mantenido, **cada
@@ -447,7 +450,10 @@ Para depurar la entrada queda `odin/keylog_test.sh` + `odin/keylog.py`
 del DualSense virtual y de los teclados virtuales).
 El launcher `odin/Robotracker2.sh` fuerza fullscreen (Sway),
 fija densidad ×2 y reutiliza el venv y el `sinte` de robotracker
-(`/storage/robotracker-venv`, `/storage/sinte`).
+(`/storage/robotracker-venv`, `/storage/sinte`). En la Odin el audio
+usa bloque 4096, recupera el reloj tras un xrun (como el sinte) y el
+launcher pone el governor `performance` mientras la app está abierta;
+en el PC no cambia nada de eso.
 
 Instalar desde este PC (con robotracker ya instalado en la Odin):
 

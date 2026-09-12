@@ -442,6 +442,8 @@ class Player:
                 est.causa = f"aviso de PortAudio: {status}"
             self._set_notice(f"CORTE ({est.xruns}) {est.causa}")
         engine = self.engine_ref.get("engine")
+        if status and engine is not None:
+            engine.play_log.note_xrun(str(status))
         dac_time = time_info.outputBufferDacTime
         if engine is not None:
             expected = self._expected_dac_time
@@ -533,6 +535,7 @@ class Player:
             out.suppress_notes = True
         old = self.engine_ref.get("engine")
         if old is not None:
+            old.play_log.finish("unload")
             old.playing = False
             old.panic()
         self.engine_ref["engine"] = None
@@ -548,6 +551,8 @@ class Player:
         engine.midi_out = self.event_out
         if self.event_out is not None:
             self.event_out.suppress_notes = False
+        engine.play_log.set_source("sinte")
+        engine.play_log.set_blocksize(self.args.blocksize)
         self.engine_ref["engine"] = engine
         engine.start()
 
@@ -1610,6 +1615,7 @@ class Player:
         finally:
             engine = self.engine_ref.get("engine")
             if engine is not None:
+                engine.play_log.finish("exit")
                 engine.panic()
             self.stream.stop()
             self.stream.close()

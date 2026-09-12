@@ -25,6 +25,10 @@ del proyecto.
   lo usa robotracker para guardar.
 - `lgpt_engine.py` — motor de audio puro (numpy): voces, secuenciador,
   mixer. Sin dependencia de tarjeta de audio (testable headless).
+- `play_stats.py` — al pulsar Play (sinte y robotracker2) escribe
+  `songs/<canción>/play_stats.txt` con CPU/RAM/temp, xruns y tiempos de
+  render de la última pasada. Se sobrescribe en cada Play. `PLAY_STATS=0`
+  lo apaga.
 - `lgpt_player.py` — reproductor: UI curses retro (estética Pip-Boy),
   salida de audio con `sounddevice`, entrada/salida MIDI.
 - `tests/` — tests headless (unittest/pytest).

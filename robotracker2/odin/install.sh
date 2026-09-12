@@ -28,7 +28,7 @@ ssh "$HOST" '
 # writer/MIDI). El resto de /storage/sinte (player, songs, venv) no se toca.
 echo ">> Copiando módulos de sinte que usa robotracker2..."
 for f in lgpt_parser.py lgpt_engine.py lgpt_writer.py midi_control.py \
-         chords.py filter_ui.py ladspa_fx.py; do
+         chords.py filter_ui.py ladspa_fx.py play_stats.py; do
   scp "$REPO/sinte/$f" "$HOST:/storage/sinte/$f"
 done
 
@@ -61,6 +61,7 @@ if [ -d "$REPO/sinte/songs" ]; then
     echo ">> Sincronizando canciones (lgptsav / robotraca / samples)..."
     rsync -a \
       --exclude '*.bak' --exclude '*.dat.bak' --exclude '__pycache__' \
+      --exclude 'play_stats.txt' --exclude 'play_stats.txt.tmp' \
       "$REPO/sinte/songs/" "$HOST:/storage/sinte/songs/"
     echo "   canciones: $(ssh "$HOST" 'ls -d /storage/sinte/songs/lgpt_* 2>/dev/null | wc -l')"
     echo "   samples de canción: $(ssh "$HOST" 'find /storage/sinte/songs -path "*/samples/*.wav" | wc -l') wav"
