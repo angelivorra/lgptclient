@@ -1,7 +1,8 @@
 """Navegador de samples estilo LGPT: navegar la carpeta, escuchar e importar.
 
 Todo centrado. Abajo, dos acciones como en ImageBrowser: Elegir / Cancelar.
-Arr/abj mueve; al pasar por un .wav se **previsualiza**; **A** (`activate()`)
+Arr/abj mueve (arr en el primero salta al último y al revés); al pasar
+por un .wav se **previsualiza**; **A** (`activate()`)
 entra en la carpeta o **carga** el sample (copia a la canción y lo asigna);
 **B/Cancelar** sube de carpeta (o cierra en la raíz) y deja el cursor en
 la carpeta de la que salimos, para bajar a la siguiente hermana. Las
@@ -137,10 +138,11 @@ class SampleBrowser(Widget):
     def move(self, button):
         if not self.entries:
             return
+        n = len(self.entries)
         if button == UP:
-            self.index = max(0, self.index - 1)
+            self.index = (self.index - 1) % n
         elif button == DOWN:
-            self.index = min(len(self.entries) - 1, self.index + 1)
+            self.index = (self.index + 1) % n
         self._ensure_visible()
         self._preview_selection()
         self._redraw()

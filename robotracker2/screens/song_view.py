@@ -4,7 +4,8 @@ Clon de la pantalla Song de LGPT. Trabaja con
 botones lógicos (`controls`); la app resuelve los acordes y llama a estos
 métodos:
 
-- mover cursor (dpad), A+dir edita el valor (±1 / ±0x10; en vacío crea chain).
+- mover cursor (dpad; izq en la primera columna salta a la última y al
+  revés), A+dir edita el valor (±1 / ±0x10; en vacío crea chain).
 - A (tap): copia la celda si tiene valor; si está vacía pega el portapapeles, y
   si no hay portapapeles pone 00.
 - Ctrl+S cicla la selección: libre -> filas completas -> todo lo visible.
@@ -120,7 +121,7 @@ class SongGrid(Widget):
     def move(self, button):
         dr, dt = _MOVE[button]
         self.cursor_row = max(0, min(self.view.length - 1, self.cursor_row + dr))
-        slot = max(0, min(NUM_TRACKS - 1, slot_of(self.cursor_track) + dt))
+        slot = (slot_of(self.cursor_track) + dt) % NUM_TRACKS
         self.cursor_track = track_at_slot(slot)
         self._ensure_visible()
         self._redraw()

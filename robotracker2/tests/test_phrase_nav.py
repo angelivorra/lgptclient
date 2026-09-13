@@ -14,7 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from kivy.clock import Clock  # noqa: E402
 
-from controls import DOWN, LEFT, RIGHT  # noqa: E402
+from controls import A, DOWN, LEFT, RIGHT  # noqa: E402
+from robots import ROBOT_TRACK  # noqa: E402
 
 
 def _run(app):
@@ -107,6 +108,23 @@ def _run(app):
     assert missing in ed.project.instrument_bank
     assert ed.project.instrument_bank[missing]["type"] == "Sample"
     print(f"  PHRASE -> INSTRUMENT crea el {missing:02X} si no existía OK")
+
+    ed.song_grid.cursor_track = ROBOT_TRACK
+    ed.chain_grid.track = ROBOT_TRACK
+    ed.goto("phrase")
+    g = ed.phrase_grid
+    assert g.track == ROBOT_TRACK
+    g.cursor_col = 1
+    g.a_tap()
+    assert app.browser is not None, "A en SCREEN abre el navegador"
+    app._dispatch(A, {A})
+    if app.browser is not None:
+        app._dispatch(A, {A})
+    assert app.browser is None, "elegir cierra el navegador"
+    app.held.add(A)
+    app._release(A)
+    assert app.browser is None, "soltar A no debe reabrir el navegador"
+    print("  SCREEN: elegir no reabre el diálogo OK")
 
 
 def main():

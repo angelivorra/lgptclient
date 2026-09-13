@@ -15,8 +15,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from kivy.clock import Clock  # noqa: E402
 
-from controls import A, B, DOWN, L2, R2  # noqa: E402
-from lgpt_model import EMPTY  # noqa: E402
+from controls import A, B, DOWN, L2, LEFT, R2, RIGHT  # noqa: E402
+from lgpt_model import EMPTY, NUM_TRACKS  # noqa: E402
+from tracks import track_at_slot  # noqa: E402
 from songs import DEFAULT_SONGS  # noqa: E402
 
 
@@ -30,6 +31,14 @@ def _run(app):
     assert app.editor_screen.current == "song"
 
     g = app.editor_screen.song_grid
+    first, last = track_at_slot(0), track_at_slot(NUM_TRACKS - 1)
+    g.cursor_track = first
+    g.move(LEFT)
+    assert g.cursor_track == last, "izq en la primera columna va a la última"
+    g.move(RIGHT)
+    assert g.cursor_track == first, "dcha en la última columna va a la primera"
+    print("  SONG wrap de columnas OK")
+
     # ponemos un valor en la celda del cursor para verificar que no se borra
     r, t = g.cursor_row, g.cursor_track
     g.view.set_value(r, t, 0x05)

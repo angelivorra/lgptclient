@@ -7,7 +7,8 @@ que ve el dispositivo real; ver `robots.ayuda_preview_path`) y se actualiza
 al moverse. **A** entra en la carpeta o elige el valor; **B** vuelve o
 cierra. Misma interfaz que `SampleBrowser` (move/activate/back/cleanup).
 Sobre y bajo la lista, dos triángulos se encienden si hay más lista
-arriba/abajo.
+arriba/abajo. Arr en el primero salta al último y abj en el último
+vuelve al primero, como las otras listas.
 """
 
 from pathlib import Path
@@ -110,10 +111,11 @@ class ImageBrowser(Widget):
     def move(self, button):
         if not self.entries:
             return
+        n = len(self.entries)
         if button == UP:
-            self.index = max(0, self.index - 1)
+            self.index = (self.index - 1) % n
         elif button == DOWN:
-            self.index = min(len(self.entries) - 1, self.index + 1)
+            self.index = (self.index + 1) % n
         self._ensure_visible()
         self._update_preview()
         self._redraw()

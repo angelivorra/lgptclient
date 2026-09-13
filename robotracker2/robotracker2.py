@@ -1049,6 +1049,9 @@ class Robotracker2App(App):
         if button in (UP, DOWN):
             b.move(button)
         elif button == A:
+            # Si A elige y cierra, el release no debe ser tap de PHRASE
+            # (reabriría el navegador de SCREEN).
+            self._a_consumed = True
             b.activate()
         elif button == LEFT:
             go_back = getattr(b, "go_back", None)
@@ -1059,6 +1062,7 @@ class Robotracker2App(App):
             if go_forward is not None:
                 go_forward()
         elif button in (B, BACK):
+            self._b_consumed = True
             b.back()
         return True
 

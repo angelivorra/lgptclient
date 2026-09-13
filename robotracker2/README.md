@@ -49,7 +49,8 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    extra primero** (canal LGPT 8, la novena), luego 0–5, vocoder y robot
    al final. Cabecera con el **nº, icono y
    nombre** del tipo de cada pista (drum / bass / synth / noise / robot /
-   vocoder; se editan en TRACKS). Dpad mueve el cursor, **A+dir**
+   vocoder; se editan en TRACKS). Dpad mueve el cursor (izq en la
+   primera columna salta a la última y al revés), **A+dir**
    edita (±1 izq/dcha, ±0x10 arr/abj; en vacío crea chain), **B** borra.
    Portapapeles/selección estilo LGPT: **A** copia/pega/pone 00; **Ctrl+S**
    cicla selección (libre → filas → todo visible; en el PC vale el Ctrl
@@ -145,7 +146,9 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
      (líneas de `images/002/textos`, compartido y no por canción: cada
      línea es un `value`) —, ve la miniatura real de cada entrada al pasar
      por ella, **A** entra/elige (inmediato, sin doble-tap — la vista previa
-     ya es gratis al moverse), **B** vuelve/cancela. Sobre y bajo la lista,
+     ya es gratis al moverse; al elegir se cierra y no se reabre al soltar
+     A), **B** vuelve/cancela. Arr en el primero salta al último y abj en
+     el último al primero. Sobre y bajo la lista,
      dos **indicadores de scroll** pequeños (triángulos) se encienden si hay
      más entradas arriba/abajo y se atenúan si no se puede navegar hacia
      allí. Al elegir, escribe el
@@ -206,7 +209,8 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    último que
    hayas tenido abierto en INSTRUMENT. En **Sample**,
    **A abre el navegador de samples** (`screens/sample_browser.py`): navega la
-   biblioteca, **previsualiza** al pasar por cada .wav y **A carga** (copia el
+   biblioteca (arr/abj dan la vuelta de la primera entrada a la última),
+   **previsualiza** al pasar por cada .wav y **A carga** (copia el
    wav a la canción y lo asigna; un solo A, como el navegador de imágenes).
    Si la preview falla, un toast lo dice. **B** vuelve atrás o cierra. Las
    flechas **izq/dcha van atrás/adelante

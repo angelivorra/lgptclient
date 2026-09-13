@@ -43,6 +43,11 @@ def _browser_sueltos():
         b.activate()                     # A sobre la carpeta A
         assert b.cwd.name == "A"
         assert [p.name for p in b.entries] == ["B", "C"], b.entries
+        b.move(UP)
+        assert b.selected().name == "C", "arr en el primero salta al último"
+        b.move(DOWN)
+        assert b.selected().name == "B", "abj en el último vuelve al primero"
+        print("  wrap primero/último en carpetas OK")
         b.activate()                     # índice 0 = B
         assert b.cwd.name == "B"
         print("  entrar dos niveles con A OK")
@@ -174,11 +179,18 @@ def _indicadores_screens():
         assert (can_up, can_down) == (True, True), "a mitad con lista larga"
         print("  indicador: a mitad -> ambas direcciones OK")
 
-        for _ in range(len(b.entries)):  # al final de la lista
+        for _ in range(len(b.entries) - 1 - 20):  # al final sin dar la vuelta
             b.move(DOWN)
+        assert b.index == len(b.entries) - 1
         can_up, can_down = b._scroll_flags()
         assert (can_up, can_down) == (True, False), "abajo del todo"
         print("  indicador: abajo del todo -> solo se puede subir OK")
+
+        b.move(DOWN)
+        assert b.index == 0, "abj en el último vuelve al primero"
+        b.move(UP)
+        assert b.index == len(b.entries) - 1, "arr en el primero salta al último"
+        print("  wrap primero/último OK")
 
         # el canvas lleva los dos triángulos (encendido + atenuado)
         from kivy.graphics import Triangle
@@ -226,14 +238,14 @@ def _flechas_nav():
     assert tuple(cell._dir_colors["up"].rgba)[3] == 0
     print("  GROOVE: solo raya abajo OK")
 
-    # CHAIN (2,1): LIVE arriba, nada abajo
+    # CHAIN (2,1): LIVE arriba, EQ abajo
     es.current = "chain"
     es._update_nav(2, 1, "C")
     cell = es.nav_cells[2]
     assert cell.text == "C", cell.text
     assert tuple(cell._dir_colors["up"].rgba) == NAV_LINE
-    assert tuple(cell._dir_colors["down"].rgba)[3] == 0
-    print("  CHAIN: raya arriba (LIVE) OK")
+    assert tuple(cell._dir_colors["down"].rgba) == NAV_LINE
+    print("  CHAIN: raya arriba (LIVE) y abajo (EQ) OK")
 
     # LIVE (2,0): CHAIN abajo
     es.current = "live"
@@ -323,6 +335,25 @@ def _dispatch_flechas(app):
         b_reopen = SampleBrowser(tmp, on_load=None, on_close=None, **kw)
         assert b_reopen.cwd.name == "d", b_reopen.cwd
         print("  reabrir conserva la última carpeta OK")
+
+        img_root = tmp / "imgs"
+        (img_root / "002").mkdir(parents=True)
+        (img_root / "002" / "textos").write_text("uno\ndos\n")
+        chosen = []
+
+        def on_load(cc, value):
+            chosen.append((cc, value))
+            app.browser = None
+
+        app.browser = ImageBrowser(img_root, on_load=on_load)
+        app._a_consumed = False
+        app._dispatch(A, {A})
+        assert app.browser is not None and app.browser.level == 1
+        app._dispatch(A, {A})
+        assert chosen == [(2, 0)], chosen
+        assert app.browser is None
+        assert app._a_consumed, "elegir debe consumir A para no reabrir"
+        print("  elegir texto consume A (no reabre) OK")
 
 
 def main():
