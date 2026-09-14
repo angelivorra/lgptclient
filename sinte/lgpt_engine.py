@@ -55,6 +55,7 @@ from filter_ui import SVF_MODES, mode_from_param, normalize_mode
 from lgpt_parser import CHANNEL_COUNT, LGPTProject, expand_song
 from master_eq import GraphicEQ
 from play_stats import PlayLog
+import scream_numpy
 
 SAMPLE_RATE = 44100
 MAX_PADS = 8                # pads de sampler (ver wavs_dir/pads.json)
@@ -683,10 +684,14 @@ class Voice:
             x *= np.clip(idx / self.declick, 0.0, 1.0)[:, None]
             self.attack_pos += n
 
-        # Filtro: LGPT/scream (upstream) o SVF barato (lp/hp/bp/notch)
+        # Filtro: LGPT/scream (upstream) o SVF barato (lp/hp/bp/notch).
+        # El scream numpy es el mismo lazo en otro módulo; _render_filter
+        # no se toca (referencia y fallback).
         if self.f_active:
             if self.f_mode in SVF_MODES:
                 self._render_svf(x)
+            elif self.f_scream and scream_numpy.enabled():
+                scream_numpy.apply(x, self)
             else:
                 self._render_filter(x)
 

@@ -208,3 +208,6 @@ sinte/gates/**
 # Bounces de filtros LADSPA (mismo riff). WAV ignorados; genera.py sí.
 sinte/filtros_ladspa/**
 !sinte/filtros_ladspa/genera.py
+
+# Comparaciones locales (WAV pesados, no se versionan)
+tmp/
