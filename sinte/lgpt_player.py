@@ -33,7 +33,6 @@ import queue
 import random
 import signal
 import sys
-import threading
 import time
 import tomllib
 import unicodedata
@@ -44,6 +43,7 @@ import sounddevice as sd
 
 from event_server import EventMidiOut, EventServer
 from lgpt_engine import Engine, MasterChain, MidiOut, SAMPLE_RATE
+from wav_recorder import WavRecorder
 # Botones/knobs MIDI, open_midi_input y aplicación de robotraca.json: en
 # midi_control.py, compartido con robotracker2 (que lo importa vía
 # sinte_bridge). Se re-exportan aquí para no cambiar la API de lgpt_player
@@ -181,34 +181,6 @@ def find_projects(songs_dir: Path) -> list[Path]:
          if d.is_dir() and (d / "lgptsav.dat").is_file()),
         key=lambda d: d.name.lower(),
     )
-
-
-class WavRecorder:
-    """Graba la salida de audio a un WAV sin bloquear el callback:
-    el callback encola bloques y un hilo escritor los vuelca a disco."""
-
-    def __init__(self, path: str, samplerate: int):
-        import soundfile as sf
-        self._sf = sf.SoundFile(path, "w", samplerate=samplerate,
-                                channels=2, subtype="PCM_16")
-        self._queue: queue.SimpleQueue = queue.SimpleQueue()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-
-    def _run(self):
-        while True:
-            block = self._queue.get()
-            if block is None:
-                break
-            self._sf.write(block)
-        self._sf.close()
-
-    def write(self, block):
-        self._queue.put(block.copy())
-
-    def close(self):
-        self._queue.put(None)
-        self._thread.join()
 
 
 class MidoMidiOut(MidiOut):

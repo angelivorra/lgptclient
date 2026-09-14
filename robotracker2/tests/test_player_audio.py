@@ -87,11 +87,52 @@ def test_callback_ignores_tiny_dac_jitter():
     assert caught == []
 
 
+def test_callback_writes_recording():
+    from player import Player
+    import numpy as np
+    import soundfile as sf
+    import tempfile
+
+    class _Log:
+        def note_xrun(self, _detail=""):
+            pass
+
+    class _Eng:
+        play_log = _Log()
+
+        def catch_up(self, seconds):
+            pass
+
+        def render(self, frames):
+            return np.full((frames, 2), 0.25, dtype="float32")
+
+    p = Player.__new__(Player)
+    p.engine = _Eng()
+    p._expected_dac = None
+    p._prio_done = True
+    p.recorder = None
+    p.record_path = None
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "out.wav"
+        p.start_recording(path)
+        out = np.zeros((64, 2), dtype="float32")
+        p._audio_callback(out, 64, None, None)
+        closed = p.stop_recording()
+        assert closed == path
+        data, sr = sf.read(path, dtype="float32")
+        assert sr == 44100
+        assert len(data) == 64
+        assert abs(float(data[0, 0]) - 0.25) < 1e-3
+        p._audio_callback(out, 64, None, None)
+        print("  callback graba WAV OK")
+
+
 def main():
     test_desktop_keeps_sinte_blocksize()
     test_odin_uses_larger_blocksize()
     test_callback_catch_up_on_dac_jump()
     test_callback_ignores_tiny_dac_jitter()
+    test_callback_writes_recording()
     print("TODOS LOS TESTS OK")
 
 

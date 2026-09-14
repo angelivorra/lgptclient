@@ -1314,6 +1314,15 @@ class ChannelGlitch:
             if self.ticks_left == 0:
                 self._release = max(1, int(DECLICK_SECONDS * self.sr))
 
+    def release(self):
+        """Fade de salida (pausa/stop). Sin ticks el stutter no caduca solo."""
+        if self.ticks_left <= 0 and self._release > 0:
+            return
+        if not self.active:
+            return
+        self.ticks_left = 0
+        self._release = max(1, int(DECLICK_SECONDS * self.sr))
+
     def stop(self):
         self.ticks_left = 0
         self._release = 0
@@ -2029,6 +2038,10 @@ class Engine:
             block, _ = self._apply_fx_pass(
                 ch, block, after_presence=True, capture_dry=False)
             if ch.glitch is not None and ch.glitch.active:
+                # En pausa/stop el secuenciador no hace tick(): el stutter
+                # no caduca y repetiría el trozo capturado sin fin.
+                if not self.playing:
+                    ch.glitch.release()
                 ch.glitch.apply(block)
             if ch.cc_vol != 1.0:
                 block *= ch.cc_vol

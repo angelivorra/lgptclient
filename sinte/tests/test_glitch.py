@@ -67,6 +67,21 @@ class TestChannelGlitch(unittest.TestCase):
                 break
         self.assertFalse(fx.active)
 
+    def test_release_apaga_sin_esperar_ticks(self):
+        fx = ChannelGlitch(SR)
+        fx.trigger(1.0, 64, 120.0)
+        fx.apply(np.ones((fx._slice_n * 2, 2), dtype=np.float32))
+        self.assertTrue(fx.active)
+        self.assertGreater(fx.ticks_left, 0)
+        fx.release()
+        self.assertEqual(fx.ticks_left, 0)
+        self.assertGreater(fx._release, 0)
+        for _ in range(32):
+            fx.apply(np.zeros((64, 2), dtype=np.float32))
+            if not fx.active:
+                break
+        self.assertFalse(fx.active)
+
 
 class TestGlchEngine(unittest.TestCase):
     def test_no_es_unsupported(self):
@@ -104,6 +119,24 @@ class TestGlchEngine(unittest.TestCase):
         engine.project.param1[0] = glch_pack(0xFF, 4)
         wet = np.concatenate([engine.render(512) for _ in range(8)], axis=0)
         self.assertGreater(float(np.mean(np.abs(wet - dry))), 1e-4)
+
+    def test_pause_no_deja_el_stutter(self):
+        """Sin ticks el GLCH no caduca: al pausar tiene que apagarse."""
+        engine = make_engine("120")
+        engine.master_chain = None
+        note_row(engine.project, 0, note=60)
+        engine.project.cmd1[0] = "GLCH"
+        engine.project.param1[0] = glch_pack(0xFF, 16)
+        engine.render(2048)
+        gl = engine.channels[0].glitch
+        self.assertIsNotNone(gl)
+        self.assertTrue(gl.active)
+        engine.push_event("pause")
+        for _ in range(8):
+            engine.render(512)
+        self.assertFalse(engine.playing)
+        self.assertFalse(gl.active)
+        self.assertEqual(gl.ticks_left, 0)
 
 
 if __name__ == "__main__":

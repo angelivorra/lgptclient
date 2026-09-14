@@ -1109,7 +1109,11 @@ class Robotracker2App(App):
     def _dispatch_project(self, button, active):
         m = self.editor_screen.project_menu
         key, typ, _label, _icon = m.current_item()
-        if button in DPAD and A in active and typ == "value":
+        if button in DPAD and A in active and typ in ("value", "toggle"):
+            if typ == "toggle":
+                m.adjust_by(0)
+                self._a_consumed = True
+                return True
             delta = A_DIR_DELTA[button]
             if key == "tempo":
                 self._nudge_tempo(delta)
@@ -1369,16 +1373,35 @@ class Robotracker2App(App):
             # arranca los canales que tienen algo en esa fila
             ok = self.player.play_from(ed.song_grid.cursor_row)
         if ok:
+            self._start_recording_if_enabled()
             self._play_start = time.monotonic()
             self.editor_screen.set_play_indicator(True, 0)
+
+    def _recording_path(self):
+        song = Path(self._song_dir)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        return song / f"{song.name}_{stamp}.wav"
+
+    def _start_recording_if_enabled(self):
+        ed = self.editor_screen
+        if not ed.project_menu.record_audio or self._song_dir is None:
+            return
+        try:
+            path = self.player.start_recording(self._recording_path())
+            ed.toast_msg(f"Grabando {path.name}")
+        except Exception as exc:                     # noqa: BLE001
+            ed.toast_msg(f"Grabar: {exc}")
 
     def _stop_play(self):
         """Para la reproducción (botón stop del controlador MIDI)."""
         if self.player is None:
             return
+        rec_path = self.player.stop_recording()
         self.player.stop()
         self._play_start = None
         self.editor_screen.set_play_indicator(False)
+        if rec_path is not None:
+            self.editor_screen.toast_msg(f"Grabado {rec_path.name}")
 
     # -- controlador MIDI del reproductor (botones, como el mixer) ---------
     def _midi_action(self, accion):
@@ -1612,8 +1635,10 @@ class Robotracker2App(App):
         playing = self.sm.current == "editor" and p is not None and p.playing
         self._sync_tick_rate(playing)
         if playing and self._play_start is not None:
+            rec = getattr(p, "recorder", None)
             ed.set_play_indicator(True,
-                                  time.monotonic() - self._play_start)
+                                  time.monotonic() - self._play_start,
+                                  recording=rec is not None)
         else:
             ed.set_play_indicator(False)
         if not playing:

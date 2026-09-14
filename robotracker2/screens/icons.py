@@ -17,6 +17,7 @@ GLYPH = {
     "vocoder": "\ue326",         # microphone
     "tempo": "\uec8e",           # metronome
     "master": "\ue44a",          # speaker-high
+    "record": "\uecac",          # vinyl-record (grabar mezcla a disco)
     "compact_seq": "\ue09a",     # arrows-in
     "compact_instr": "\uec54",   # broom
     "load": "\ue256",            # folder-open

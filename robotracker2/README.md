@@ -218,7 +218,12 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    recordando la posición del cursor en cada una. Se guarda (writer
    extendido para INSTRUMENTBANK).
 9. **PROJECT** (`screens/project_view.py`): menú reducido — **Tempo** y
-   **Master** editables (izq/dcha ±1; con A, izq/dcha ±1 y arr/abj ±10), **Load Song**,
+   **Master** editables (izq/dcha ±1; con A, izq/dcha ±1 y arr/abj ±10),
+   **Grabar audio** (sí/no: al arrancar o cargar canción queda en no; no
+   se guarda en la canción; con sí, Play vuelca la mezcla a un WAV
+   `{canción}_{YYYYMMDD-HHMMSS}.wav` en la carpeta de la canción, y al
+   parar cierra el fichero; en la cabecera sale **●** rojo mientras graba),
+   **Load Song**,
    **Save Song** (persiste el `.dat`), **Exit** y las dos acciones Compact:
    **Compact Sequencer** borra in-place (sin renumerar, como el LGPT
    original) las chains que la song no usa y las phrases que ninguna chain
@@ -515,7 +520,7 @@ subcarpetas (`drums/kick`, `bass/acid`, `synth/lead`…). Sin voces.
 | `screens/instrument_view.py` | Instrument: menú de parámetros (canvas) |
 | `screens/sample_browser.py` | Navegador de samples (preview al mover, A carga) |
 | `screens/image_browser.py` | Navegador visual de `images/` (evento de pantalla) |
-| `screens/project_view.py` | Menú PROJECT (tempo/master/load/save/exit) |
+| `screens/project_view.py` | Menú PROJECT (tempo/master/grabar/load/save/exit) |
 | `screens/config_view.py` | Menú CONFIG (interfaces MIDI de entrada) |
 | `screens/eq_view.py` | EQ: 7 bandas de la mezcla (robotraca.json) |
 | `screens/confirm.py` | Diálogo modal de cambios sin guardar |

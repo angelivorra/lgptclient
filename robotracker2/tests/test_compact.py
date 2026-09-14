@@ -201,8 +201,9 @@ def _e2e(app, song):
 
     # --- Compact Sequencer (A sobre la acción) ---------------------------
     app._dispatch(DOWN, {DOWN})         # tempo -> master
-    app._dispatch(DOWN, {DOWN})         # master -> compact_seq (salta gap)
-    assert menu.index == 3, menu.index
+    app._dispatch(DOWN, {DOWN})         # master -> record
+    app._dispatch(DOWN, {DOWN})         # record -> compact_seq (salta gap)
+    assert menu.current_item()[0] == "compact_seq", menu.current_item()
     app._dispatch(A, {A})
     app._release(A)
     # chain no usada vaciada, usada intacta, player parado, dirty
@@ -221,7 +222,7 @@ def _e2e(app, song):
 
     # --- Compact Instruments: pop + diálogo, "No" por defecto ------------
     app._dispatch(DOWN, {DOWN})         # compact_seq -> compact_instr
-    assert menu.index == 4, menu.index
+    assert menu.current_item()[0] == "compact_instr", menu.current_item()
     app._dispatch(A, {A})
     app._release(A)
     assert x not in p.instrument_bank, "instrumento sin uso popedo"

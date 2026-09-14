@@ -163,7 +163,7 @@ class TestPython311Compat(unittest.TestCase):
         import ast
         root = Path(__file__).resolve().parent.parent
         for name in ("lgpt_engine.py", "lgpt_parser.py",
-                     "lgpt_player.py", "lgpt_setup.py"):
+                     "lgpt_player.py", "lgpt_setup.py", "wav_recorder.py"):
             src = (root / name).read_text()
             ast.parse(src, filename=name, feature_version=(3, 11))
 

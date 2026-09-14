@@ -289,17 +289,23 @@ class EditorScreen(Screen):
             self.live_ind.color = (0, 0, 0, 0)
             self._live_chip_color.rgba = (0, 0, 0, 0)
 
-    def set_play_indicator(self, playing, elapsed=0.0):
-        """Muestra \"▶ m:ss\" en la cabecera mientras suena (vacío al parar)."""
+    def set_play_indicator(self, playing, elapsed=0.0, recording=False):
+        """Muestra \"▶ m:ss\" en la cabecera mientras suena (vacío al parar).
+        Con grabación, un ● rojo delante."""
         if playing:
             s = int(elapsed)
             if s >= 3600:
-                text = f"▶ {s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}"
+                clock = f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}"
             else:
-                text = f"▶ {s // 60}:{s % 60:02d}"
-            self.play_ind.text = text
-            self.play_ind.color = COLOR_OK
-            self._play_chip_color.rgba = (0.45, 0.85, 0.45, 0.14)
+                clock = f"{s // 60}:{s % 60:02d}"
+            if recording:
+                self.play_ind.text = f"● ▶ {clock}"
+                self.play_ind.color = COLOR_ERROR
+                self._play_chip_color.rgba = (0.95, 0.45, 0.40, 0.16)
+            else:
+                self.play_ind.text = f"▶ {clock}"
+                self.play_ind.color = COLOR_OK
+                self._play_chip_color.rgba = (0.45, 0.85, 0.45, 0.14)
         else:
             self.play_ind.text = ""
             self.play_ind.color = (0, 0, 0, 0)

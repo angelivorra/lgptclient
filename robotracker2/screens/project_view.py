@@ -11,7 +11,10 @@ Scale/MIDI/Render). Campos:
 
 Cada acción es un botón con icono Phosphor. El cursor (arriba/abajo) salta
 los separadores. A (tap) activa la acción; en un valor no hace nada.
-Editar un valor muta `project.project` y marca dirty.
+Editar un valor muta `project.project` y marca dirty. **Grabar audio** es
+un interruptor de sesión (sí/no): al cargar canción o arrancar queda en
+no; no se guarda en la canción. Con él en sí, Play vuelca la mezcla a un
+WAV en la carpeta de la canción.
 """
 
 from kivy.graphics import Color, Rectangle, RoundedRectangle
@@ -31,6 +34,7 @@ GAP = dp(14)
 ITEMS = [
     ("tempo", "value", "Tempo", "tempo"),
     ("master", "value", "Master", "master"),
+    ("record", "toggle", "Grabar audio", "record"),
     (None, "gap", None, None),
     ("compact_seq", "action", "Compactar secuencia", "compact_seq"),
     ("compact_instr", "action", "Compactar instrumentos", "compact_instr"),
@@ -53,12 +57,14 @@ class ProjectMenu(Widget):
         self.project = None
         self.on_action = on_action
         self.on_change = on_change
+        self.record_audio = False
         self.index = self._first_selectable()
         self._tex = {}
         self.bind(pos=self._redraw, size=self._redraw)
 
     def set_project(self, project):
         self.project = project
+        self.record_audio = False
         self.index = self._first_selectable()
         self._redraw()
 
@@ -77,8 +83,15 @@ class ProjectMenu(Widget):
         self.index = i
         self._redraw()
 
+    def _toggle_record(self):
+        self.record_audio = not self.record_audio
+        self._redraw()
+
     def adjust(self, delta, coarse=False):
-        key, typ, _label, _icon = ITEMS[self.index]
+        key, typ, _label, _icon = self.current_item()
+        if typ == "toggle" and key == "record":
+            self._toggle_record()
+            return
         if typ != "value" or self.project is None:
             return
         step = 10 if coarse else 1
@@ -92,7 +105,10 @@ class ProjectMenu(Widget):
 
     def adjust_by(self, amount):
         """Suma `amount` al valor (A+dir: ±1 / ±10)."""
-        key, typ, _label, _icon = ITEMS[self.index]
+        key, typ, _label, _icon = self.current_item()
+        if typ == "toggle" and key == "record":
+            self._toggle_record()
+            return
         if typ != "value" or self.project is None:
             return
         lo, hi = LIMITS[key]
@@ -104,11 +120,16 @@ class ProjectMenu(Widget):
         self._redraw()
 
     def activate(self):
-        key, typ, _label, _icon = ITEMS[self.index]
+        key, typ, _label, _icon = self.current_item()
+        if typ == "toggle" and key == "record":
+            self._toggle_record()
+            return
         if typ == "action" and self.on_action:
             self.on_action(key)
 
     def _value_text(self, key):
+        if key == "record":
+            return "sí" if self.record_audio else "no"
         val = int(self.project.project.get(key, "0")) if self.project else 0
         if key == "tempo":
             return f"{val}  [{val:02X}]"
@@ -156,7 +177,7 @@ class ProjectMenu(Widget):
             bg = _BTN_EXIT
             ink = COLOR_ERROR
             val_ink = COLOR_ERROR
-        elif typ == "value":
+        elif typ in ("value", "toggle"):
             bg = COLOR_HEADER_BG
             ink = COLOR_ITEM
             val_ink = COLOR_VALUE
@@ -175,7 +196,7 @@ class ProjectMenu(Widget):
         Color(*ink)
         Rectangle(texture=tex, size=(tw, th),
                   pos=(tx, y + (h - th) / 2))
-        if typ == "value":
+        if typ in ("value", "toggle"):
             vtex = self._texture(self._value_text(key), FONT_VAL)
             vw, vh = vtex.size
             Color(*val_ink)

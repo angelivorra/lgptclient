@@ -10,9 +10,10 @@ audio (tests headless) la UI sigue funcionando y el motivo queda en
 
 import os
 import threading
+from pathlib import Path
 
 from host import is_handheld
-from sinte_bridge import Engine
+from sinte_bridge import Engine, WavRecorder
 
 SAMPLE_RATE = 44100
 # 2048 como lttileplayer.toml (Pi). En la Odin el callback pelea el GIL con
@@ -56,6 +57,8 @@ class Player:
         self._stream_lock = threading.Lock()
         self._expected_dac = None
         self._prio_done = False
+        self.recorder = None
+        self.record_path = None
 
     def _ensure_stream(self):
         # Se llama desde el hilo de la UI (play) y desde el hilo del
@@ -102,6 +105,29 @@ class Player:
                     self.engine.catch_up(drift)
             self._expected_dac = dac + frames / SAMPLE_RATE
         outdata[:] = self.engine.render(frames)
+        rec = getattr(self, "recorder", None)
+        if rec is not None:
+            rec.write(outdata)
+
+    def start_recording(self, path):
+        """Empieza a volcar la mezcla a `path` (WAV estéreo 16-bit)."""
+        self.stop_recording()
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.recorder = WavRecorder(str(path), SAMPLE_RATE)
+        self.record_path = path
+        return path
+
+    def stop_recording(self):
+        """Cierra el WAV si había grabación. Devuelve la ruta o None."""
+        rec = getattr(self, "recorder", None)
+        path = getattr(self, "record_path", None)
+        self.recorder = None
+        self.record_path = None
+        if rec is not None:
+            rec.close()
+            return path
+        return None
 
     def play_from(self, from_row=0):
         """Arranca (o reanuda) la reproducción desde la fila `from_row`."""
@@ -146,3 +172,4 @@ class Player:
             self._stream.stop()
             self._stream.close()
             self._stream = None
+        self.stop_recording()
