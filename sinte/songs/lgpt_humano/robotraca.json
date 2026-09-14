@@ -1,0 +1,40 @@
+{
+  "fx": {},
+  "fx_mix": {
+    "1": {
+      "valve": 50
+    }
+  },
+  "master": 125,
+  "mute": [
+    7
+  ],
+  "pad_volume": {
+    "1": 80
+  },
+  "pads": {
+    "1": "Crash 1.wav"
+  },
+  "pots": {
+    "pot1": "1,2:acid",
+    "pot2": "4:bode",
+    "pot4": "1,2:delay",
+    "pot5": "1:valve",
+    "pot6": "4:metal",
+    "pot8": "0:tempo"
+  },
+  "presence": [],
+  "tracks": [
+    "drum",
+    "bass",
+    "bass",
+    "drum",
+    "noise",
+    "synth",
+    "vocoder",
+    "robot"
+  ],
+  "vocoder": [
+    6
+  ]
+}
