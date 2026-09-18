@@ -49,6 +49,26 @@ class TestPlayLog(unittest.TestCase):
         self.assertIn("voces máx     4", text)
         self.assertIn("tempo       128", text)
 
+    def test_channel_breakdown(self):
+        log = PlayLog(self.tmp, 44100)
+        log.set_source("test")
+        log.set_blocksize(512)
+        log.begin(tempo=100)
+        log.record_block(
+            512, 0.02, voices=3, peak=0.4,
+            ch_voice_ms=[1.0, 0.2, 0.0],
+            ch_mix_ms=[0.5, 12.0, 0.1],
+            ch_fx=["", "metal", ""],
+            master_ms=0.8,
+        )
+        log.finish("stop")
+        log.flush()
+        text = (self.tmp / "play_stats.txt").read_text(encoding="utf-8")
+        self.assertIn("ch1", text)
+        self.assertIn("metal", text)
+        self.assertIn("canal 1:", text)
+        self.assertIn("master        pico", text)
+
     def test_disabled(self):
         with patch.dict(os.environ, {"PLAY_STATS": "0"}):
             self.assertFalse(enabled())
@@ -81,6 +101,10 @@ class TestPlayLog(unittest.TestCase):
         self.assertIn("fin         stop", text)
         self.assertIn("bloques", text)
         self.assertGreater(engine.play_log.blocks, 0)
+        self.assertEqual(len(engine.prof_mix_ms), 9)
+        engine.prof_mix_ms[1] = 12.0
+        engine.prof_fx_label[1] = "metal"
+        self.assertIn("metal", engine.prof_line())
 
 
 if __name__ == "__main__":

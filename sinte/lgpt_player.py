@@ -349,6 +349,36 @@ def meter(value: float, width: int = 8) -> str:
     return "█" * filled + "░" * (width - filled)
 
 
+def audio_diag_lines(est: EstadoAudio, engine=None) -> list[str]:
+    """Dos líneas compactas para la consola de la Pi (~50 columnas).
+
+    1) carga del callback contra el presupuesto, xruns/saltos/apurados
+    2) canales más caros del último bloque (voces vs FX) y la última causa
+    """
+    bud = est.presupuesto_ms
+    last = est.ultima_ms
+    pct = min(est.carga * 100.0, 999.0)
+    bar = meter(min(est.carga, 1.0), 8)
+    line1 = (f"CPU {bar} {pct:.0f}% {last:.0f}/{bud:.0f}ms"
+             f"  x{est.xruns} s{est.saltos} a{est.apurados}")
+    ch = engine.prof_line() if engine is not None else ""
+    causa = est.causa.strip() if est.causa else ""
+    if causa and ch:
+        line2 = f"{causa}  {ch}"
+    else:
+        line2 = causa or ch or f"peor {est.peor_ms:.0f}ms"
+    return [line1, line2]
+
+
+def audio_diag_pair(est: EstadoAudio) -> int:
+    """Color curses de la línea de CPU: 6 rojo, 5 ámbar, 1 verde."""
+    if est.xruns or est.carga >= 1.0:
+        return 6
+    if est.saltos or est.carga >= CARGA_AVISO:
+        return 5
+    return 1
+
+
 class Player:
     def __init__(self, args):
         self.args = args
@@ -539,13 +569,11 @@ class Player:
         if m:
             engine.master_chain = MasterChain(
                 self.args.samplerate,
-                lo_db=float(m.get("eq_lo", 0.0)),
-                mid_db=float(m.get("eq_mid", 0.0)),
-                hi_db=float(m.get("eq_hi", 0.0)),
                 limit_db=float(m.get("limit", -1.0)),
                 release_s=float(m.get("release", 0.15)),
                 gain_db=float(m.get("gain", 0.0)))
         self._apply_song_config(project_dir, engine)
+        self.estado_audio.reinicia()
         self._arm_engine(engine)
         return engine
 
@@ -736,10 +764,8 @@ class Player:
                 pass                      # pantalla estrecha: se recorta
 
     def _draw_song(self, scr, curses, engine: Engine):
-        """Pantalla mínima de reproducción: estado, canción, BPM y progreso.
-
-        Sin detalle por canal ni visualizador: el motor ya no aplica
-        efectos de canal, así que no hay nada de eso que mostrar.
+        """Pantalla mínima de reproducción: estado, canción, BPM, CPU y
+        el canal que se come el bloque (para ver por qué hay un corte).
         """
         scr.erase()
         h, w = scr.getmaxyx()
@@ -754,19 +780,27 @@ class Player:
         scr.addstr(0, 1, state, curses.color_pair(color) | curses.A_BOLD)
         scr.addstr(0, 7, engine.project.dir.name[:w - 8],
                    curses.color_pair(1) | curses.A_BOLD)
+        est = self.estado_audio
+        diag = audio_diag_lines(est, engine)
+        pair = curses.color_pair(audio_diag_pair(est))
+        if est.xruns or est.carga >= 1.0:
+            pair |= curses.A_BOLD
+        scr.addstr(1, 1, diag[0][:w - 2], pair)
         scr.addstr(2, 1, f"{engine.tempo:.0f} BPM   {meter(pct, 20)} "
                          f"{pct * 100:5.1f}%"[:w - 2],
                    curses.color_pair(3))
+        if diag[1]:
+            scr.addstr(3, 1, diag[1][:w - 2], pair)
         if engine.current_lyric:
             # Bloque completo (█), no medio-bloque (▀▄): la consola de la Pi
             # (15x50, fuente de consola básica) no tiene esos glifos y salía
-            # distorsionada. Centrada en el hueco libre entre el BPM (fila 2)
-            # y el aviso de teclas (fila h-2).
+            # distorsionada. Centrada en el hueco libre entre el BPM/CPU
+            # (filas 1-3) y el aviso de teclas (fila h-2).
             lyric = lyric_glyph_text(engine.current_lyric)
             lyric_w = max(0, len(lyric) * 4 - 1)
             lyric_h = 5
             x = max(0, (w - lyric_w) // 2)
-            top, bottom = 3, h - 3
+            top, bottom = 4, h - 3
             y = top + max(0, (bottom - top + 1 - lyric_h) // 2)
             big_text(scr, y, x, lyric, 1,
                      curses.color_pair(1) | curses.A_BOLD)
@@ -1756,7 +1790,7 @@ def main():
     args.pads_dir = pd
     if pd:
         args.wavs_dir = None
-    args.master_fx = cfg.get("master", {})   # EQ + limitador de la mezcla
+    args.master_fx = cfg.get("master", {})   # limitador de la mezcla
     args.events = cfg.get("events", {})      # servidor TCP para los clientes
     args.pad_volume = audio_cfg.get("pad_volume", 60)
 

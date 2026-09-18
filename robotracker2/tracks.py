@@ -26,7 +26,7 @@ TRACK_LABELS = {
     "vocoder": "VOCODER",
 }
 
-# Canal 6 = voz/vocoder, canal 7 = robotas, canal 8 = pista extra.
+# Canal 6 = voz/vocoder, canal 7 = robotas: fijos, no se ciclan.
 DEFAULT_TRACKS = (
     "drum", "bass", "synth", "synth", "noise", "synth", "vocoder", "robot",
     "synth",
@@ -37,6 +37,9 @@ DEFAULT_TRACKS = (
 TRACK_DISPLAY = (EXTRA_TRACK, 0, 1, 2, 3, 4, 5, 6, 7)
 VOCODER_TRACK = 6
 ROBOT_TRACK = 7
+FIXED_TRACKS = {VOCODER_TRACK: "vocoder", ROBOT_TRACK: "robot"}
+# En el resto de pistas no se elige vocoder/robot: esas dos son fijas.
+EDITABLE_TRACK_KINDS = ("drum", "bass", "synth", "noise")
 
 
 def slot_of(track) -> int:
@@ -72,12 +75,14 @@ def parse_tracks(cfg) -> list:
                 i -= 1
             if 0 <= i < NUM_TRACKS and kind in TRACK_LABELS:
                 out[i] = kind
+    for track, kind in FIXED_TRACKS.items():
+        out[track] = kind
     return out
 
 
 def cycle_kind(kind, delta) -> str:
-    i = TRACK_KINDS.index(kind) if kind in TRACK_KINDS else 0
-    return TRACK_KINDS[(i + delta) % len(TRACK_KINDS)]
+    i = EDITABLE_TRACK_KINDS.index(kind) if kind in EDITABLE_TRACK_KINDS else 0
+    return EDITABLE_TRACK_KINDS[(i + delta) % len(EDITABLE_TRACK_KINDS)]
 
 
 def track_label(kind) -> str:

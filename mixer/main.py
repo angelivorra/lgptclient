@@ -420,10 +420,7 @@ class MixerApp(App):
                      lambda r: self._check(r, "MUTE"))
 
     def on_vocoder(self, canal, on):
-        if not self._listo():
-            return
-        self._enviar(lambda: self.backend.set_vocoder(canal, on),
-                     lambda r: self._check(r, "VOCODER"))
+        return
 
     def on_presence(self, canal, on):
         if not self._listo():
@@ -618,12 +615,11 @@ class MixerApp(App):
         self._syncing = True
         try:
             mute = set(cfg.get("mute", []))
-            voc = set(cfg.get("vocoder", []))
             pres = set(cfg.get("presence", []))
             for strip in self._strips():
                 c = strip.canal
                 strip.mute = c in mute
-                strip.voc = c in voc
+                strip.voc = c == 6
                 strip.pres = c in pres
             master = cfg.get("master", 100)
             try:

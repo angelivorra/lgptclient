@@ -6,7 +6,8 @@ from pathlib import Path
 
 import mido
 
-from lgpt_player import CARGA_AVISO, EstadoAudio, match_button, match_pot, \
+from lgpt_player import CARGA_AVISO, EstadoAudio, audio_diag_lines, \
+    audio_diag_pair, match_button, match_pot, \
     match_pot_red, parse_button_spec, parse_pot_target
 
 
@@ -208,6 +209,35 @@ class TestEstadoAudio(unittest.TestCase):
     def test_umbral_de_aviso_deja_margen_antes_de_cortar(self):
         self.assertLess(CARGA_AVISO, 1.0)
         self.assertGreater(CARGA_AVISO, 0.5)
+
+
+class TestAudioDiagLines(unittest.TestCase):
+    def setUp(self):
+        self.est = EstadoAudio(2048 / 44100 * 1000)
+
+    def test_linea_de_carga_y_canales(self):
+        self.est.ultima_ms = 23.22
+        self.est.xruns = 2
+        self.est.causa = "buffer vacío: no llegamos a tiempo"
+
+        class _Eng:
+            def prof_line(self):
+                return "1:12v2 metal  2:9v3 acid+drv"
+
+        lines = audio_diag_lines(self.est, _Eng())
+        self.assertEqual(len(lines), 2)
+        self.assertIn("x2", lines[0])
+        self.assertIn("CPU", lines[0])
+        self.assertIn("metal", lines[1])
+        self.assertIn("buffer vacío", lines[1])
+
+    def test_color_rojo_con_xrun(self):
+        self.est.xruns = 1
+        self.assertEqual(audio_diag_pair(self.est), 6)
+
+    def test_color_ambar_apurado(self):
+        self.est.ultima_ms = self.est.presupuesto_ms * 0.9
+        self.assertEqual(audio_diag_pair(self.est), 5)
 
 
 class TestSingletonCmdline(unittest.TestCase):

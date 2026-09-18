@@ -33,8 +33,5 @@
     "synth",
     "vocoder",
     "robot"
-  ],
-  "vocoder": [
-    6
   ]
 }

@@ -22,6 +22,8 @@ from typing import Optional
 LEGACY_CHANNEL_COUNT = 8
 CHANNEL_COUNT = 9
 EXTRA_TRACK = 8
+VOCODER_TRACK = 6           # pista de voz: siempre ACRD al vocoder
+ROBOT_TRACK = 7             # pista de robotas (eventos NOTA)
 SONG_ROWS = 256
 SONG_EMPTY = 0xFF
 

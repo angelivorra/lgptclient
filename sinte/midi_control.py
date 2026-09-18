@@ -13,17 +13,16 @@ sinte_bridge). Solo depende de lgpt_engine (y de mido, importado dentro de
     los pads del engine y knobs/CC al engine (por referencia: las listas
     `pots`/`pots_red` se rellenan por canción y se evalúan en cada mensaje)
   - load_song_cfg / apply_song_config / build_song_pots: aplicación de
-    robotraca.json de la canción (mute/vocoder/presence/fx/fx_mix/master/
-    eq/pad_volume) y construcción de los targets de knobs por canción.
+    robotraca.json de la canción (mute/presence/fx/fx_mix/master/
+    pad_volume) y construcción de los targets de knobs por canción.
 """
 
 import json
 import queue
 from pathlib import Path
 
-from master_eq import parse_eq
-
-from lgpt_engine import CHANNEL_COUNT, EFFECT_PRESETS, NETCC_CHANNEL
+from lgpt_engine import (CHANNEL_COUNT, EFFECT_PRESETS, NETCC_CHANNEL,
+                         VOCODER_TRACK)
 
 
 def _pick_port(names: list[str], wanted: str | None, what: str) -> str | None:
@@ -314,8 +313,9 @@ def load_song_cfg(project_dir: Path) -> dict:
 def apply_song_config(engine, cfg: dict, pad_volume_default: float,
                       song_dir=None, pads_dir=None):
     """Aplica a `engine` la config de la canción (robotraca.json):
-    mute de canales, presence, vocoder, cantidades y mezcla de efectos,
-    master, EQ de 7 bandas y volumen de pads. Sin JSON: todo a defecto.
+    mute de canales, presence, cantidades y mezcla de efectos, master y
+    volumen de pads. Sin JSON: todo a defecto. El vocoder es la pista 6,
+    fija (no se lee del JSON).
 
     Los pads NO tienen configuración global, solo por canción: la clave
     "pads" del robotraca.json se resuelve contra la biblioteca de pads
@@ -330,12 +330,10 @@ def apply_song_config(engine, cfg: dict, pad_volume_default: float,
     presence_channels = set(cfg.get("presence", []))
     for ch in engine.channels:
         ch.fx_presence = ch.idx in presence_channels
-    # Pistas cuyo acorde (CHRD, o param1/param2 en nibbles, ver
-    # Engine._vocoder_notes) se manda al vocoder por el evento ACRD
-    # además de/en vez de sonar localmente (ver Channel.vocoder_out).
-    vocoder_channels = set(cfg.get("vocoder", []))
+    # Pista 6 = vocoder, siempre (como la 7 = robotas). El array
+    # "vocoder" del JSON ya no rutea nada.
     for ch in engine.channels:
-        ch.vocoder_out = ch.idx in vocoder_channels
+        ch.vocoder_out = ch.idx == VOCODER_TRACK
     # Cantidad de cada efecto por canal (0-100), persistida por el mixer:
     # {"fx": {"2": {"acid": 80, "delay": 40}}}. Son los mismos nombres de
     # EFFECT_PRESETS que usan los targets de los pots.
@@ -385,10 +383,6 @@ def apply_song_config(engine, cfg: dict, pad_volume_default: float,
             engine.master = engine.base_master * float(master) / 100.0
         except (TypeError, ValueError):
             print(f"[config] master inválido: {master!r}")
-    # EQ gráfico de la mezcla (7 dB). Sin clave = plano. getattr: el
-    # engine viejo de la Odin puede no traer master_eq.
-    if hasattr(engine, "master_eq") and engine.master_eq is not None:
-        engine.master_eq.set_gains(parse_eq(cfg.get("eq")))
     _apply_pad_volume(engine, cfg.get("pad_volume", pad_volume_default),
                       pad_volume_default)
     # Pads SIEMPRE POR CANCIÓN: {"pads": {"1": "nom.wav"}} resueltos contra
@@ -427,6 +421,9 @@ def save_song_cfg(project_dir: Path, cfg: dict):
     """Persiste el robotraca.json de la canción (mismo formato que el
     mixer: indent=2, sort_keys, salto de línea final)."""
     cfg_file = Path(project_dir) / "robotraca.json"
+    cfg = dict(cfg)
+    cfg.pop("eq", None)
+    cfg.pop("vocoder", None)
     try:
         cfg_file.write_text(json.dumps(cfg, indent=2, sort_keys=True) + "\n")
     except OSError as exc:

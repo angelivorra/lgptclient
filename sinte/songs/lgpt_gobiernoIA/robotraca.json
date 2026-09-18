@@ -1,16 +1,30 @@
 {
-  "eq": [
-    1.0,
-    2.0,
-    -1.0,
-    -1.0,
-    1.0,
-    1.0,
-    1.0
-  ],
+  "fx_mix": {
+    "0": {
+      "metal": 40
+    },
+    "1": {
+      "metal": 90
+    },
+    "2": {
+      "acid": 48,
+      "acid_lfo": 46,
+      "bass_drive": 70
+    }
+  },
   "mute": [
+    6,
     7
   ],
+  "pad_volume": {
+    "2": 50
+  },
+  "pots": {
+    "pot1": "2:acid",
+    "pot2": "1:metal",
+    "pot5": "2:bass_drive",
+    "pot6": "4:trance_gate"
+  },
   "tracks": [
     "noise",
     "bass",

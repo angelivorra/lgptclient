@@ -63,12 +63,9 @@ pot7 = { cc = "cc:0:76", target = "", red = true }
 pot8 = { cc = "cc:0:77", target = "" }
 
 [master]
-# Cadena final de la mezcla (EQ de 3 bandas + limitador), común a todas las
-# canciones. El limitador es la red de seguridad para altavoces: ningún pico
-# pasa de `limit` por muy arriba que se pongan los knobs.
-eq_lo = 1.5        # graves (dB, -70..6)
-eq_mid = -1.0      # medios (dB)
-eq_hi = 2.0        # agudos (dB)
+# Limitador de la mezcla, común a todas las canciones. Red de seguridad
+# para altavoces: ningún pico pasa de `limit` por muy arriba que se
+# pongan los knobs.
 gain = 3.0         # ganancia de entrada al limitador (dB)
 limit = -1.0       # techo de salida (dB, 0 = fondo de escala)
 release = 0.15     # recuperación del limitador (s)

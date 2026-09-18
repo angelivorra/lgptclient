@@ -8,7 +8,8 @@ no bloquear el callback.
 
   <canción>/play_stats.txt
 
-Desactivar: PLAY_STATS=0.
+Desactivar: PLAY_STATS=0. En el sinte, la pantalla de reproducción muestra
+en vivo la misma carga (CPU x/s/a y canales caros).
 """
 
 from __future__ import annotations
@@ -237,6 +238,13 @@ class PlayLog:
         self._prev_self_wall = 0.0
         self._prev_sys: tuple[float, float] | None = None
         self.host_lines = _host_lines() if self.enabled else []
+        self.ch_voice_peak: list[float] = []
+        self.ch_voice_sum: list[float] = []
+        self.ch_mix_peak: list[float] = []
+        self.ch_mix_sum: list[float] = []
+        self.ch_fx: list[str] = []
+        self.master_peak_ms = 0.0
+        self.hot_block = ""
 
     def begin(self, tempo: float = 0.0, from_row: int | None = None):
         if not self.enabled:
@@ -256,13 +264,16 @@ class PlayLog:
         self._schedule_write()
 
     def record_block(self, frames: int, elapsed_s: float,
-                     voices: int = 0, peak: float = 0.0):
+                     voices: int = 0, peak: float = 0.0,
+                     ch_voice_ms=None, ch_mix_ms=None, ch_fx=None,
+                     master_ms: float = 0.0):
         if not self.enabled or not self.active:
             return
         ms = elapsed_s * 1000.0
         self.blocks += 1
         self.render_sum_ms += ms
-        if ms > self.render_max_ms:
+        is_worst = ms > self.render_max_ms
+        if is_worst:
             self.render_max_ms = ms
         ring = self.block_ms
         if len(ring) < _BLOCK_RING:
@@ -282,6 +293,9 @@ class PlayLog:
             self.voices_peak = voices
         if peak > self.peak_audio:
             self.peak_audio = peak
+        if master_ms > self.master_peak_ms:
+            self.master_peak_ms = master_ms
+        self._acc_channels(ch_voice_ms, ch_mix_ms, ch_fx, is_worst)
         now = time.monotonic()
         if now - self._last_sample >= _SAMPLE_EVERY_S:
             self._sample_system()
@@ -289,6 +303,39 @@ class PlayLog:
         if now - self._last_snapshot >= _SNAPSHOT_EVERY_S:
             self._last_snapshot = now
             self._schedule_write()
+
+    def _acc_channels(self, ch_voice_ms, ch_mix_ms, ch_fx, is_worst: bool):
+        if not ch_voice_ms and not ch_mix_ms:
+            return
+        n = max(len(ch_voice_ms or ()), len(ch_mix_ms or ()),
+                len(ch_fx or ()))
+        self._ensure_ch(n)
+        for i in range(n):
+            v = float(ch_voice_ms[i]) if ch_voice_ms and i < len(ch_voice_ms) else 0.0
+            m = float(ch_mix_ms[i]) if ch_mix_ms and i < len(ch_mix_ms) else 0.0
+            fx = str(ch_fx[i]) if ch_fx and i < len(ch_fx) else ""
+            self.ch_voice_sum[i] += v
+            self.ch_mix_sum[i] += m
+            if v > self.ch_voice_peak[i]:
+                self.ch_voice_peak[i] = v
+            if m > self.ch_mix_peak[i]:
+                self.ch_mix_peak[i] = m
+                if fx:
+                    self.ch_fx[i] = fx
+            elif fx and not self.ch_fx[i]:
+                self.ch_fx[i] = fx
+        if is_worst:
+            self.hot_block = _hot_block_line(
+                self.ch_voice_peak, self.ch_mix_peak, self.ch_fx,
+                live_voice=ch_voice_ms, live_mix=ch_mix_ms, live_fx=ch_fx)
+
+    def _ensure_ch(self, n: int):
+        while len(self.ch_voice_peak) < n:
+            self.ch_voice_peak.append(0.0)
+            self.ch_voice_sum.append(0.0)
+            self.ch_mix_peak.append(0.0)
+            self.ch_mix_sum.append(0.0)
+            self.ch_fx.append("")
 
     def note_xrun(self, detail: str = ""):
         if not self.enabled or not self.active:
@@ -474,7 +521,11 @@ class PlayLog:
             f"por encima del presupuesto; {self.near_budget} apurados (>75%)",
             f"  voces máx     {self.voices_peak}",
             f"  pico audio    {self.peak_audio:.3f}",
+            f"  master        pico {self.master_peak_ms:.1f} ms",
             f"  comandos      {', '.join(self.cmds) if self.cmds else '(ninguno extra)'}",
+            "",
+            "canales (voces = sample/filtro; fx = delay+LADSPA+pots)",
+            *_fmt_channels(self),
             "",
             "diagnóstico",
         ])
@@ -490,6 +541,53 @@ def _fmt_range(label: str, values: list[float], unit: str) -> list[str]:
         f"{label}    med {_mean(values):.1f} {unit}  "
         f"máx {max(values):.1f} {unit}  último {values[-1]:.1f} {unit}"
     ]
+
+
+def _hot_block_line(voice_peak, mix_peak, fx_names,
+                    live_voice=None, live_mix=None, live_fx=None) -> str:
+    voice = live_voice if live_voice is not None else voice_peak
+    mix = live_mix if live_mix is not None else mix_peak
+    labels = live_fx if live_fx is not None else fx_names
+    n = max(len(voice), len(mix))
+    if n == 0:
+        return ""
+    parts = []
+    for i in range(n):
+        v = float(voice[i]) if i < len(voice) else 0.0
+        m = float(mix[i]) if i < len(mix) else 0.0
+        tot = v + m
+        if tot < 0.5:
+            continue
+        fx = labels[i] if labels and i < len(labels) else ""
+        extra = f" {fx}" if fx else ""
+        parts.append((tot, f"ch{i} {tot:.0f}ms{extra}"))
+    parts.sort(key=lambda r: r[0], reverse=True)
+    return "  ".join(p for _, p in parts[:4])
+
+
+def _fmt_channels(log: PlayLog) -> list[str]:
+    n = len(log.ch_mix_peak)
+    if not n or not log.blocks:
+        return ["  (aún sin perfil de canales)"]
+    lines = []
+    for i in range(n):
+        vpk = log.ch_voice_peak[i]
+        mpk = log.ch_mix_peak[i]
+        if vpk < 0.4 and mpk < 0.4:
+            continue
+        vavg = log.ch_voice_sum[i] / log.blocks
+        mavg = log.ch_mix_sum[i] / log.blocks
+        fx = log.ch_fx[i]
+        extra = f"  {fx}" if fx else ""
+        lines.append(
+            f"  ch{i}         voces med {vavg:.1f} pico {vpk:.1f} ms   "
+            f"fx med {mavg:.1f} pico {mpk:.1f} ms{extra}"
+        )
+    if log.hot_block:
+        lines.append(f"  peor bloque   {log.hot_block}")
+    if not lines:
+        return ["  todos < 0.4 ms por canal"]
+    return lines
 
 
 def _fmt_load(loads: list[tuple[float, float, float]]) -> list[str]:
@@ -531,9 +629,32 @@ def _diagnosis(log: PlayLog, budget: float, over_pct: float) -> list[str]:
             f"  poca RAM libre ({min(log.avail_mb):.0f} MB): el sistema puede "
             "empezar a paginar y cortar el audio."
         )
+    hot = _channel_hint(log, budget)
+    if hot:
+        hints.append(hot)
     if not hints:
         if log.blocks == 0:
             hints.append("  aún no ha sonado ningún bloque (o se cortó al arrancar).")
         else:
             hints.append("  sin xruns ni sobrecarga en esta pasada.")
     return hints
+
+
+def _channel_hint(log: PlayLog, budget: float) -> str | None:
+    n = len(log.ch_mix_peak)
+    if not n:
+        return None
+    i = max(range(n), key=lambda j: log.ch_voice_peak[j] + log.ch_mix_peak[j])
+    v = log.ch_voice_peak[i]
+    m = log.ch_mix_peak[i]
+    tot = v + m
+    if tot < 2.0:
+        return None
+    if budget > 0 and tot < budget * 0.25 and not (log.xruns or log.over_budget):
+        return None
+    fx = log.ch_fx[i] or "sin FX"
+    kind = "voces/filtro" if v >= m else "efectos"
+    return (
+        f"  canal {i}: pico {tot:.0f} ms ({kind}, {fx}). "
+        "Si coincide con los cortes, baja knobs o mutea esa pista."
+    )

@@ -99,26 +99,8 @@ def test_editor_navigates_to_config():
 def test_navmap_live_above_chain():
     assert neighbor("chain", 0, -1) == "live"
     assert neighbor("live", 0, 1) == "chain"
+    assert neighbor("chain", 0, 1) is None
     print("  navmap live above chain OK")
-
-
-def test_navmap_eq_below_chain():
-    assert neighbor("chain", 0, 1) == "eq"
-    assert neighbor("eq", 0, -1) == "chain"
-    assert neighbor("eq", -1, 0) == "song"
-    assert neighbor("eq", 1, 0) == "phrase"
-    print("  navmap eq below chain OK")
-
-
-def test_editor_navigates_to_eq():
-    from screens.editor import EditorScreen  # noqa: E402
-
-    ed = EditorScreen()
-    ed.goto("eq")
-    assert ed.current == "eq"
-    assert ed.eq_grid is not None
-    assert ed._header_text().startswith("EQ")
-    print("  editor navigates to eq OK")
 
 
 def test_navmap_horizontal_goes_home():
@@ -213,10 +195,6 @@ if __name__ == "__main__":
             test_editor_navigates_to_config()
             print("test_navmap_live_above_chain:")
             test_navmap_live_above_chain()
-            print("test_navmap_eq_below_chain:")
-            test_navmap_eq_below_chain()
-            print("test_editor_navigates_to_eq:")
-            test_editor_navigates_to_eq()
             print("test_navmap_horizontal_goes_home:")
             test_navmap_horizontal_goes_home()
             print("test_editor_navigates_to_live:")

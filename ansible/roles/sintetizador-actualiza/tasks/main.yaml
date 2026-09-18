@@ -20,7 +20,10 @@
   changed_when: "'copiado banco' in genera_textos.stdout"
 
 - name: Generar la lista de ficheros versionados (en el PC de control)
-  ansible.builtin.command: git ls-files
+  ansible.builtin.shell: |
+    git ls-files | while IFS= read -r f; do
+      [ -e "$f" ] && printf '%s\n' "$f"
+    done
   args:
     chdir: "{{ control_repo_dir }}"
   delegate_to: localhost
@@ -37,9 +40,18 @@
   run_once: true
   changed_when: false
 
+- name: Listar ficheros versionados borrados en el árbol de trabajo
+  ansible.builtin.command: git ls-files -d
+  args:
+    chdir: "{{ control_repo_dir }}"
+  delegate_to: localhost
+  run_once: true
+  register: deleted_files
+  changed_when: false
+
 # Push desde el control al device. --files-from limita la transferencia a los
-# ficheros versionados (rutas relativas a control_repo_dir); NO se borra nada del
-# device, así que las carpetas gitignoreadas quedan intactas.
+# ficheros versionados que todavía existen; las carpetas gitignoreadas del
+# device (venv, images, samples…) no se tocan.
 - name: Sincronizar los ficheros versionados al sinte (rsync)
   ansible.posix.synchronize:
     src: "{{ control_repo_dir }}/"
@@ -50,6 +62,13 @@
     rsync_opts:
       - "--files-from={{ rsync_filelist }}"
   register: repo_sync
+
+- name: Quitar del sinte los ficheros versionados ya borrados
+  ansible.builtin.file:
+    path: "{{ repo_dir }}/{{ item }}"
+    state: absent
+  loop: "{{ deleted_files.stdout_lines }}"
+  when: deleted_files.stdout_lines | length > 0
 
 # genera_textos.py puede haber creado o actualizado un `textos` que todavía
 # no está comiteado: el rsync de arriba solo manda lo que git rastrea, así

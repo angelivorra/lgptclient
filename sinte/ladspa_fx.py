@@ -659,11 +659,6 @@ class LadspaStereoPointerCast:
         buf[:, 1] = right
 
 
-DJ_EQ_PATH = "/usr/lib/ladspa/dj_eq_1901.so"
-DJ_EQ_ID = 1901
-DJ_EQ_LO, DJ_EQ_MID, DJ_EQ_HI = 0, 1, 2
-DJ_EQ_IN_L, DJ_EQ_IN_R, DJ_EQ_OUT_L, DJ_EQ_OUT_R = 3, 4, 5, 6
-
 LIMITER_PATH = "/usr/lib/ladspa/fast_lookahead_limiter_1913.so"
 LIMITER_ID = 1913
 LIM_GAIN, LIM_LIMIT, LIM_RELEASE = 0, 1, 2
@@ -686,20 +681,6 @@ class _StereoInOut(LadspaPlugin):
         self._run(self._handle, len(left))
 
 
-class LadspaDjEq(_StereoInOut):
-    """EQ de 3 bandas tipo DJ (dj_eq_1901.so): graves, medios y agudos en dB."""
-
-    _PORTS = (DJ_EQ_IN_L, DJ_EQ_IN_R, DJ_EQ_OUT_L, DJ_EQ_OUT_R)
-
-    def __init__(self, sample_rate: int, path: str = DJ_EQ_PATH):
-        super().__init__(path, DJ_EQ_ID, sample_rate)
-
-    def set(self, lo_db: float, mid_db: float, hi_db: float):
-        self.set_control(DJ_EQ_LO, min(max(lo_db, -70.0), 6.0))
-        self.set_control(DJ_EQ_MID, min(max(mid_db, -70.0), 6.0))
-        self.set_control(DJ_EQ_HI, min(max(hi_db, -70.0), 6.0))
-
-
 class LadspaLimiter(_StereoInOut):
     """Limitador con lookahead (fast_lookahead_limiter_1913.so): red de
     seguridad del master, para que ningún pico llegue a fondo de escala."""
@@ -713,3 +694,4 @@ class LadspaLimiter(_StereoInOut):
         self.set_control(LIM_GAIN, min(max(gain_db, -20.0), 20.0))
         self.set_control(LIM_LIMIT, min(max(limit_db, -20.0), 0.0))
         self.set_control(LIM_RELEASE, min(max(release_s, 0.01), 2.0))
+

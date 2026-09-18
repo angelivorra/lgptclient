@@ -52,8 +52,8 @@ import soundfile as sf
 
 from chords import arp_pool_notes, chord_intervals, expand_chord_notes
 from filter_ui import SVF_MODES, mode_from_param, normalize_mode
-from lgpt_parser import CHANNEL_COUNT, LGPTProject, expand_song
-from master_eq import GraphicEQ
+from lgpt_parser import (CHANNEL_COUNT, LGPTProject, VOCODER_TRACK,
+                         expand_song)
 from play_stats import PlayLog
 import scream_numpy
 
@@ -1426,31 +1426,18 @@ EFFECT_PRESETS = {
 
 
 class MasterChain:
-    """Cadena final de la mezcla: EQ de 3 bandas + limitador.
+    """Limitador de la mezcla final.
 
     Va después del master y de los pads, así que es lo último que toca el
-    audio. Existe para dos cosas: dar un color de ecualización común a todas
-    las canciones y, sobre todo, que ningún pico llegue a fondo de escala —
-    en directo los knobs pueden sumar mucho nivel de golpe.
-
-    Sin los plugins LADSPA el EQ se desactiva (no merece la pena aproximarlo)
-    pero el limitador cae a un recorte suave, que es lo que protege.
+    audio: ningún pico llega a fondo de escala aunque los knobs sumen
+    mucho nivel de golpe. Sin el plugin LADSPA cae a un recorte suave.
     """
 
-    def __init__(self, sr: int, lo_db=0.0, mid_db=0.0, hi_db=0.0,
-                 limit_db=-1.0, release_s=0.15, gain_db=0.0):
+    def __init__(self, sr: int, limit_db=-1.0, release_s=0.15, gain_db=0.0):
         self.sr = sr
         self.limit = 10.0 ** (limit_db / 20.0)
         self._l = np.zeros(0, dtype=np.float32)
         self._r = np.zeros(0, dtype=np.float32)
-        try:
-            from ladspa_fx import LadspaDjEq
-            self.eq = LadspaDjEq(sr)
-            self.eq.set(lo_db, mid_db, hi_db)
-            if lo_db == mid_db == hi_db == 0.0:
-                self.eq = None          # plano: nos ahorramos el paso
-        except Exception:
-            self.eq = None
         try:
             from ladspa_fx import LadspaLimiter
             self.limiter = LadspaLimiter(sr)
@@ -1460,8 +1447,7 @@ class MasterChain:
 
     def apply(self, buf: np.ndarray):
         n = len(buf)
-        if self.eq is None and self.limiter is None:
-            # sin plugins: recorte suave (tanh) en vez de cortar cuadrado
+        if self.limiter is None:
             np.tanh(buf / self.limit, out=buf)
             buf *= self.limit
             return
@@ -1470,13 +1456,9 @@ class MasterChain:
             self._r = np.zeros(n, dtype=np.float32)
         left = np.ascontiguousarray(buf[:, 0])
         right = np.ascontiguousarray(buf[:, 1])
-        for stage in (self.eq, self.limiter):
-            if stage is None:
-                continue
-            stage.process(left, right, self._l, self._r)
-            left, right = self._l.copy(), self._r.copy()
-        buf[:, 0] = left
-        buf[:, 1] = right
+        self.limiter.process(left, right, self._l, self._r)
+        buf[:, 0] = self._l
+        buf[:, 1] = self._r
 
 
 # --------------------------------------------------------------------------
@@ -1569,10 +1551,9 @@ class Channel:
         # Mezcla dry/wet por efecto (config por canción, ver render()):
         # nombre -> 0-1, ausencia = 1.0 (100% wet, igual que sin esto)
         self.fx_mix: dict[str, float] = {}
-        # Pista de voz -> vocoder (config por canción, ver _trigger_row):
-        # además de sonar (o no, si está muteada) emite el acorde por
-        # midi_out.chord_on().
-        self.vocoder_out = False
+        # Pista de voz -> vocoder: canal 6 es fijo (como las robotas en 7).
+        # El mute solo silencia el audio local; ACRD sale igual.
+        self.vocoder_out = idx == VOCODER_TRACK
         # Ganancia de mute (0-1). El mute en vivo rampa ~4 ms para no
         # chasquear; al cargar/arrancar se ajusta de golpe (snap_mute_gains).
         self.mute_gain = 1.0
@@ -1722,8 +1703,12 @@ class Engine:
             self._load_pad_samples(self.wavs_dir)
         # Última reproducción: <canción>/play_stats.txt (robotracker2 y sinte).
         self.play_log = PlayLog(project.dir, sample_rate)
-        # EQ de la mezcla (7 bandas, por canción). Siempre nativo.
-        self.master_eq = GraphicEQ(sample_rate)
+        # Perfil del último bloque (ms): voces vs FX por canal. Lo lee la
+        # UI del sinte y play_stats, para ver QUÉ pista dispara un corte.
+        self.prof_voice_ms = [0.0] * CHANNEL_COUNT
+        self.prof_mix_ms = [0.0] * CHANNEL_COUNT
+        self.prof_fx_label = [""] * CHANNEL_COUNT
+        self.prof_master_ms = 0.0
 
     def load_pad_bank(self, meta: dict, base: Path):
         """Banco de pads desde `meta` ({"1": "rel.wav", ...}, claves 1-8),
@@ -1984,6 +1969,7 @@ class Engine:
         t0 = time.perf_counter()
         was_playing = self.playing
         self._drain_events()
+        self._reset_prof()
         # 1. t=0: render de voces por canal
         for ch in self.channels:
             buf = self._stage.get(ch.idx)
@@ -2014,6 +2000,7 @@ class Engine:
         # 2. t+1: salida del delay, efectos del controlador y mezcla
         out = np.zeros((frames, 2), dtype=np.float32)
         for ch in self.channels:
+            t_ch = time.perf_counter()
             block = self._delay_channel(ch, self._stage[ch.idx][:frames])
             block, dry_ref = self._apply_fx_pass(
                 ch, block, after_presence=False, capture_dry=ch.fx_presence)
@@ -2056,6 +2043,9 @@ class Engine:
                 block[:, 1] *= min(1.0, 2.0 * x)
             self._apply_mute_ramp(ch, block)
             out += block
+            self.prof_mix_ms[ch.idx] = (time.perf_counter() - t_ch) * 1000.0
+            self.prof_fx_label[ch.idx] = "+".join(
+                n for n, a in ch.fx_amounts.items() if a > 0.001)
         out *= self.master
         # Pad sampler: suena directo (sin delay ni FX de canal) y DESPUÉS del
         # master, porque el banco es un instrumento de directo ajeno a la
@@ -2068,10 +2058,10 @@ class Engine:
             if not pv.active:
                 self.pad_voice = None
         self._render_preview(out, frames)
-        # EQ de la canción (salida completa: master + pads + preview).
-        self.master_eq.apply(out)
+        t_m = time.perf_counter()
         if self.master_chain is not None:
             self.master_chain.apply(out)
+        self.prof_master_ms = (time.perf_counter() - t_m) * 1000.0
         np.clip(out, -1.0, 1.0, out=out)
         self._write_scope(out)
         self._samples_rendered += frames
@@ -2087,7 +2077,9 @@ class Engine:
         voices = sum(len(ch.voices) + len(ch.releases) for ch in self.channels)
         peak = float(np.max(np.abs(out))) if frames else 0.0
         self.play_log.record_block(
-            frames, time.perf_counter() - t0, voices=voices, peak=peak)
+            frames, time.perf_counter() - t0, voices=voices, peak=peak,
+            ch_voice_ms=self.prof_voice_ms, ch_mix_ms=self.prof_mix_ms,
+            ch_fx=self.prof_fx_label, master_ms=self.prof_master_ms)
         if self.unsupported_cmds:
             self.play_log.note_cmds(self.unsupported_cmds)
         if was_playing and not self.playing:
@@ -2097,13 +2089,22 @@ class Engine:
                 self.play_log.snapshot("pause")
         return out
 
+    def _reset_prof(self):
+        for i in range(CHANNEL_COUNT):
+            self.prof_voice_ms[i] = 0.0
+            self.prof_mix_ms[i] = 0.0
+            self.prof_fx_label[i] = ""
+        self.prof_master_ms = 0.0
+
     def _render_channel_audio(self, ch: Channel, buf, off: int, n: int):
         """Voces + colas de declick de un canal. Si está muteado y ya en
         silencio, no renderiza (durante la rampa de mute sí)."""
         if ch.idx in self.muted and ch.mute_gain <= 0.0:
             return
+        t0 = time.perf_counter()
         self._render_voice_list(ch, ch.voices, buf, off, n)
         self._render_voice_list(ch, ch.releases, buf, off, n)
+        self.prof_voice_ms[ch.idx] += (time.perf_counter() - t0) * 1000.0
 
     def _render_voice_list(self, ch: Channel, voices: list, buf, off: int,
                            n: int):
@@ -2269,7 +2270,8 @@ class Engine:
                 # del robotraca.json al cargar la canción
                 (self.muted.add if ev[2] else self.muted.discard)(ev[1])
             elif kind == "vocoder":
-                self.channels[ev[1]].vocoder_out = bool(ev[2])
+                # Pista fija: el canal 6 siempre rutea al vocoder.
+                self.channels[VOCODER_TRACK].vocoder_out = True
             elif kind == "presence":
                 self.channels[ev[1]].fx_presence = bool(ev[2])
             elif kind == "play":
@@ -2661,13 +2663,15 @@ class Engine:
             # asignado en el editor después de cargar la canción).
             sample = self.bank.get(idef.sample_name)
             if sample is None:
-                return
-            ch.voices = [
-                Voice(sample, idef, n, ch.last_instr, self.sr,
-                      self.samples_per_tick)
-                for n in notes
-            ]
-            ch.kind = "sample"
+                if not ch.vocoder_out:
+                    return
+            else:
+                ch.voices = [
+                    Voice(sample, idef, n, ch.last_instr, self.sr,
+                          self.samples_per_tick)
+                    for n in notes
+                ]
+                ch.kind = "sample"
         else:
             # Vocoder: la raíz sigue yendo por note_on (NOTA); el acorde
             # completo va por ACRD. Sin vocoder, el MIDI lleva todas las
@@ -2932,6 +2936,36 @@ class Engine:
             1 for ch in self.channels
             if ch.voices or ch.midi_notes
         )
+
+    def prof_line(self) -> str:
+        """Canales que se comen el bloque, el más caro primero.
+
+        Formato compacto para la consola de la Pi (~50 columnas):
+        `1:14v2 metal  2:9v3 acid+drv`.
+        """
+        abbr = {
+            "bass_drive": "drv",
+            "acid_lfo": "lfo",
+            "trance_gate": "gate",
+            "overdrive": "od",
+            "crossover": "xover",
+        }
+        rows = []
+        for i, ch in enumerate(self.channels):
+            tot = self.prof_voice_ms[i] + self.prof_mix_ms[i]
+            if tot < 0.5:
+                continue
+            vox = len(ch.voices) + len(ch.releases)
+            fx = "+".join(abbr.get(n, n)
+                          for n in self.prof_fx_label[i].split("+") if n)
+            bit = f"{i}:{tot:.0f}"
+            if vox:
+                bit += f"v{vox}"
+            if fx:
+                bit += f" {fx}"
+            rows.append((tot, bit))
+        rows.sort(key=lambda r: r[0], reverse=True)
+        return "  ".join(bit for _, bit in rows[:4])
 
     def song_positions(self) -> list[int]:
         return [ch.song_pos for ch in self.channels]

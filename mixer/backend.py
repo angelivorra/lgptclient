@@ -58,7 +58,6 @@ IMPORT_SCRIPT = SINTE_DIR / "importa-cancion.sh"
 # Claves del robotraca.json que edita el mixer, con su valor por defecto.
 _MODEL_DEFAULTS = {
     "mute": [],
-    "vocoder": [],
     "presence": [],
     "fx": {},
     "fx_mix": {},
@@ -186,6 +185,8 @@ class MixerBackend:
             cfg = {}
         if not isinstance(cfg, dict):
             cfg = {}
+        cfg.pop("eq", None)
+        cfg.pop("vocoder", None)
         for key, default in _MODEL_DEFAULTS.items():
             value = cfg.get(key)
             if not isinstance(value, type(default)):
@@ -395,7 +396,7 @@ class MixerBackend:
         return self._channel_toggle("mute", ch, on)
 
     def set_vocoder(self, ch: int, on: bool) -> str:
-        return self._channel_toggle("vocoder", ch, on)
+        return "OK"
 
     def set_presence(self, ch: int, on: bool) -> str:
         return self._channel_toggle("presence", ch, on)
@@ -629,7 +630,10 @@ class MixerBackend:
             self._sync_model()
             cfg_file = self._project_dir() / "robotraca.json"
             try:
-                cfg_file.write_text(json.dumps(self._cfg, indent=2,
+                out = dict(self._cfg)
+                out.pop("eq", None)
+                out.pop("vocoder", None)
+                cfg_file.write_text(json.dumps(out, indent=2,
                                                sort_keys=True) + "\n")
             except OSError as exc:
                 return f"ERR,{exc}"

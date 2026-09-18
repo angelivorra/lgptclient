@@ -54,11 +54,11 @@
             on_state: app.on_mute(root.canal, self.state == "down")
         ToggleButton:
             text: "V"
-            state: "down" if root.voc else "normal"
+            state: "down" if root.canal == 6 else "normal"
+            disabled: True
             background_normal: ""
             background_down: ""
-            background_color: (0.85, 0.6, 0.12, 1) if self.state == "down" else (0.25, 0.25, 0.28, 1)
-            on_state: app.on_vocoder(root.canal, self.state == "down")
+            background_color: (0.85, 0.6, 0.12, 1) if root.canal == 6 else (0.25, 0.25, 0.28, 1)
         ToggleButton:
             text: "P"
             state: "down" if root.pres else "normal"

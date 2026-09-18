@@ -923,6 +923,11 @@ class TestChrd(unittest.TestCase):
         self.assertEqual(chords[0][1], 0)               # canal del tracker
         self.assertEqual(chords[0][2], (60, 63, 67))
 
+    def test_vocoder_canal_6_activo_por_defecto(self):
+        engine = make_engine()
+        self.assertTrue(engine.channels[6].vocoder_out)
+        self.assertFalse(engine.channels[0].vocoder_out)
+
     def test_vocoder_nibbles_siguen_funcionando(self):
         engine = make_engine()
         engine.midi_out = MidiCollector()

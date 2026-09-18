@@ -61,7 +61,7 @@ try:
 except ImportError:
     GamepadReader = None
 from songs import DEFAULT_SONGS, display_name, find_songs, load_project
-from tracks import track_at_slot
+from tracks import FIXED_TRACKS, track_at_slot
 from host import is_handheld
 from player import Player
 from robots import ROBOT_TRACK, RobotPlayback, screen_label
@@ -129,7 +129,6 @@ class Robotracker2App(App):
         self._pads_pad = None      # pad (1-4) al que apunta el navegador PADS
         self._pads_dirty = False   # pads de la canción sin guardar (memoria)
         self._pots_dirty = False   # knobs de la canción sin guardar (memoria)
-        self._eq_dirty = False     # EQ de 7 bandas sin guardar (robotraca)
         self._tracks_dirty = False # tipos de pista sin guardar (robotraca)
         self._mute_dirty = False   # mute de canales sin guardar (robotraca)
         self.fullscreen = fullscreen
@@ -435,8 +434,6 @@ class Robotracker2App(App):
                     g.cycle_selection()
         if ed.current == "pots":
             return self._dispatch_pots(button, active)
-        if ed.current == "eq":
-            return self._dispatch_eq(button, active)
         if ed.current == "pads":
             return self._dispatch_pads(button, active)
         if ed.current == "tracks":
@@ -555,46 +552,6 @@ class Robotracker2App(App):
         self._pots_dirty = False
         self._sync_unsaved()
         self.editor_screen.toast_msg("Efectos guardados")
-
-    def _dispatch_eq(self, button, active):
-        g = self.editor_screen.eq_grid
-        if g.cursor == g.SAVE_ROW:
-            if button in (UP, DOWN):
-                g.move(button)
-                return True
-            if button == A:
-                if L2 in active or R2 in active:
-                    self._a_consumed = True
-                else:
-                    self._eq_save()
-                return True
-            if button in (LEFT, RIGHT):
-                return True
-            return False
-        if button in DPAD and A in active:
-            delta = {UP: 1, DOWN: -1, LEFT: -3, RIGHT: 3}[button]
-            self._midi_ctrl.set_eq_band(g.cursor, delta)
-            g.set_gains(self._midi_ctrl.eq_gains())
-            self._eq_dirty = True
-            self._sync_unsaved()
-            return True
-        if button in (LEFT, RIGHT):
-            g.move_band(-1 if button == LEFT else 1)
-            return True
-        if button in (UP, DOWN):
-            g.move(button)
-            return True
-        if button == A:
-            if L2 in active or R2 in active:
-                self._a_consumed = True
-            return True
-        return False
-
-    def _eq_save(self):
-        self._midi_ctrl.save()
-        self._eq_dirty = False
-        self._sync_unsaved()
-        self.editor_screen.toast_msg("EQ guardado")
 
     # ------------------------------------------------------------------
     # Pantalla PADS (pads sampler por canción, ver screens/pads_view.py)
@@ -736,7 +693,10 @@ class Robotracker2App(App):
 
     def _tracks_cycle(self, delta):
         g = self.editor_screen.tracks_grid
-        self._midi_ctrl.cycle_track_kind(track_at_slot(g.cursor), delta)
+        track = track_at_slot(g.cursor)
+        if track in FIXED_TRACKS:
+            return
+        self._midi_ctrl.cycle_track_kind(track, delta)
         kinds = self._midi_ctrl.tracks_state()
         self.editor_screen.set_tracks(kinds)
         self._tracks_dirty = True
@@ -1205,12 +1165,10 @@ class Robotracker2App(App):
             msg = f"Error: {exc}"
         self._midi_ctrl.sync_mute()
         if self._pads_dirty or self._pots_dirty or self._tracks_dirty \
-                or self._mute_dirty or self._eq_dirty:
+                or self._mute_dirty:
             extra = []
             if self._pads_dirty or self._pots_dirty:
                 extra.append("pads/knobs")
-            if self._eq_dirty:
-                extra.append("eq")
             if self._tracks_dirty:
                 extra.append("pistas")
             if self._mute_dirty:
@@ -1218,7 +1176,6 @@ class Robotracker2App(App):
             self._midi_ctrl.save()
             self._pads_dirty = False
             self._pots_dirty = False
-            self._eq_dirty = False
             self._tracks_dirty = False
             self._mute_dirty = False
             msg += " + " + "/".join(extra)
@@ -1708,10 +1665,10 @@ class Robotracker2App(App):
     # ------------------------------------------------------------------
     def _session_dirty(self):
         return self.dirty or self._pads_dirty or self._pots_dirty \
-            or self._eq_dirty or self._tracks_dirty or self._mute_dirty
+            or self._tracks_dirty or self._mute_dirty
 
     def _sync_unsaved(self):
-        """Asterisco en cabecera si hay cambios de canción, pads, knobs, eq
+        """Asterisco en cabecera si hay cambios de canción, pads, knobs
         o pistas."""
         self.editor_screen.set_unsaved(self._session_dirty())
 
@@ -1762,15 +1719,13 @@ class Robotracker2App(App):
         self.dirty = False
         self._pads_dirty = False
         self._pots_dirty = False
-        self._eq_dirty = False
         self._tracks_dirty = False
         self._mute_dirty = False
         self.editor_screen.set_play_indicator(False)
         self.editor_screen.enter_song(project, display_name(song_dir.name))
-        # PADS/POTS/EQ/TRACKS: estado de esta canción (robotraca.json)
+        # PADS/POTS/TRACKS: estado de esta canción (robotraca.json)
         self.editor_screen.pads_grid.set_state(self._midi_ctrl.pads_state())
         self.editor_screen.pots_grid.set_state(self._midi_ctrl.pots_state())
-        self.editor_screen.eq_grid.set_gains(self._midi_ctrl.eq_gains())
         self.editor_screen.set_tracks(self._midi_ctrl.tracks_state())
         self._sync_unsaved()
         self.sm.current = "editor"

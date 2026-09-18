@@ -23,7 +23,8 @@ from screens.track_icons import draw_track_icon
 from theme import (COLOR_ACCENT, COLOR_BG, COLOR_HINT, COLOR_HINT_BG,
                    COLOR_NAME, COLOR_OK, COLOR_ROW_CURSOR, COLOR_SONG_TRACK,
                    core_label)
-from tracks import DEFAULT_TRACKS, TRACK_KINDS, track_at_slot, track_caption
+from tracks import (DEFAULT_TRACKS, EDITABLE_TRACK_KINDS, FIXED_TRACKS,
+                    track_at_slot, track_caption)
 
 ROW_H = dp(44)
 FONT = dp(18)
@@ -56,13 +57,16 @@ class TracksGrid(Widget):
         self._redraw()
 
     def cycle(self, delta):
-        """Cicla el tipo de la pista del cursor. False en la fila GUARDAR."""
+        """Cicla el tipo de la pista del cursor. False en GUARDAR, vocoder y robotas."""
         if not 0 <= self.cursor < NUM_TRACKS:
             return False
         t = track_at_slot(self.cursor)
-        i = TRACK_KINDS.index(self.kinds[t]) \
-            if self.kinds[t] in TRACK_KINDS else 0
-        self.kinds[t] = TRACK_KINDS[(i + delta) % len(TRACK_KINDS)]
+        if t in FIXED_TRACKS:
+            return False
+        i = EDITABLE_TRACK_KINDS.index(self.kinds[t]) \
+            if self.kinds[t] in EDITABLE_TRACK_KINDS else 0
+        self.kinds[t] = EDITABLE_TRACK_KINDS[
+            (i + delta) % len(EDITABLE_TRACK_KINDS)]
         self._redraw()
         return True
 

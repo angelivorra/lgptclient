@@ -43,12 +43,14 @@ def test_parse_tracks():
     assert got[0] == "noise"
     assert got[1:] == list(DEFAULT_TRACKS[1:])
     got = parse_tracks({"tracks": {"1": "vocoder", "8": "drum"}})
-    assert got[0] == "vocoder" and got[7] == "drum"
+    assert got[0] == "vocoder" and got[7] == "robot"
     got = parse_tracks({"tracks": ["nope", "bass"]})
     assert got[0] == DEFAULT_TRACKS[0] and got[1] == "bass"
+    got = parse_tracks({"tracks": ["drum"] * 9})
+    assert got[6] == "vocoder" and got[7] == "robot"
     assert cycle_kind("drum", 1) == "bass"
-    assert cycle_kind("vocoder", 1) == "drum"
-    assert cycle_kind("drum", -1) == "vocoder"
+    assert cycle_kind("noise", 1) == "drum"
+    assert cycle_kind("drum", -1) == "noise"
     assert track_label("synth") == "SYNTH"
     assert TRACK_DISPLAY == (EXTRA_TRACK, 0, 1, 2, 3, 4, 5, 6, 7)
     assert slot_of(EXTRA_TRACK) == 0 and track_at_slot(0) == EXTRA_TRACK
