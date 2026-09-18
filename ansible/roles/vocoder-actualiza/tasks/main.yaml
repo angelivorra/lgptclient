@@ -45,6 +45,28 @@
     group: patch
   register: carxp_copy
 
+# Scripts de sesión de ajuste con la GUI de Carla (para producción, señal de
+# prueba en bucle): ver vocoder/tuning/README.md. No los toca carxp_copy
+# porque template01.carxp es el mismo fichero que usa producción.
+- name: Sincronizar los scripts de ajuste del vocoder (tuning/)
+  ansible.posix.synchronize:
+    src: /home/angel/git/lgptclient/vocoder/tuning/
+    dest: "{{ vocoder_dest }}/tuning/"
+    delete: yes
+    checksum: true
+    times: false
+    perms: false
+    rsync_opts:
+      - "--chown=patch:patch"
+
+- name: Dejar ejecutables los scripts de ajuste
+  ansible.builtin.file:
+    path: "{{ vocoder_dest }}/tuning/{{ item }}"
+    mode: "0755"
+  loop:
+    - start-tuning.sh
+    - stop-tuning.sh
+
 # Plugin LADSPA propio (gate rítmico, ver vocoder/gater/). La Pi no tiene
 # internet ni la misma arquitectura que este PC (es ARM), así que se compila EN
 # la Pi: el fuente C no tiene más dependencias que libc/libm y `ladspa.h`, que
