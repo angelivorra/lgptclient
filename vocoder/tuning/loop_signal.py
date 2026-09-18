@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/patch/venv/bin/python3
 """Señal de prueba para ajustar el vocoder sin depender del sinte ni del micro.
 
 Sustituye el micro (modulador) por un WAV en bucle, y dispara un patrón MIDI

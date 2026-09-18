@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/patch/venv/bin/python3
 """Graba lo que entra a Carla (system:capture_1, el mismo micro que usa el
 vocoder en producción) a un WAV, para usarlo luego como señal de prueba más
 real que un WAV sintético (ver loop_signal.py --wav).
