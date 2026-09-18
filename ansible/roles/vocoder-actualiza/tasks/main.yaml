@@ -48,6 +48,10 @@
 # Scripts de sesión de ajuste con la GUI de Carla (para producción, señal de
 # prueba en bucle): ver vocoder/tuning/README.md. No los toca carxp_copy
 # porque template01.carxp es el mismo fichero que usa producción.
+# --delete solo debe tocar lo que viene del repo: sandbox.carxp (copia de
+# trabajo de una sesión de tuning, ver start-tuning.sh) y recordings/ (WAVs
+# grabados con record_input.py) son estado LOCAL de la Pi, nunca del repo, y
+# no deben desaparecer en el próximo deploy.
 - name: Sincronizar los scripts de ajuste del vocoder (tuning/)
   ansible.posix.synchronize:
     src: /home/angel/git/lgptclient/vocoder/tuning/
@@ -58,6 +62,8 @@
     perms: false
     rsync_opts:
       - "--chown=patch:patch"
+      - "--exclude=sandbox.carxp"
+      - "--exclude=recordings/"
 
 - name: Dejar ejecutables los scripts de ajuste
   ansible.builtin.file:
