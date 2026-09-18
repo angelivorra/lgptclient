@@ -17,6 +17,11 @@ set -euo pipefail
 HOST=patch@192.168.0.10
 REMOTE_BASE=/home/patch/pivocoder/tuning
 
+if ssh "$HOST" "[ -f /tmp/vocoder-tune-loop.pid ] && kill -0 \"\$(cat /tmp/vocoder-tune-loop.pid)\" 2>/dev/null"; then
+  echo ">> Hay una sesión de tuning activa — parándola primero..."
+  ssh "$HOST" "cd $REMOTE_BASE && ./stop-tuning.sh"
+fi
+
 echo ">> Iniciando sesión de tuning en la Pi..."
 ssh "$HOST" "cd $REMOTE_BASE && ./start-tuning.sh $*"
 
