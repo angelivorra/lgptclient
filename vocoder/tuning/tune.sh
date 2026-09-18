@@ -14,7 +14,7 @@
 # Todos los args adicionales se pasan a loop_signal.py.
 set -euo pipefail
 
-HOST=Robotraca-Vocoder
+HOST=patch@192.168.0.10
 REMOTE_BASE=/home/patch/pivocoder/tuning
 
 echo ">> Iniciando sesión de tuning en la Pi..."

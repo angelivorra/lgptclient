@@ -4,7 +4,7 @@
 # Ejecutar desde el PC de control (no desde la Pi).
 set -euo pipefail
 
-HOST=Robotraca-Vocoder
+HOST=patch@192.168.0.10
 LOCAL="$(cd "$(dirname "$0")/.." && pwd)/prod/template01.carxp"
 
 REMOTE=$(ssh "$HOST" \
