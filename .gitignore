@@ -209,10 +209,10 @@ sinte/gates/**
 sinte/filtros_ladspa/**
 !sinte/filtros_ladspa/genera.py
 
-# vocoder/tuning/: sandbox.carxp y las grabaciones son estado LOCAL de la Pi
-# (ver README.md), nunca del repo — template01.carxp sigue siendo el único
-# .carxp versionado.
-vocoder/tuning/sandbox.carxp
+# vocoder/tuning/: las sesiones de ajuste (sessions/) y las grabaciones
+# (recordings/) son estado LOCAL de la Pi (ver README.md), nunca del repo —
+# template01.carxp sigue siendo el único .carxp versionado.
+vocoder/tuning/sessions/
 vocoder/tuning/recordings/
 
 # Comparaciones locales (WAV pesados, no se versionan)

@@ -19,9 +19,9 @@ if [ -f "$LOOP_PIDFILE" ]; then
   rm -f "$LOOP_PIDFILE"
 fi
 
-if pgrep -f 'bin/carla .*template01\.carxp' >/dev/null 2>&1; then
+if pgrep -f 'bin/carla .*/sessions/' >/dev/null 2>&1; then
   echo "AVISO: la GUI de Carla sigue abierta. Si no has guardado (Ctrl+S)," >&2
-  echo "  ciérrala primero o perderás los cambios del .carxp al reiniciar." >&2
+  echo "  ciérrala primero o perderás los cambios antes de parar." >&2
 fi
 
 echo ">> Reanudando producción ($SERVICE)..."

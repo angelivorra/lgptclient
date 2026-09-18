@@ -62,7 +62,7 @@
     perms: false
     rsync_opts:
       - "--chown=patch:patch"
-      - "--exclude=sandbox.carxp"
+      - "--exclude=sessions/"
       - "--exclude=recordings/"
 
 - name: Dejar ejecutables los scripts de ajuste
@@ -72,6 +72,8 @@
   loop:
     - start-tuning.sh
     - stop-tuning.sh
+    - pull-tuning.sh
+    - tune.sh
 
 # Plugin LADSPA propio (gate rítmico, ver vocoder/gater/). La Pi no tiene
 # internet ni la misma arquitectura que este PC (es ARM), así que se compila EN
