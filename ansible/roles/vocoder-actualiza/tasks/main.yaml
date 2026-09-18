@@ -24,12 +24,6 @@
   ansible.builtin.command: /sbin/iwconfig wlan0 power off
   changed_when: false
 
-- name: Instalar xpra (GUI remota más fluida que X11 forwarding)
-  become: true
-  ansible.builtin.apt:
-    name: xpra
-    state: present
-
 - name: Sincronizar la app flask del vocoder
   ansible.posix.synchronize:
     src: /home/angel/git/lgptclient/vocoder/flask/

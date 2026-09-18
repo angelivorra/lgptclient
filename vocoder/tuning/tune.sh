@@ -28,16 +28,8 @@ ssh "$HOST" "cd $REMOTE_BASE && ./start-tuning.sh $*"
 SESSION_CARXP=$(ssh "$HOST" "cat /tmp/vocoder-tune-session")
 echo ">> Sesión: $(basename "$SESSION_CARXP")"
 echo ""
-if command -v xpra &>/dev/null && ssh "$HOST" "command -v xpra" &>/dev/null; then
-  echo ">> Abriendo Carla GUI (xpra — más fluido que X11)..."
-  xpra start "ssh://$HOST/" \
-    --start-child="carla '$SESSION_CARXP'" \
-    --exit-with-children=yes \
-    --attach=yes
-else
-  echo ">> Abriendo Carla GUI (ssh -Y — instala xpra en PC y Pi para mejor rendimiento)..."
-  ssh -Y "$HOST" "carla '$SESSION_CARXP'"
-fi
+echo ">> Abriendo Carla GUI..."
+ssh -Y -C "$HOST" "carla '$SESSION_CARXP'"
 
 echo ""
 read -rp ">> ¿Llevar esta sesión a producción? [s/N]: " resp
