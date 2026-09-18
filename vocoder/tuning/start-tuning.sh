@@ -34,8 +34,20 @@ echo "$SESSION_CARXP" > "$SESSION_REF"
 echo ">> Parando producción ($SERVICE)..."
 systemctl --user stop "$SERVICE"
 
+# Si no se pasa --wav, usa el recording más reciente; si no hay ninguno,
+# cae al WAV de prueba incluido con la instalación.
+EXTRA_ARGS=()
+if [[ ! " $* " =~ " --wav " ]]; then
+  LATEST_REC=$(ls -t "$(pwd)/recordings/"*.wav 2>/dev/null | head -1 || true)
+  if [ -n "$LATEST_REC" ]; then
+    echo ">> Usando recording: $(basename "$LATEST_REC")"
+    EXTRA_ARGS=(--wav "$LATEST_REC")
+  fi
+fi
+
 echo ">> Arrancando señal de prueba en bucle (sustituye el micro)..."
-nohup /home/patch/venv/bin/python3 "$(pwd)/loop_signal.py" "$@" \
+nohup /home/patch/venv/bin/python3 "$(pwd)/loop_signal.py" \
+  "${EXTRA_ARGS[@]}" "$@" \
   > "$LOOP_LOG" 2>&1 &
 echo $! > "$LOOP_PIDFILE"
 sleep 1
