@@ -109,6 +109,13 @@ class LoopSignal:
             i += 1
 
     def _connect(self) -> None:
+        deadline = time.monotonic() + 60
+        while "Carla:audio-in1" not in [p.name for p in self.client.get_ports()]:
+            if time.monotonic() > deadline:
+                raise RuntimeError("Carla:audio-in1 no apareció tras 60s — "
+                                   "¿está Carla corriendo?")
+            print("[loop] esperando a Carla...", flush=True)
+            time.sleep(2)
         for dst in CARLA_AUDIO_IN:
             try:
                 self.client.disconnect(MIC_SOURCE, dst)
