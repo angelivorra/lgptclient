@@ -1,18 +1,17 @@
 #!/home/patch/venv/bin/python3
 """Señal de prueba para ajustar el vocoder sin depender del sinte ni del micro.
 
-Sustituye el micro (modulador) por un WAV en bucle, y dispara un patrón MIDI
-rítmico al carrier (Noize Mak3r) por `Carla:events-in`, igual que hace
-`carla_runner.py` con el ACRD del sinte. Pensado para sesiones de ajuste con
-la GUI de Carla (ver start-tuning.sh/stop-tuning.sh de este mismo
-directorio): deja el vocoder sonando solo, en bucle y en compás, mientras se
-añaden/quitan plugins o se mueven knobs.
+Sustituye el micro (modulador) por un WAV en bucle, y dispara acordes MIDI
+en progresión al carrier (Noize Mak3r) por `Carla:events-in`. Las transiciones
+son legato: el note-on del acorde nuevo llega antes del note-off del anterior,
+así siempre hay alguna nota sonando.
 
 Uso:
-  loop_signal.py [--wav RUTA] [--notes 60,63,67] [--bpm 100] [--vel 100]
+  loop_signal.py [--wav RUTA] [--progression let_it_be] [--bpm 90] [--vel 90]
+  loop_signal.py --list-progressions
+  loop_signal.py --notes 60,63,67   # notas sueltas custom (legato)
 
-Para: Ctrl+C, o SIGTERM (systemctl/kill) — desconecta limpio y devuelve el
-micro a Carla:audio-in1/2.
+Para: Ctrl+C, o SIGTERM (kill / stop-tuning.sh).
 """
 
 from __future__ import annotations
@@ -31,21 +30,71 @@ CLIENT_NAME = "vocoder-tune-loop"
 CARLA_AUDIO_IN = ("Carla:audio-in1", "Carla:audio-in2")
 CARLA_MIDI_IN = "Carla:events-in"
 MIC_SOURCE = "system:capture_1"
-CHORD_MIDI_CHANNEL = 0
+CH = 0  # canal MIDI
 
 DEFAULT_WAV = "/home/patch/pivocoder/mic_test.wav"
-DEFAULT_NOTES = [60, 63, 67]     # acorde por defecto (Cm), cambia con --notes
-DEFAULT_BPM = 100.0
-DEFAULT_VEL = 100
-NOTE_HOLD_FRAC = 0.6             # la nota suena el 60% del pulso, luego note-off
+DEFAULT_BPM = 90.0
+DEFAULT_VEL = 90
+
+# Progresiones: lista de acordes (listas de notas MIDI), beats por acorde.
+PROGRESSIONS: dict[str, dict] = {
+    "let_it_be": {
+        "desc": "Let It Be — The Beatles  (C – G – Am – F)",
+        "beats": 4,
+        "chords": [
+            [60, 64, 67],        # C maj  (C4 E4 G4)
+            [55, 59, 62, 67],    # G maj  (G3 B3 D4 G4)
+            [57, 60, 64],        # A min  (A3 C4 E4)
+            [53, 57, 60, 65],    # F maj  (F3 A3 C4 F4)
+        ],
+    },
+    "andaluza": {
+        "desc": "Cadencia andaluza  (Am – G – F – E)",
+        "beats": 4,
+        "chords": [
+            [57, 60, 64],        # Am  (A3 C4 E4)
+            [55, 59, 62],        # G   (G3 B3 D4)
+            [53, 57, 60],        # F   (F3 A3 C4)
+            [52, 56, 59],        # E   (E3 G#3 B3)
+        ],
+    },
+    "fifties": {
+        "desc": "Años 50  (C – Am – F – G)",
+        "beats": 4,
+        "chords": [
+            [60, 64, 67],        # C
+            [57, 60, 64],        # Am
+            [53, 57, 60],        # F
+            [55, 59, 62],        # G
+        ],
+    },
+    "jazz_251": {
+        "desc": "Jazz ii–V–I  (Dm7 – G7 – Cmaj7)",
+        "beats": 2,
+        "chords": [
+            [62, 65, 69, 72],    # Dm7  (D4 F4 A4 C5)
+            [55, 59, 62, 65],    # G7   (G3 B3 D4 F4)
+            [60, 64, 67, 71],    # Cmaj7 (C4 E4 G4 B4)
+            [60, 64, 67, 71],    # Cmaj7 sostenido
+        ],
+    },
+    "creep": {
+        "desc": "Creep — Radiohead  (G – B – C – Cm)",
+        "beats": 4,
+        "chords": [
+            [55, 59, 62],        # G   (G3 B3 D4)
+            [59, 63, 66],        # B   (B3 D#4 F#4)
+            [60, 64, 67],        # C   (C4 E4 G4)
+            [60, 63, 67],        # Cm  (C4 Eb4 G4)
+        ],
+    },
+}
 
 
 def load_wav_mono(path: str, sr: int) -> np.ndarray:
     data, file_sr = sf.read(path, dtype="float32", always_2d=True)
     mono = data.mean(axis=1)
     if file_sr != sr:
-        # Resample lineal: de sobra para una señal de prueba, sin tirar de
-        # scipy/librosa (no están en el venv de la Pi).
         n_out = int(round(len(mono) * sr / file_sr))
         x_old = np.linspace(0.0, 1.0, num=len(mono), endpoint=False)
         x_new = np.linspace(0.0, 1.0, num=n_out, endpoint=False)
@@ -54,17 +103,18 @@ def load_wav_mono(path: str, sr: int) -> np.ndarray:
 
 
 class LoopSignal:
-    def __init__(self, wav_path: str, notes: list[int], bpm: float,
-                velocity: int) -> None:
+    def __init__(self, wav_path: str, chords: list[list[int]],
+                 bpm: float, velocity: int, beats: int) -> None:
         self.client = jack.Client(CLIENT_NAME, no_start_server=True)
         self.audio_out = self.client.outports.register("loop_out")
         self.midi_out = self.client.midi_outports.register("pattern")
         self._pending: queue.SimpleQueue = queue.SimpleQueue()
         self._pos = 0
         self.wav = load_wav_mono(wav_path, self.client.samplerate)
-        self.notes = notes
+        self.chords = chords
         self.bpm = bpm
         self.velocity = velocity
+        self.beats = beats
         self.client.set_process_callback(self._process)
 
     def _process(self, frames: int) -> None:
@@ -98,15 +148,23 @@ class LoopSignal:
 
     def _sequencer_loop(self, stop: threading.Event) -> None:
         beat_s = 60.0 / self.bpm
+        chord_dur = beat_s * self.beats
+        prev: list[int] = []
         i = 0
         while not stop.is_set():
-            note = self.notes[i % len(self.notes)]
-            self._pending.put((0, bytes((0x90 | CHORD_MIDI_CHANNEL, note,
-                                         self.velocity))))
-            stop.wait(beat_s * NOTE_HOLD_FRAC)
-            self._pending.put((0, bytes((0x80 | CHORD_MIDI_CHANNEL, note, 0))))
-            stop.wait(beat_s * (1 - NOTE_HOLD_FRAC))
+            chord = self.chords[i % len(self.chords)]
+            # note-on primero (sin hueco respecto al acorde anterior)
+            for note in chord:
+                self._pending.put((0, bytes((0x90 | CH, note, self.velocity))))
+            # note-off de notas del acorde anterior que no comparte el nuevo
+            for note in prev:
+                if note not in chord:
+                    self._pending.put((1, bytes((0x80 | CH, note, 0))))
+            prev = chord
+            stop.wait(chord_dur)
             i += 1
+        for note in prev:
+            self._pending.put((0, bytes((0x80 | CH, note, 0))))
 
     def _connect(self) -> None:
         deadline = time.monotonic() + 60
@@ -138,14 +196,15 @@ class LoopSignal:
     def run(self) -> None:
         self.client.activate()
         self._connect()
-        print(f"[loop] wav={len(self.wav) / self.client.samplerate:.1f}s  "
-             f"notas={self.notes}  bpm={self.bpm}  -> Carla conectado (mic "
-             "desconectado)", flush=True)
+        print(f"[loop] wav={len(self.wav)/self.client.samplerate:.1f}s  "
+              f"bpm={self.bpm}  beats/acorde={self.beats}  "
+              f"acordes={len(self.chords)}  -> Carla conectado",
+              flush=True)
         stop = threading.Event()
         threading.Thread(target=self._sequencer_loop, args=(stop,),
                          daemon=True).start()
-        signal.signal(signal.SIGTERM, lambda *_a: stop.set())
-        signal.signal(signal.SIGINT, lambda *_a: stop.set())
+        signal.signal(signal.SIGTERM, lambda *_: stop.set())
+        signal.signal(signal.SIGINT, lambda *_: stop.set())
         stop.wait()
         print("[loop] cerrando: desconecta y devuelve el micro...", flush=True)
         self._restore_mic()
@@ -154,14 +213,37 @@ class LoopSignal:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description=__doc__)
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--wav", default=DEFAULT_WAV)
-    p.add_argument("--notes", default=",".join(str(n) for n in DEFAULT_NOTES))
     p.add_argument("--bpm", type=float, default=DEFAULT_BPM)
     p.add_argument("--vel", type=int, default=DEFAULT_VEL)
+    p.add_argument("--beats", type=int, default=None,
+                   help="Beats por acorde (sobreescribe el de la progresión)")
+    p.add_argument("--progression", choices=PROGRESSIONS, default="let_it_be",
+                   help="Progresión de acordes predefinida")
+    p.add_argument("--notes", default=None,
+                   help="Notas custom separadas por coma (ej: 60,63,67); "
+                        "cada nota es un acorde de 1 nota, en ciclo legato")
+    p.add_argument("--list-progressions", action="store_true",
+                   help="Lista las progresiones disponibles y sale")
     args = p.parse_args()
-    notes = [int(n) for n in args.notes.split(",") if n.strip()]
-    LoopSignal(args.wav, notes, args.bpm, args.vel).run()
+
+    if args.list_progressions:
+        for key, val in PROGRESSIONS.items():
+            print(f"  {key:<12} {val['desc']}")
+        return
+
+    if args.notes is not None:
+        chords = [[int(n)] for n in args.notes.split(",") if n.strip()]
+        beats = args.beats or 1
+    else:
+        prog = PROGRESSIONS[args.progression]
+        chords = prog["chords"]
+        beats = args.beats or prog["beats"]
+        print(f"[loop] {prog['desc']}", flush=True)
+
+    LoopSignal(args.wav, chords, args.bpm, args.vel, beats).run()
 
 
 if __name__ == "__main__":
