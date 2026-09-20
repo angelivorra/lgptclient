@@ -19,8 +19,10 @@ REMOTE_BASE=/home/patch/pivocoder/tuning
 VNC_DISPLAY=:1
 VNC_PORT=5901
 
+AUDIO_PID=""
 _cleanup_vnc() {
   kill "$TUNNEL_PID" 2>/dev/null || true
+  kill "$AUDIO_PID"  2>/dev/null || true
   ssh "$HOST" "tigervncserver -kill $VNC_DISPLAY 2>/dev/null || true" 2>/dev/null || true
 }
 
@@ -56,6 +58,14 @@ if ssh "$HOST" "command -v vncserver" &>/dev/null && command -v vncviewer &>/dev
   for _ in $(seq 1 20); do nc -z localhost ${VNC_PORT} 2>/dev/null && break; sleep 0.5; done
   TUNNEL_PID=$(pgrep -f "ssh -fN -L ${VNC_PORT}:localhost:${VNC_PORT}" | head -1)
   trap _cleanup_vnc EXIT
+
+  # Stream de audio: Carla:audio-out1 → SSH pipe → aplay en el PC
+  if command -v aplay &>/dev/null; then
+    ssh "$HOST" "/home/patch/venv/bin/python3 $REMOTE_BASE/stream_audio.py" \
+      | aplay -f FLOAT_LE -r 44100 -c 1 -q 2>/dev/null &
+    AUDIO_PID=$!
+    echo ">> Audio de Carla enviado a los altavoces locales."
+  fi
 
   echo ">> Carla abierta en VNC. Cierra la ventana cuando termines."
   vncviewer -SecurityTypes None localhost:${VNC_PORT} 2>/dev/null
