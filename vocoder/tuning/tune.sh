@@ -21,7 +21,7 @@ VNC_PORT=5901
 
 _cleanup_vnc() {
   kill "$TUNNEL_PID" 2>/dev/null || true
-  ssh "$HOST" "vncserver -kill $VNC_DISPLAY 2>/dev/null || true" 2>/dev/null || true
+  ssh "$HOST" "tigervncserver -kill $VNC_DISPLAY 2>/dev/null || true" 2>/dev/null || true
 }
 
 if ssh "$HOST" "[ -f /tmp/vocoder-tune-loop.pid ] && kill -0 \"\$(cat /tmp/vocoder-tune-loop.pid)\" 2>/dev/null"; then
@@ -40,25 +40,25 @@ if ssh "$HOST" "command -v vncserver" &>/dev/null && command -v vncviewer &>/dev
   echo ">> Abriendo Carla GUI (VNC)..."
 
   # Limpia servidor VNC previo si quedó colgado
-  ssh "$HOST" "vncserver -kill $VNC_DISPLAY 2>/dev/null || true"
+  ssh "$HOST" "tigervncserver -kill $VNC_DISPLAY 2>/dev/null || true"
   sleep 1
 
-  # Arranca VNC sin contraseña (el túnel SSH lo protege)
-  ssh "$HOST" "vncserver $VNC_DISPLAY -geometry 1280x900 -depth 24 -SecurityTypes None 2>/dev/null"
-  sleep 2
+  # Arranca TigerVNC sin contraseña (el túnel SSH lo protege)
+  ssh "$HOST" "tigervncserver $VNC_DISPLAY -geometry 1280x900 -depth 24 -SecurityTypes None -localhost 2>/dev/null"
 
   # Arranca Carla en el display VNC
   ssh "$HOST" "DISPLAY=$VNC_DISPLAY nohup carla '$SESSION_CARXP' >/tmp/carla-tune.log 2>&1 &"
 
-  # Túnel SSH local → VNC en la Pi
+  # Túnel SSH: -fN pone el proceso en fondo tras autenticar
   TUNNEL_PID=""
-  ssh -N -L ${VNC_PORT}:localhost:${VNC_PORT} "$HOST" &
-  TUNNEL_PID=$!
+  ssh -fN -L ${VNC_PORT}:localhost:${VNC_PORT} "$HOST"
+  # Espera a que el puerto esté escuchando
+  for _ in $(seq 1 20); do nc -z localhost ${VNC_PORT} 2>/dev/null && break; sleep 0.5; done
+  TUNNEL_PID=$(pgrep -f "ssh -fN -L ${VNC_PORT}:localhost:${VNC_PORT}" | head -1)
   trap _cleanup_vnc EXIT
-  sleep 1
 
   echo ">> Carla abierta en VNC. Cierra la ventana cuando termines."
-  vncviewer localhost:${VNC_PORT} 2>/dev/null
+  vncviewer -SecurityTypes None localhost:${VNC_PORT} 2>/dev/null
 
   _cleanup_vnc
   trap - EXIT
