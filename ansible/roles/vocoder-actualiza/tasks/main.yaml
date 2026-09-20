@@ -24,6 +24,12 @@
   ansible.builtin.command: /sbin/iwconfig wlan0 power off
   changed_when: false
 
+- name: Instalar tigervnc (servidor VNC para sesiones de tuning con GUI)
+  become: true
+  ansible.builtin.apt:
+    name: tigervnc-standalone-server
+    state: present
+
 - name: Sincronizar la app flask del vocoder
   ansible.posix.synchronize:
     src: /home/angel/git/lgptclient/vocoder/flask/
