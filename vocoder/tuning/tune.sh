@@ -29,18 +29,7 @@ SESSION_CARXP=$(ssh "$HOST" "cat /tmp/vocoder-tune-session")
 echo ">> Sesión: $(basename "$SESSION_CARXP")"
 echo ""
 echo ">> Abriendo Carla GUI..."
-if command -v xpra &>/dev/null && ssh "$HOST" "command -v xpra" &>/dev/null; then
-  echo "   (vía xpra)"
-  xpra start "ssh://$HOST/" \
-    --start-child="carla '$SESSION_CARXP'" \
-    --exit-with-children=yes \
-    --attach=yes \
-    --speaker=disabled \
-    --microphone=disabled
-else
-  echo "   (vía ssh -Y — instala xpra en el PC para mejor rendimiento)"
-  ssh -Y -C "$HOST" "carla '$SESSION_CARXP'"
-fi
+ssh -Y -C "$HOST" "carla '$SESSION_CARXP'"
 
 echo ""
 read -rp ">> ¿Llevar esta sesión a producción? [s/N]: " resp

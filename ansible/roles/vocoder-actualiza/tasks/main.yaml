@@ -24,28 +24,6 @@
   ansible.builtin.command: /sbin/iwconfig wlan0 power off
   changed_when: false
 
-- name: Añadir el repo oficial de xpra
-  become: true
-  ansible.builtin.copy:
-    dest: /etc/apt/sources.list.d/xpra.list
-    content: "deb https://xpra.org/ bookworm main\n"
-    owner: root
-    group: root
-    mode: "0644"
-
-- name: Añadir la clave GPG de xpra
-  become: true
-  ansible.builtin.shell:
-    cmd: curl -fsSL https://xpra.org/gpg.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/xpra.gpg
-    creates: /etc/apt/trusted.gpg.d/xpra.gpg
-
-- name: Instalar xpra
-  become: true
-  ansible.builtin.apt:
-    name: xpra
-    state: present
-    update_cache: true
-
 - name: Sincronizar la app flask del vocoder
   ansible.posix.synchronize:
     src: /home/angel/git/lgptclient/vocoder/flask/
