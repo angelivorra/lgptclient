@@ -1,6 +1,4 @@
-<?xml version='1.0' encoding='UTF-8'?>
-<!DOCTYPE CARLA-PROJECT>
-<CARLA-PROJECT VERSION='2.5'>
+<CARLA-PROJECT VERSION="2.5">
  <EngineSettings>
   <ForceStereo>false</ForceStereo>
   <PreferPluginBridges>false</PreferPluginBridges>
@@ -14,7 +12,7 @@
   <BeatsPerMinute>120</BeatsPerMinute>
  </Transport>
 
- <!-- Calf Filter -->
+ 
  <Plugin>
   <Info>
    <Type>LV2</Type>
@@ -31,7 +29,7 @@
     <Index>0</Index>
     <Name>Frequency</Name>
     <Symbol>freq</Symbol>
-    <Value>100</Value>
+    <Value>116.418121337891</Value>
    </Parameter>
 
    <Parameter>
@@ -73,12 +71,12 @@
     <Index>6</Index>
     <Name>Output Gain</Name>
     <Symbol>level_out</Symbol>
-    <Value>0</Value>
+    <Value>1</Value>
    </Parameter>
   </Data>
  </Plugin>
 
- <!-- Calf Gate -->
+ 
  <Plugin>
   <Info>
    <Type>LV2</Type>
@@ -116,7 +114,7 @@
     <Index>7</Index>
     <Name>Threshold</Name>
     <Symbol>threshold</Symbol>
-    <Value>0</Value>
+    <Value>0.000976562965661287</Value>
    </Parameter>
 
    <Parameter>
@@ -170,7 +168,7 @@
   </Data>
  </Plugin>
 
- <!-- Vocoder -->
+ 
  <Plugin>
   <Info>
    <Type>LV2</Type>
@@ -180,7 +178,7 @@
 
   <Data>
    <Active>Yes</Active>
-   <Volume>0.9288685</Volume>
+   <Volume>1.27</Volume>
    <ControlChannel>1</ControlChannel>
    <Options>0x0</Options>
 
@@ -251,7 +249,7 @@
     <Index>9</Index>
     <Name>Level of band 1.3 KHz</Name>
     <Symbol>level_1k3</Symbol>
-    <Value>0.910995244979858</Value>
+    <Value>0.870995223522186</Value>
    </Parameter>
 
    <Parameter>
@@ -305,7 +303,7 @@
   </Data>
  </Plugin>
 
- <!-- Calf Crusher (bitcrush robótico, knob 7; sustituye a Temper, id 3) -->
+ 
  <Plugin>
   <Info>
    <Type>LV2</Type>
@@ -318,20 +316,93 @@
    <ControlChannel>1</ControlChannel>
    <Options>0x1</Options>
 
-   <Parameter><Index>0</Index><Name>Bypass</Name><Symbol>bypass</Symbol><Value>0</Value></Parameter>
-   <Parameter><Index>1</Index><Name>Input Gain</Name><Symbol>level_in</Symbol><Value>1</Value></Parameter>
-   <Parameter><Index>2</Index><Name>Output Gain</Name><Symbol>level_out</Symbol><Value>1</Value></Parameter>
-   <Parameter><Index>11</Index><Name>Bit Reduction</Name><Symbol>bits</Symbol><Value>16</Value></Parameter>
-   <Parameter><Index>12</Index><Name>Morph</Name><Symbol>morph</Symbol><Value>0.5</Value></Parameter>
-   <Parameter><Index>13</Index><Name>Mode</Name><Symbol>mode</Symbol><Value>0</Value></Parameter>
-   <Parameter><Index>14</Index><Name>DC</Name><Symbol>dc</Symbol><Value>1</Value></Parameter>
-   <Parameter><Index>15</Index><Name>Anti-Aliasing</Name><Symbol>anti_aliasing</Symbol><Value>0.5</Value></Parameter>
-   <Parameter><Index>16</Index><Name>Sample Reduction</Name><Symbol>samples</Symbol><Value>1</Value></Parameter>
-   <Parameter><Index>17</Index><Name>LFO Active</Name><Symbol>lfo</Symbol><Value>0</Value></Parameter>
+   <Parameter>
+    <Index>0</Index>
+    <Name>Bypass</Name>
+    <Symbol>bypass</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>1</Index>
+    <Name>Input Gain</Name>
+    <Symbol>level_in</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>2</Index>
+    <Name>Output Gain</Name>
+    <Symbol>level_out</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>11</Index>
+    <Name>Bit Reduction</Name>
+    <Symbol>bits</Symbol>
+    <Value>16</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>12</Index>
+    <Name>Morph</Name>
+    <Symbol>morph</Symbol>
+    <Value>0.5</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>13</Index>
+    <Name>Mode</Name>
+    <Symbol>mode</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>14</Index>
+    <Name>DC</Name>
+    <Symbol>dc</Symbol>
+    <Value>1.02242839336395</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>15</Index>
+    <Name>Anti-Aliasing</Name>
+    <Symbol>anti_aliasing</Symbol>
+    <Value>0.5</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>16</Index>
+    <Name>Sample Reduction</Name>
+    <Symbol>samples</Symbol>
+    <Value>1</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>17</Index>
+    <Name>LFO Active</Name>
+    <Symbol>lfo</Symbol>
+    <Value>0</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>18</Index>
+    <Name>LFO Depth</Name>
+    <Symbol>lforange</Symbol>
+    <Value>45.2819480895996</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>19</Index>
+    <Name>LFO Rate</Name>
+    <Symbol>lforate</Symbol>
+    <Value>0.300000011920929</Value>
+   </Parameter>
   </Data>
  </Plugin>
 
- <!-- Calf Reverb -->
+ 
  <Plugin>
   <Info>
    <Type>LV2</Type>
@@ -423,7 +494,7 @@
     <Index>13</Index>
     <Name>Input Gain</Name>
     <Symbol>level_in</Symbol>
-    <Value>2.0</Value>
+    <Value>2</Value>
    </Parameter>
 
    <Parameter>
@@ -435,7 +506,7 @@
   </Data>
  </Plugin>
 
- <!-- EQ10Q Mono -->
+ 
  <Plugin>
   <Info>
    <Type>LV2</Type>
@@ -459,14 +530,14 @@
     <Index>1</Index>
     <Name>Input Gain</Name>
     <Symbol>input_gain</Symbol>
-    <Value>20</Value>
+    <Value>12.0000047683716</Value>
    </Parameter>
 
    <Parameter>
     <Index>2</Index>
     <Name>Output Gain</Name>
     <Symbol>output_gain</Symbol>
-    <Value>20</Value>
+    <Value>-0.639999985694885</Value>
    </Parameter>
 
    <Parameter>
@@ -821,7 +892,7 @@
   </Data>
  </Plugin>
 
- <!-- Calf Vintage Delay -->
+ 
  <Plugin>
   <Info>
    <Type>LV2</Type>
@@ -979,7 +1050,7 @@
   </Data>
  </Plugin>
 
- <!-- Noize Mak3r -->
+ 
  <Plugin>
   <Info>
    <Type>LV2</Type>
@@ -1645,43 +1716,43 @@
     <Type>http://lv2plug.in/ns/ext/atom#String</Type>
     <Key>urn:juce:stateString</Key>
     <Value>
-&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;
+&lt;?xml version="1.0" encoding="UTF-8"?&gt;
 
-&lt;tal curprogram=&quot;0&quot; version=&quot;1.6999999999999999556&quot;&gt;
+&lt;tal curprogram="0" version="1.6999999999999999556"&gt;
   &lt;programs&gt;
-    &lt;program programname=&quot;LD Noisy Sync Lead TAL&quot; volume=&quot;0.36000001430511474609&quot;
-             filtertype=&quot;0.18181818723678588867&quot; cutoff=&quot;0.35600000619888305664&quot;
-             resonance=&quot;0.37600001692771911621&quot; osc1volume=&quot;0.74400001764297485352&quot;
-             osc2volume=&quot;0.81200003623962402344&quot; osc3volume=&quot;0&quot; osc1waveform=&quot;0&quot;
-             osc2waveform=&quot;0&quot; oscsync=&quot;1&quot; oscmastertune=&quot;0.5&quot; osc1tune=&quot;0.25&quot;
-             osc2tune=&quot;0.24400001764297485352&quot; osc1finetune=&quot;0.5&quot; osc2finetune=&quot;0.4120000302791595459&quot;
-             portamento=&quot;0&quot; keyfollow=&quot;1&quot; filtercontour=&quot;0.50800001621246337891&quot;
-             filterattack=&quot;0&quot; filterdecay=&quot;0&quot; filtersustain=&quot;0&quot; filterrelease=&quot;0&quot;
-             ampattack=&quot;0&quot; ampdecay=&quot;0&quot; ampsustain=&quot;1&quot; amprelease=&quot;0.26000002026557922363&quot;
-             voices=&quot;0.20000000298023223877&quot; portamentomode=&quot;0&quot; lfo1waveform=&quot;0&quot;
-             lfo2waveform=&quot;0&quot; lfo1rate=&quot;0&quot; lfo2rate=&quot;0&quot; lfo1amount=&quot;0&quot; lfo2amount=&quot;0.92400002479553222656&quot;
-             lfo1destination=&quot;0&quot; lfo2destination=&quot;0.63779526948928833008&quot;
-             lfo1phase=&quot;1&quot; lfo2phase=&quot;0&quot; osc1pw=&quot;0.51600003242492675781&quot; osc2fm=&quot;0.32600000500679016113&quot;
-             osc1phase=&quot;0.5&quot; osc2phase=&quot;0&quot; transpose=&quot;0.86400002241134643555&quot;
-             freeadattack=&quot;0&quot; freeaddecay=&quot;0.80000001192092895508&quot; freeadamount=&quot;0.71600002050399780273&quot;
-             freeaddestination=&quot;0.40000000596046447754&quot; lfo1sync=&quot;0&quot; lfo1keytrigger=&quot;0&quot;
-             lfo2sync=&quot;0&quot; lfo2keytrigger=&quot;0&quot; velocityvolume=&quot;0&quot; velocitycontour=&quot;0&quot;
-             velocitycutoff=&quot;0.50800001621246337891&quot; pitchwheelcutoff=&quot;0.22000001370906829834&quot;
-             pitchwheelpitch=&quot;0&quot; highpass=&quot;0&quot; detune=&quot;0&quot; vintagenoise=&quot;0&quot;
-             ringmodulation=&quot;0&quot; chorus1enable=&quot;0&quot; chorus2enable=&quot;0&quot; reverbwet=&quot;0&quot;
-             reverbdecay=&quot;0.45200002193450927734&quot; reverbpredelay=&quot;0.036000002175569534302&quot;
-             reverbhighcut=&quot;0&quot; reverblowcut=&quot;1&quot; oscbitcrusher=&quot;1&quot; filterdrive=&quot;0&quot;
-             delaywet=&quot;0&quot; delaytime=&quot;0.5&quot; delaysync=&quot;0&quot; delayfactorl=&quot;0&quot; delayfactorr=&quot;0&quot;
-             delayhighshelf=&quot;0&quot; delaylowshelf=&quot;0&quot; delayfeedback=&quot;0.5&quot; envelopeeditordest1=&quot;0.57142859697341918945&quot;
-             envelopeeditorspeed=&quot;0&quot; envelopeeditoramount=&quot;0&quot; envelopeoneshot=&quot;0&quot;
-             envelopefixtempo=&quot;0&quot; tab1open=&quot;1&quot; tab2open=&quot;1&quot; tab3open=&quot;0&quot; tab4open=&quot;0&quot;&gt;
+    &lt;program programname="LD Noisy Sync Lead TAL" volume="0.36000001430511474609"
+             filtertype="0.18181818723678588867" cutoff="0.35600000619888305664"
+             resonance="0.37600001692771911621" osc1volume="0.74400001764297485352"
+             osc2volume="0.81200003623962402344" osc3volume="0" osc1waveform="0"
+             osc2waveform="0" oscsync="1" oscmastertune="0.5" osc1tune="0.25"
+             osc2tune="0.24400001764297485352" osc1finetune="0.5" osc2finetune="0.4120000302791595459"
+             portamento="0" keyfollow="1" filtercontour="0.50800001621246337891"
+             filterattack="0" filterdecay="0" filtersustain="0" filterrelease="0"
+             ampattack="0" ampdecay="0" ampsustain="1" amprelease="0.26000002026557922363"
+             voices="0.20000000298023223877" portamentomode="0" lfo1waveform="0"
+             lfo2waveform="0" lfo1rate="0" lfo2rate="0" lfo1amount="0" lfo2amount="0.92400002479553222656"
+             lfo1destination="0" lfo2destination="0.63779526948928833008"
+             lfo1phase="1" lfo2phase="0" osc1pw="0.51600003242492675781" osc2fm="0.32600000500679016113"
+             osc1phase="0.5" osc2phase="0" transpose="0.86400002241134643555"
+             freeadattack="0" freeaddecay="0.80000001192092895508" freeadamount="0.71600002050399780273"
+             freeaddestination="0.40000000596046447754" lfo1sync="0" lfo1keytrigger="0"
+             lfo2sync="0" lfo2keytrigger="0" velocityvolume="0" velocitycontour="0"
+             velocitycutoff="0.50800001621246337891" pitchwheelcutoff="0.22000001370906829834"
+             pitchwheelpitch="0" highpass="0" detune="0" vintagenoise="0"
+             ringmodulation="0" chorus1enable="0" chorus2enable="0" reverbwet="0"
+             reverbdecay="0.45200002193450927734" reverbpredelay="0.036000002175569534302"
+             reverbhighcut="0" reverblowcut="1" oscbitcrusher="1" filterdrive="0"
+             delaywet="0" delaytime="0.5" delaysync="0" delayfactorl="0" delayfactorr="0"
+             delayhighshelf="0" delaylowshelf="0" delayfeedback="0.5" envelopeeditordest1="0.57142859697341918945"
+             envelopeeditorspeed="0" envelopeeditoramount="0" envelopeoneshot="0"
+             envelopefixtempo="0" tab1open="1" tab2open="1" tab3open="0" tab4open="0"&gt;
       &lt;splinePoints&gt;
-        &lt;splinePoint isStartPoint=&quot;1&quot; isEndPoint=&quot;0&quot; centerPointX=&quot;0&quot; centerPointY=&quot;0.5&quot;
-                     controlPointLeftX=&quot;0&quot; controlPointLeftY=&quot;0.5&quot; controlPointRightX=&quot;0.10000000149011611938&quot;
-                     controlPointRightY=&quot;0.5&quot;/&gt;
-        &lt;splinePoint isStartPoint=&quot;0&quot; isEndPoint=&quot;1&quot; centerPointX=&quot;1&quot; centerPointY=&quot;0.5&quot;
-                     controlPointLeftX=&quot;0.89999997615814208984&quot; controlPointLeftY=&quot;0.5&quot;
-                     controlPointRightX=&quot;1&quot; controlPointRightY=&quot;0.5&quot;/&gt;
+        &lt;splinePoint isStartPoint="1" isEndPoint="0" centerPointX="0" centerPointY="0.5"
+                     controlPointLeftX="0" controlPointLeftY="0.5" controlPointRightX="0.10000000149011611938"
+                     controlPointRightY="0.5"/&gt;
+        &lt;splinePoint isStartPoint="0" isEndPoint="1" centerPointX="1" centerPointY="0.5"
+                     controlPointLeftX="0.89999997615814208984" controlPointLeftY="0.5"
+                     controlPointRightX="1" controlPointRightY="0.5"/&gt;
       &lt;/splinePoints&gt;
     &lt;/program&gt;
   &lt;/programs&gt;
@@ -1692,14 +1763,13 @@
   </Data>
  </Plugin>
 
- <!-- LGPT Gater (gate rítmico sincronizado a BPM, knob 4; LADSPA propio, id 8;
-      ver vocoder/gater/). BPM = parámetro 0, Pattern = parámetro 1. -->
+ 
  <Plugin>
   <Info>
    <Type>LADSPA</Type>
    <Name>LGPT Gater</Name>
-   <Label>lgpt_gater</Label>
    <Binary>/usr/lib/ladspa/lgpt_gater.so</Binary>
+   <Label>lgpt_gater</Label>
    <UniqueID>1279874631</UniqueID>
   </Info>
 
@@ -1708,8 +1778,17 @@
    <ControlChannel>1</ControlChannel>
    <Options>0x0</Options>
 
-   <Parameter><Index>0</Index><Name>BPM</Name><Symbol>bpm</Symbol><Value>120</Value></Parameter>
-   <Parameter><Index>1</Index><Name>Pattern</Name><Symbol>pattern</Symbol><Value>0</Value></Parameter>
+   <Parameter>
+    <Index>0</Index>
+    <Name>BPM</Name>
+    <Value>120</Value>
+   </Parameter>
+
+   <Parameter>
+    <Index>1</Index>
+    <Name>Pattern</Name>
+    <Value>0</Value>
+   </Parameter>
   </Data>
  </Plugin>
 
@@ -1755,16 +1834,16 @@
    <Target>Vocoder:Carrier audio input</Target>
   </Connection>
   <Connection>
-   <Source>Calf Reverb:Out L</Source>
-   <Target>Audio Output:Left</Target>
-  </Connection>
-  <Connection>
    <Source>Vocoder:Vocoder audio output</Source>
    <Target>Calf Crusher:In L</Target>
   </Connection>
   <Connection>
    <Source>Calf Crusher:Out L</Source>
    <Target>EQ10Q Mono:Input</Target>
+  </Connection>
+  <Connection>
+   <Source>Calf Reverb:Out L</Source>
+   <Target>Audio Output:Left</Target>
   </Connection>
   <Positions>
    <Position x1="944" y1="1325" pluginId="7">
@@ -1779,10 +1858,10 @@
    <Position x1="2463" y1="980" pluginId="4">
     <Name>Calf Reverb</Name>
    </Position>
-   <Position x1="1608" y1="1155" pluginId="3">
+   <Position x1="1606" y1="1156" pluginId="3">
     <Name>Calf Crusher</Name>
    </Position>
-   <Position x1="1221" y1="1110" pluginId="2">
+   <Position x1="1220" y1="1110" pluginId="2">
     <Name>Vocoder</Name>
    </Position>
    <Position x1="1138" y1="967" pluginId="1">
@@ -1797,7 +1876,7 @@
    <Position x1="533" y1="1263" x2="1832" y2="1158">
     <Name>Midi Input</Name>
    </Position>
-   <Position x1="836" y1="1000" x2="2003" y2="1320">
+   <Position x1="836" y1="1000" x2="2167" y2="850">
     <Name>Audio Output</Name>
    </Position>
    <Position x1="1132" y1="893">
@@ -1818,6 +1897,22 @@
   <Connection>
    <Source>system:midi_capture_2</Source>
    <Target>Carla:events-in</Target>
+  </Connection>
+  <Connection>
+   <Source>vocoder-tune-loop:loop_out</Source>
+   <Target>Carla:audio-in1</Target>
+  </Connection>
+  <Connection>
+   <Source>vocoder-tune-loop:loop_out</Source>
+   <Target>Carla:audio-in2</Target>
+  </Connection>
+  <Connection>
+   <Source>vocoder-tune-loop:pattern</Source>
+   <Target>Carla:events-in</Target>
+  </Connection>
+  <Connection>
+   <Source>Carla:audio-out1</Source>
+   <Target>vocoder-audio-stream-06:in</Target>
   </Connection>
   <Connection>
    <Source>Carla:audio-out1</Source>
