@@ -2,13 +2,14 @@
 """Transmite Carla:audio-out1 a stdout como PCM float32 le.
 
 Uso (en la Pi):
-  stream_audio.py | aplay -f FLOAT_LE -r 44100 -c 1 -q
+  stream_audio.py | aplay -f FLOAT_LE -r 48000 -c 1
 
 tune.sh lo lanza por SSH piped a aplay en el PC para escuchar
 la salida del vocoder mientras se ajusta el rack de Carla.
 """
 import queue
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -54,7 +55,13 @@ with c:
             sys.stderr.write(f"[audio] {SOURCE} no apareció en 30s\n")
             sys.exit(1)
         time.sleep(1)
-    c.connect(SOURCE, port)
+    time.sleep(0.5)  # da tiempo a Carla a estar lista para aceptar conexiones
+    try:
+        c.connect(SOURCE, port)
+    except jack.JackError:
+        # Fallback: la librería Python falla cuando hay clientes zombie con el
+        # mismo nombre base; jack_connect funciona igualmente.
+        subprocess.run(["jack_connect", SOURCE, port.name], check=True)
     sys.stderr.write(f"[audio] conectado a {SOURCE} ({c.samplerate} Hz)\n")
     sys.stderr.flush()
     stop.wait()

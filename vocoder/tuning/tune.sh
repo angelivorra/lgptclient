@@ -62,7 +62,7 @@ if ssh "$HOST" "command -v vncserver" &>/dev/null && command -v vncviewer &>/dev
   # Stream de audio: Carla:audio-out1 → SSH pipe → aplay en el PC
   if command -v aplay &>/dev/null; then
     ssh "$HOST" "/home/patch/venv/bin/python3 $REMOTE_BASE/stream_audio.py" \
-      | aplay -f FLOAT_LE -r 44100 -c 1 -q 2>/dev/null &
+      | aplay -f FLOAT_LE -r 48000 -c 1 -B 2000000 &
     AUDIO_PID=$!
     echo ">> Audio de Carla enviado a los altavoces locales."
   fi

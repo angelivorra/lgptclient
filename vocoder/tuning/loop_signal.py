@@ -33,7 +33,7 @@ MIC_SOURCE = "system:capture_1"
 CH = 0  # canal MIDI
 
 DEFAULT_WAV = "/home/patch/pivocoder/mic_test.wav"
-DEFAULT_BPM = 90.0
+DEFAULT_BPM = 60.0
 DEFAULT_VEL = 90
 
 # Progresiones: lista de acordes (listas de notas MIDI), beats por acorde.
@@ -86,6 +86,14 @@ PROGRESSIONS: dict[str, dict] = {
             [59, 63, 66],        # B   (B3 D#4 F#4)
             [60, 64, 67],        # C   (C4 E4 G4)
             [60, 63, 67],        # Cm  (C4 Eb4 G4)
+        ],
+    },
+    "escala": {
+        "desc": "Escala Do mayor ida y vuelta — nota individual 2s c/u (BPM=60)",
+        "beats": 2,
+        "chords": [
+            [48], [50], [52], [53], [55], [57], [59], [60],  # C3→C4
+            [59], [57], [55], [53], [52], [50],               # B3→D3
         ],
     },
 }
@@ -153,13 +161,13 @@ class LoopSignal:
         i = 0
         while not stop.is_set():
             chord = self.chords[i % len(self.chords)]
-            # note-on primero (sin hueco respecto al acorde anterior)
-            for note in chord:
-                self._pending.put((0, bytes((0x90 | CH, note, self.velocity))))
-            # note-off de notas del acorde anterior que no comparte el nuevo
+            # note-off primero (evita polyphony cuando los acordes son notas sueltas)
             for note in prev:
                 if note not in chord:
-                    self._pending.put((1, bytes((0x80 | CH, note, 0))))
+                    self._pending.put((0, bytes((0x80 | CH, note, 0))))
+            # note-on a continuación
+            for note in chord:
+                self._pending.put((1, bytes((0x90 | CH, note, self.velocity))))
             prev = chord
             stop.wait(chord_dur)
             i += 1
@@ -220,7 +228,7 @@ def main() -> None:
     p.add_argument("--vel", type=int, default=DEFAULT_VEL)
     p.add_argument("--beats", type=int, default=None,
                    help="Beats por acorde (sobreescribe el de la progresión)")
-    p.add_argument("--progression", choices=PROGRESSIONS, default="let_it_be",
+    p.add_argument("--progression", choices=PROGRESSIONS, default="escala",
                    help="Progresión de acordes predefinida")
     p.add_argument("--notes", default=None,
                    help="Notas custom separadas por coma (ej: 60,63,67); "
