@@ -92,7 +92,9 @@ class ImageBrowser(Widget):
                 entries.append({"label": p.name, "cc": self.cc,
                                 "value": int(p.name), "leaf": True})
         else:                                       # lyric: líneas de textos
-            for value, line in enumerate(lyric_lines(self.root)):
+            items = sorted(enumerate(lyric_lines(self.root)),
+                           key=lambda x: x[1].lower())
+            for value, line in items:
                 entries.append({"label": f"{value:03d}  {line}", "cc": self.cc,
                                 "value": value, "leaf": True})
         self._set_entries(entries)
