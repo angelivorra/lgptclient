@@ -355,29 +355,16 @@ class EventOrchestrator:
         except Exception as e:
             logger.error(f"❌ Error activando escena {name}: {e}")
 
-    def handle_fondo(self, data: dict):
-        """Recibe config de slideshow (FONDO) del sinte antes del START.
+    def handle_fondo(self, name: str):
+        """Recibe el nombre de la carpeta de fondo (FONDO,001) del sinte.
 
-        Pre-carga las imágenes para que estén listas cuando llegue el START.
+        Pre-carga todas las PNGs de fondos/{name}/ para que estén listas
+        cuando llegue el START.
         """
-        self._fondo_config = data
-        images_refs = data.get("images", [])
-        loaded = []
-        for ref in images_refs:
-            if isinstance(ref, (list, tuple)) and len(ref) == 2:
-                cc, value = int(ref[0]), int(ref[1])
-                img = self.media_manager.get_image(cc, value)
-                if img:
-                    loaded.append(img)
-                else:
-                    logger.warning(
-                        f"⚠️  Fondo: imagen {cc:03d}/{value:03d} no encontrada")
+        self._fondo_config = {"name": name, "interval": 6.0, "transition": "cut"}
+        loaded = self.media_manager.load_fondo_images(name)
         self._fondo_images = loaded
-        logger.info(
-            f"🖼️  Fondo recibido: {len(loaded)}/{len(images_refs)} imágenes, "
-            f"intervalo={data.get('interval', 6.0)}s, "
-            f"transición={data.get('transition', 'cut')}"
-        )
+        logger.info(f"🖼️  Fondo '{name}': {len(loaded)} frames pre-cargados")
 
     def handle_start(self, server_ts_ms: int):
         logger.info(f"▶️  START recibido (ts={server_ts_ms}) - Iniciando canción")

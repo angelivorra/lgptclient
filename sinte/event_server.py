@@ -17,7 +17,7 @@ desplegados: líneas ASCII terminadas en \\n, puerto 8888, TCP_NODELAY.
     CC,<ts_ms>,<valor>,<canal>,<control>
     START,<ts_ms> / STOP,<ts_ms> / END,<ts_ms>
     BPM,<ts_ms>,<bpm>
-    FONDO,<json>                                   al iniciar canción (slideshow de fondo)
+    FONDO,<nombre_carpeta>                         al iniciar canción (slideshow de fondo)
     CALIB,<ts_ms>,<robot>,<pin>,<tiempo_ms>,<delay_ms>   calibración en vivo
     CALTEST,<ts_ms>,<robot>,<pin>                        dispara el pin ya
     CALSAVE,<ts_ms>,<robot>,<pin>                        persiste al JSON local
@@ -279,7 +279,7 @@ class EventMidiOut:
         # terminar el bloque de la vieja y emitir NOTA/CC/ACRD después de
         # que hayamos mandado STOP. Esos eventos se descartan.
         self.suppress_notes = False
-        self._fondo_json: str | None = None
+        self._fondo_name: str | None = None
 
     def _ts(self) -> int:
         engine = self._engine_ref.get("engine")
@@ -317,17 +317,16 @@ class EventMidiOut:
             return
         self.server.emit("ACRD", self._ts(), channel, velocity, *notes)
 
-    def set_fondo(self, data: dict | None):
-        """Config de slideshow de fondo para la canción actual (de robotraca.json)."""
-        import json
-        self._fondo_json = json.dumps(data, separators=(',', ':')) if data else None
+    def set_fondo(self, name: str | None):
+        """Nombre de la carpeta de fondo para la canción actual (de robotraca.json)."""
+        self._fondo_name = str(name) if name else None
 
     def program_change(self, channel, program):
         pass                                # sin equivalente en el protocolo
 
     def transport_start(self):
-        if self._fondo_json is not None:
-            self.server.broadcast_line(f"FONDO,{self._fondo_json}\n")
+        if self._fondo_name:
+            self.server.broadcast_line(f"FONDO,{self._fondo_name}\n")
         self.server.emit("START", self._ts())
         engine = self._engine_ref.get("engine")
         tempo = getattr(engine, "tempo", None) if engine is not None else None

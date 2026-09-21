@@ -32,12 +32,11 @@ SCREENS = {
     "config":           ((1, 2), "CONFIG",     "C"),
     "phrase_table":     ((3, 2), "TABLE",      "T"),
     "instrument_table": ((4, 2), "TABLE",      "T"),
-    "fondo":            ((0, 3), "FONDO",      "F"),
 }
 
 
 GRID_COLS = 5
-GRID_ROWS = 4
+GRID_ROWS = 3
 
 _BY_POS = {pos: key for key, (pos, _label, _letter) in SCREENS.items()}
 

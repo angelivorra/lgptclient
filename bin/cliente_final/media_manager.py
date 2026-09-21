@@ -177,6 +177,56 @@ class MediaManager:
         """Verifica si un CC/value es una animación."""
         anim_dir = self.base_path / f"{cc:03d}" / f"{value:03d}"
         return anim_dir.is_dir()
+
+    def load_fondo_images(self, name: str, width: int = 800,
+                          height: int = 480) -> List[bytes]:
+        """Carga todas las PNGs de images/fondos/{name}/ y las convierte a
+        RGB565 (formato del framebuffer). Requiere Pillow; si no está
+        disponible, intenta cargar .bin pre-convertidos con el mismo nombre.
+        Devuelve lista de bytes lista para set_slideshow()."""
+        fondo_dir = self.base_path / "fondos" / name
+        if not fondo_dir.is_dir():
+            logger.warning(f"⚠️  Carpeta de fondo no encontrada: {fondo_dir}")
+            return []
+        try:
+            from PIL import Image as _PILImage
+            _pil_ok = True
+        except ImportError:
+            _pil_ok = False
+
+        result: List[bytes] = []
+        pngs = sorted(fondo_dir.glob("*.png"))
+        if not pngs:
+            logger.warning(f"⚠️  No hay PNGs en {fondo_dir}")
+            return []
+
+        for png_path in pngs:
+            if _pil_ok:
+                try:
+                    img = _PILImage.open(png_path).convert("RGB")
+                    img = img.resize((width, height), _PILImage.LANCZOS)
+                    pixels = img.tobytes()
+                    # RGB888 → RGB565 (little-endian, igual que el resto)
+                    import struct
+                    out = bytearray(width * height * 2)
+                    for i in range(width * height):
+                        r, g, b = pixels[i*3], pixels[i*3+1], pixels[i*3+2]
+                        v = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
+                        struct.pack_into("<H", out, i * 2, v)
+                    result.append(bytes(out))
+                    logger.debug(f"🖼️  Fondo frame: {png_path.name}")
+                except Exception as e:
+                    logger.error(f"❌ Error cargando {png_path}: {e}")
+            else:
+                # Sin PIL: busca .bin pre-convertido junto al PNG
+                bin_path = png_path.with_suffix(".bin")
+                if bin_path.exists():
+                    result.append(bin_path.read_bytes())
+                else:
+                    logger.warning(f"⚠️  Sin PIL y sin .bin para {png_path.name}")
+
+        logger.info(f"🎞️  Fondo '{name}': {len(result)} frames cargados")
+        return result
     
     def _add_to_cache(self, key: Tuple[int, int], data: bytes):
         """Agrega una imagen al cache LRU."""

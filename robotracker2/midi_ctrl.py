@@ -363,22 +363,22 @@ class MidiControl:
         self.pots.clear()
         self.pots.extend(pots)
 
-    # -- slideshow de fondo por canción (pantalla FONDO) ----------------
+    # -- slideshow de fondo por canción (pantalla PROJECT) ---------------
     def fondo_state(self):
-        """Dict con images/interval/transition/fade_s del robotraca.json
-        (clave "fondo") para la pantalla FONDO. Vacío si no hay configuración."""
+        """Nombre de la carpeta de fondo (p.ej. "001") del robotraca.json,
+        o None si la canción no tiene fondo configurado."""
         if self._cfg is None:
-            return {}
-        return dict(self._cfg.get("fondo") or {})
+            return None
+        val = self._cfg.get("fondo")
+        return str(val) if val else None
 
-    def set_fondo(self, data):
-        """Actualiza la configuración del slideshow (clave "fondo" del
-        robotraca.json) en memoria. Se persiste al guardar (save() o fila
-        GUARDAR de la pantalla FONDO)."""
+    def set_fondo(self, name):
+        """Asigna (o quita, name=None) la carpeta de fondo de la canción
+        en memoria. Se persiste al guardar (save() o Guardar canción)."""
         if self._cfg is None:
             return
-        if data and data.get("images"):
-            self._cfg["fondo"] = data
+        if name:
+            self._cfg["fondo"] = str(name)
         else:
             self._cfg.pop("fondo", None)
 

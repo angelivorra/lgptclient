@@ -131,8 +131,7 @@ class Robotracker2App(App):
         self._pots_dirty = False   # knobs de la canción sin guardar (memoria)
         self._tracks_dirty = False # tipos de pista sin guardar (robotraca)
         self._mute_dirty = False   # mute de canales sin guardar (robotraca)
-        self._fondo_dirty = False  # slideshow de fondo sin guardar (robotraca)
-        self._fondo_edit_idx = None  # índice de imagen editando (None=añadir)
+        self._fondo_dirty = False  # fondo de canción sin guardar (robotraca)
         self.fullscreen = fullscreen
         self.held = set()          # botones lógicos pulsados ahora
         self._pc_keys = set()     # teclas PC no-LGPT (p.ej. Intro) pulsadas
@@ -163,6 +162,10 @@ class Robotracker2App(App):
         self.songs = find_songs(self.songs_dir)
         if not self.songs:
             raise SystemExit(f"No hay canciones LGPT en {self.songs_dir}")
+        fondos_dir = self.images_dir / "fondos"
+        self._available_fondos = sorted(
+            p.name for p in fondos_dir.iterdir() if p.is_dir()
+        ) if fondos_dir.is_dir() else []
 
         self.sm = ScreenManager(transition=NoTransition())
         self.load_screen = LoadSongScreen(self.songs, name="load")
@@ -440,8 +443,6 @@ class Robotracker2App(App):
             return self._dispatch_pads(button, active)
         if ed.current == "tracks":
             return self._dispatch_tracks(button, active)
-        if ed.current == "fondo":
-            return self._dispatch_fondo(button, active)
         if ed.current == "song":
             return self._dispatch_song(button, active)
         if ed.current == "chain":
@@ -713,107 +714,13 @@ class Robotracker2App(App):
         self._sync_unsaved()
         self.editor_screen.toast_msg("Pistas guardadas")
 
-    # ------------------------------------------------------------------
-    # Pantalla FONDO (slideshow de imágenes, ver screens/fondo_view.py)
-    # ------------------------------------------------------------------
-    def _dispatch_fondo(self, button, active):
-        g = self.editor_screen.fondo_grid
-        if g.cursor == g.SAVE_ROW:
-            if button in (UP, DOWN):
-                g.move(button)
-                return True
-            if button == A:
-                if L2 in active or R2 in active:
-                    self._a_consumed = True
-                else:
-                    self._fondo_save()
-            return True
-        if button in (UP, DOWN):
-            g.move(button)
-            return True
-        if g.is_image_row():
-            if button == A:
-                if L2 in active or R2 in active:
-                    self._a_consumed = True
-                else:
-                    self._fondo_edit_idx = g.cursor
-                    self._open_fondo_browser()
-                return True
-            if button == B:
-                if L2 not in active and R2 not in active:
-                    idx = g.cursor
-                    g.images.pop(idx)
-                    g.cursor = min(g.cursor, g.SAVE_ROW)
-                    g._redraw()
-                    self._fondo_sync()
-                return True
-            return True
-        if g.is_add_row():
-            if button == A:
-                if L2 in active or R2 in active:
-                    self._a_consumed = True
-                else:
-                    self._fondo_edit_idx = None
-                    self._open_fondo_browser()
-            return True
-        if g.is_interval_row():
-            if button in (LEFT, RIGHT):
-                step = 0.5 if button == RIGHT else -0.5
-                g.interval = max(0.5, min(30.0, round(g.interval + step, 1)))
-                g._redraw()
-                self._fondo_sync()
-                if A in active:
-                    self._a_consumed = True
-            return True
-        if g.is_transition_row():
-            if button in (LEFT, RIGHT):
-                g.transition = "fade" if g.transition == "cut" else "cut"
-                g.cursor = min(g.cursor, g.SAVE_ROW)
-                g._redraw()
-                self._fondo_sync()
-            return True
-        if g.is_fade_row():
-            if button in (LEFT, RIGHT):
-                step = 0.1 if button == RIGHT else -0.1
-                g.fade_s = max(0.1, min(2.0, round(g.fade_s + step, 1)))
-                g._redraw()
-                self._fondo_sync()
-                if A in active:
-                    self._a_consumed = True
-            return True
-        return False
-
-    def _fondo_sync(self):
-        """Propaga el estado de FondoGrid al cfg en memoria y marca dirty."""
-        g = self.editor_screen.fondo_grid
-        self._midi_ctrl.set_fondo(g.get_state())
+    def _fondo_cycle(self, delta):
+        """Cicla la selección de fondo (LEFT/RIGHT en PROJECT > Fondo)."""
+        m = self.editor_screen.project_menu
+        m.cycle_fondo(delta)
+        self._midi_ctrl.set_fondo(m.get_fondo())
         self._fondo_dirty = True
         self._sync_unsaved()
-
-    def _fondo_save(self):
-        g = self.editor_screen.fondo_grid
-        self._midi_ctrl.set_fondo(g.get_state())
-        self._midi_ctrl.save()
-        self._fondo_dirty = False
-        self._sync_unsaved()
-        self.editor_screen.toast_msg("Fondo guardado")
-
-    def _open_fondo_browser(self):
-        self._open_browser(ImageBrowser(
-            self.images_dir, ayuda_dir=self.ayuda_dir,
-            on_load=self._fondo_image_loaded,
-            on_close=self._close_browser))
-
-    def _fondo_image_loaded(self, cc, value):
-        g = self.editor_screen.fondo_grid
-        if self._fondo_edit_idx is None:
-            g.images.append([cc, value])
-        elif 0 <= self._fondo_edit_idx < len(g.images):
-            g.images[self._fondo_edit_idx] = [cc, value]
-        g._redraw()
-        self._fondo_sync()
-        self.editor_screen.toast_msg(f"Fondo: CC {cc:03d} VAL {value:03d}")
-        self._close_browser()
 
 
     def _editor_grid(self):
@@ -1195,6 +1102,8 @@ class Robotracker2App(App):
             delta = 1 if button == RIGHT else -1
             if typ == "value" and key == "tempo":
                 self._nudge_tempo(delta)
+            elif key == "fondo":
+                self._fondo_cycle(delta)
             else:
                 m.adjust(delta)
         elif button == A:
@@ -1280,8 +1189,6 @@ class Robotracker2App(App):
             if self._mute_dirty:
                 extra.append("mute")
             if self._fondo_dirty:
-                self._midi_ctrl.set_fondo(
-                    self.editor_screen.fondo_grid.get_state())
                 extra.append("fondo")
             self._midi_ctrl.save()
             self._pads_dirty = False
@@ -1839,7 +1746,8 @@ class Robotracker2App(App):
         self.editor_screen.pads_grid.set_state(self._midi_ctrl.pads_state())
         self.editor_screen.pots_grid.set_state(self._midi_ctrl.pots_state())
         self.editor_screen.set_tracks(self._midi_ctrl.tracks_state())
-        self.editor_screen.fondo_grid.set_state(self._midi_ctrl.fondo_state())
+        self.editor_screen.project_menu.set_fondos(
+            self._available_fondos, self._midi_ctrl.fondo_state())
         self._sync_unsaved()
         self.sm.current = "editor"
 

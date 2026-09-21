@@ -256,11 +256,11 @@ class MIDIClient:
                 self.orchestrator.handle_cc(server_ts_ms, value, channel, controller)
                 
             elif line.startswith('FONDO,'):
-                try:
-                    data = json.loads(line[len('FONDO,'):])
-                    self.orchestrator.handle_fondo(data)
-                except Exception as e:
-                    logger.error(f"❌ FONDO inválido: {e}")
+                name = line[len('FONDO,'):].strip()
+                if name:
+                    self.orchestrator.handle_fondo(name)
+                else:
+                    logger.warning("⚠️  Mensaje FONDO sin nombre de carpeta")
 
             elif msg_type == 'START' and len(parts) >= 2:
                 server_ts_ms = int(parts[1])

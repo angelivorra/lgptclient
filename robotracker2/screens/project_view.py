@@ -30,10 +30,11 @@ FONT_VAL = dp(18)
 PAD = dp(24)
 GAP = dp(14)
 
-# (clave, tipo, etiqueta, icono Phosphor); tipo: "value" | "action" | "gap"
+# (clave, tipo, etiqueta, icono Phosphor); tipo: "value" | "action" | "gap" | "choice"
 ITEMS = [
     ("tempo", "value", "Tempo", "tempo"),
     ("master", "value", "Master", "master"),
+    ("fondo", "choice", "Fondo", "pads"),
     ("record", "toggle", "Grabar audio", "record"),
     (None, "gap", None, None),
     ("compact_seq", "action", "Compactar secuencia", "compact_seq"),
@@ -58,6 +59,8 @@ class ProjectMenu(Widget):
         self.on_action = on_action
         self.on_change = on_change
         self.record_audio = False
+        self._fondos: list = []    # carpetas disponibles en images/fondos/
+        self._fondo_idx: int = 0   # 0 = "---", 1..n = _fondos[idx-1]
         self.index = self._first_selectable()
         self._tex = {}
         self.bind(pos=self._redraw, size=self._redraw)
@@ -66,6 +69,27 @@ class ProjectMenu(Widget):
         self.project = project
         self.record_audio = False
         self.index = self._first_selectable()
+        self._redraw()
+
+    def set_fondos(self, available: list, current: str | None):
+        """Inyecta la lista de carpetas de fondo disponibles y la seleccionada."""
+        self._fondos = list(available)
+        if current and current in self._fondos:
+            self._fondo_idx = self._fondos.index(current) + 1
+        else:
+            self._fondo_idx = 0
+        self._redraw()
+
+    def get_fondo(self) -> str | None:
+        """Nombre de la carpeta de fondo seleccionada, o None si "---"."""
+        if self._fondo_idx == 0 or not self._fondos:
+            return None
+        return self._fondos[self._fondo_idx - 1]
+
+    def cycle_fondo(self, delta: int):
+        """Cicla la selección (LEFT=-1 / RIGHT=+1); 0 = "---"."""
+        n = len(self._fondos) + 1   # 0="---", 1..n=fondos
+        self._fondo_idx = (self._fondo_idx + delta) % n
         self._redraw()
 
     def _first_selectable(self):
@@ -130,6 +154,8 @@ class ProjectMenu(Widget):
     def _value_text(self, key):
         if key == "record":
             return "sí" if self.record_audio else "no"
+        if key == "fondo":
+            return self.get_fondo() or "---"
         val = int(self.project.project.get(key, "0")) if self.project else 0
         if key == "tempo":
             return f"{val}  [{val:02X}]"
@@ -177,7 +203,7 @@ class ProjectMenu(Widget):
             bg = _BTN_EXIT
             ink = COLOR_ERROR
             val_ink = COLOR_ERROR
-        elif typ in ("value", "toggle"):
+        elif typ in ("value", "toggle", "choice"):
             bg = COLOR_HEADER_BG
             ink = COLOR_ITEM
             val_ink = COLOR_VALUE
@@ -196,7 +222,7 @@ class ProjectMenu(Widget):
         Color(*ink)
         Rectangle(texture=tex, size=(tw, th),
                   pos=(tx, y + (h - th) / 2))
-        if typ in ("value", "toggle"):
+        if typ in ("value", "toggle", "choice"):
             vtex = self._texture(self._value_text(key), FONT_VAL)
             vw, vh = vtex.size
             Color(*val_ink)

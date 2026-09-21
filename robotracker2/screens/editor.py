@@ -29,7 +29,6 @@ from kivy.uix.screenmanager import Screen
 from navmap import SCREENS, neighbor
 from screens.chain_view import ChainGrid
 from screens.config_view import ConfigMenu
-from screens.fondo_view import FondoGrid
 from screens.groove_view import GrooveGrid
 from screens.instrument_view import InstrumentMenu
 from screens.live_view import LiveGrid
@@ -216,8 +215,6 @@ class EditorScreen(Screen):
                                       on_toast=self.toast_msg,
                                       size_hint=(1, 1),
                                       pos_hint={"x": 0, "y": 0})
-        self.fondo_grid = FondoGrid(size_hint=(1, 1),
-                                    pos_hint={"x": 0, "y": 0})
 
         outer.add_widget(root)
         # toast de feedback (guardado, acciones pendientes...)
@@ -441,7 +438,6 @@ class EditorScreen(Screen):
             "pots": self.pots_grid,
             "pads": self.pads_grid,
             "tracks": self.tracks_grid,
-            "fondo": self.fondo_grid,
             "chain": self.chain_grid,
             "live": self.live_grid,
             "phrase": self.phrase_grid,
