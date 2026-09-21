@@ -1,4 +1,10 @@
 {
+  "fondo": {
+    "images": [[1, 1], [1, 2], [1, 3]],
+    "interval": 8.0,
+    "transition": "fade",
+    "fade_s": 0.8
+  },
   "fx_mix": {
     "0": {
       "metal": 40

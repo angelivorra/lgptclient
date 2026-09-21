@@ -67,6 +67,10 @@ class EventOrchestrator:
         # que pintaban frames de ojos a mitad de la canción.
         self._idle_active = False
 
+        # Slideshow de fondo: config recibida por FONDO antes del START
+        self._fondo_config: dict = {}
+        self._fondo_images: list = []
+
         self.current_bpm: float = 0.0
 
         self.stats = {
@@ -351,6 +355,30 @@ class EventOrchestrator:
         except Exception as e:
             logger.error(f"❌ Error activando escena {name}: {e}")
 
+    def handle_fondo(self, data: dict):
+        """Recibe config de slideshow (FONDO) del sinte antes del START.
+
+        Pre-carga las imágenes para que estén listas cuando llegue el START.
+        """
+        self._fondo_config = data
+        images_refs = data.get("images", [])
+        loaded = []
+        for ref in images_refs:
+            if isinstance(ref, (list, tuple)) and len(ref) == 2:
+                cc, value = int(ref[0]), int(ref[1])
+                img = self.media_manager.get_image(cc, value)
+                if img:
+                    loaded.append(img)
+                else:
+                    logger.warning(
+                        f"⚠️  Fondo: imagen {cc:03d}/{value:03d} no encontrada")
+        self._fondo_images = loaded
+        logger.info(
+            f"🖼️  Fondo recibido: {len(loaded)}/{len(images_refs)} imágenes, "
+            f"intervalo={data.get('interval', 6.0)}s, "
+            f"transición={data.get('transition', 'cut')}"
+        )
+
     def handle_start(self, server_ts_ms: int):
         logger.info(f"▶️  START recibido (ts={server_ts_ms}) - Iniciando canción")
         self._transport_seq += 1
@@ -363,6 +391,13 @@ class EventOrchestrator:
         if self._pantalla:
             if self.current_bpm > 0:
                 self.display_executor.set_bpm(self.current_bpm)
+            if self._fondo_images:
+                self.display_executor.set_slideshow(
+                    self._fondo_images,
+                    interval=self._fondo_config.get("interval", 6.0),
+                    transition=self._fondo_config.get("transition", "cut"),
+                    fade_s=self._fondo_config.get("fade_s", 0.5),
+                )
             execution_time_ms = server_ts_ms + self.base_delay_ms
             self.scheduler.schedule_at_walltime(
                 wall_time_ms=execution_time_ms,
@@ -421,6 +456,9 @@ class EventOrchestrator:
         )
         self._playing = False
         self.display_executor.set_live(False)
+        self.display_executor.clear_slideshow()
+        self._fondo_config = {}
+        self._fondo_images = []
         self._show_idle()
 
     def cleanup(self):

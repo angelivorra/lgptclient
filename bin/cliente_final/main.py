@@ -19,6 +19,7 @@ Protocolo de mensajes (ASCII, terminados en \\n):
   STOP,<server_ts_ms>    <- Corta en ts+delay (mismo reloj que las notas)
   END,<server_ts_ms>     <- Igual que STOP al terminar la canción
   RCONFIG,<json>          <- Config íntegra de esta robota (al conectar, antes de NOTA)
+  FONDO,<json>            <- Config de slideshow de fondo (antes de START, por canción)
   CALIB,<server_ts_ms>,<robot>,<pin>,<tiempo_ms>,<delay_ms>  <- Calibración en vivo
   CALTEST,<server_ts_ms>,<robot>,<pin>            <- Programa el pin (ts+1s-delay)
 
@@ -254,6 +255,13 @@ class MIDIClient:
                 logger.debug(f"🎛️  CC {controller}={value} (canal {channel})")
                 self.orchestrator.handle_cc(server_ts_ms, value, channel, controller)
                 
+            elif line.startswith('FONDO,'):
+                try:
+                    data = json.loads(line[len('FONDO,'):])
+                    self.orchestrator.handle_fondo(data)
+                except Exception as e:
+                    logger.error(f"❌ FONDO inválido: {e}")
+
             elif msg_type == 'START' and len(parts) >= 2:
                 server_ts_ms = int(parts[1])
                 self.orchestrator.handle_start(server_ts_ms)

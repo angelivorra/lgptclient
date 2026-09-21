@@ -177,6 +177,16 @@ class DisplayExecutor:
         self._paused = False
         self._last_frame_time: float = 0
         self._frame_accumulator: float = 0
+
+        # Slideshow de fondo: cicla imágenes pre-cargadas mientras dura la canción
+        self._slideshow_images: list = []
+        self._slideshow_interval: float = 6.0
+        self._slideshow_transition: str = "cut"   # "cut" | "fade"
+        self._slideshow_fade_s: float = 0.5
+        self._slideshow_start: float = 0.0
+        self._slideshow_last_idx: int = 0
+        self._slideshow_fade_from: Optional[bytes] = None
+        self._slideshow_fade_begin: float = 0.0
         
         self.stats = {
             'images_shown': 0,
@@ -340,6 +350,37 @@ class DisplayExecutor:
                 f"({len(config.frames)} frames @ {fps} FPS)"
             )
 
+    def set_slideshow(self, images: list, interval: float = 6.0,
+                      transition: str = "cut", fade_s: float = 0.5):
+        """Configura el slideshow de fondo para la canción actual.
+
+        Args:
+            images: Lista de bytes (RGB565) pre-cargados.
+            interval: Segundos por imagen.
+            transition: "cut" (instantáneo) o "fade" (crossfade).
+            fade_s: Duración del crossfade en segundos.
+        """
+        with self._state_lock:
+            self._slideshow_images = list(images)
+            self._slideshow_interval = max(0.5, float(interval))
+            self._slideshow_transition = transition if transition in ("cut", "fade") else "cut"
+            self._slideshow_fade_s = max(0.1, float(fade_s))
+            self._slideshow_start = time.time()
+            self._slideshow_last_idx = 0
+            self._slideshow_fade_from = None
+            self._slideshow_fade_begin = 0.0
+        logger.info(
+            f"🖼️  Slideshow: {len(images)} imágenes, "
+            f"intervalo={interval}s, transición={transition}"
+        )
+
+    def clear_slideshow(self):
+        """Desactiva el slideshow; el plasma vuelve como fondo."""
+        with self._state_lock:
+            self._slideshow_images = []
+            self._slideshow_fade_from = None
+        logger.info("🖼️  Slideshow desactivado")
+
     def set_live(self, on: bool):
         """START/STOP: el plasma es el fondo de la canción. Un MDCC de
         imagen o animación pinta encima y, al terminar, se vuelve aquí."""
@@ -420,12 +461,50 @@ class DisplayExecutor:
         b = (pb * ia + ib * a).astype(np.uint16)
         return ((r << 11) | (g << 5) | b).astype("<u2").tobytes()
 
+    def _get_slideshow_frame(self, now: float) -> Optional[bytes]:
+        """Devuelve el frame del slideshow para el instante `now`.
+
+        Llamado desde _write_live_frame() bajo _state_lock. Gestiona
+        internamente el estado del fade sin locks adicionales.
+        """
+        images = self._slideshow_images
+        if not images:
+            return None
+        n = len(images)
+        elapsed = now - self._slideshow_start
+        idx = int(elapsed / self._slideshow_interval) % n
+
+        if self._slideshow_transition == "cut":
+            return images[idx]
+
+        # fade: detectar cambio de imagen y arrancar transición
+        if idx != self._slideshow_last_idx:
+            self._slideshow_fade_from = images[self._slideshow_last_idx]
+            self._slideshow_fade_begin = now
+            self._slideshow_last_idx = idx
+
+        if self._slideshow_fade_from is not None:
+            fade_elapsed = now - self._slideshow_fade_begin
+            if fade_elapsed >= self._slideshow_fade_s:
+                self._slideshow_fade_from = None
+            else:
+                alpha = fade_elapsed / self._slideshow_fade_s
+                return self._blend_rgb565(
+                    self._slideshow_fade_from, images[idx], alpha)
+
+        return images[idx]
+
     def _write_live_frame(self):
-        if self.scenes.name != "live":
-            self.scenes.set_scene("live")
-        frame = self.scenes.render()
-        if not frame:
-            return
+        now = time.time()
+        slideshow = self._get_slideshow_frame(now)
+        if slideshow is not None:
+            frame = slideshow
+        else:
+            if self.scenes.name != "live":
+                self.scenes.set_scene("live")
+            frame = self.scenes.render()
+            if not frame:
+                return
         if self._overlay_image:
             frame = self._blend_rgb565(frame, self._overlay_image, 0.5)
         write_ok = self.fb_writer.write(frame, skip_black_check=True)
