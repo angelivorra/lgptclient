@@ -530,6 +530,15 @@ class DisplayExecutor:
 
     def _write_live_frame(self):
         now = time.time()
+        # Imagen CC: sustituye el fondo completamente (evita doble grid)
+        if self._overlay_image:
+            write_ok = self.fb_writer.write(self._overlay_image, skip_black_check=True)
+            if write_ok:
+                self.stats['frames_rendered'] += 1
+                self.stats['fb_writes_ok'] += 1
+            else:
+                self.stats['fb_writes_failed'] += 1
+            return
         slideshow = self._get_slideshow_frame(now)
         if slideshow is not None:
             frame = slideshow
@@ -539,8 +548,6 @@ class DisplayExecutor:
             frame = self.scenes.render()
             if not frame:
                 return
-        if self._overlay_image:
-            frame = self._composite_rgb565(frame, self._overlay_image)
         write_ok = self.fb_writer.write(frame, skip_black_check=True)
         if write_ok:
             self.stats['frames_rendered'] += 1
