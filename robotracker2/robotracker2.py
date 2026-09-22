@@ -715,13 +715,33 @@ class Robotracker2App(App):
         self._sync_unsaved()
         self.editor_screen.toast_msg("Pistas guardadas")
 
+    def _apply_fondo_live(self, name, loop_s=None):
+        """Actualiza el slideshow de fondo del live preview."""
+        fondo_dir = (self.images_dir / "fondos" / name) if name else None
+        if loop_s is None:
+            loop_s = self._midi_ctrl.fondo_loop_s_state()
+        self.editor_screen.live_grid.set_fondo(
+            fondo_dir, images_dir=self.images_dir, loop_s=loop_s)
+
+    def _fondo_loop_s_adjust(self, delta: float):
+        """Ajusta el loop_s del fondo de la canción."""
+        m = self.editor_screen.project_menu
+        new_val = round(max(0.1, min(60.0, m.get_fondo_loop_s() + delta)), 1)
+        m.set_fondo_loop_s(new_val)
+        self._midi_ctrl.set_fondo_loop_s(new_val)
+        self._fondo_dirty = True
+        self._sync_unsaved()
+        self._apply_fondo_live(self._midi_ctrl.fondo_state(), loop_s=new_val)
+
     def _fondo_cycle(self, delta):
         """Cicla la selección de fondo (LEFT/RIGHT en PROJECT > Fondo)."""
         m = self.editor_screen.project_menu
         m.cycle_fondo(delta)
-        self._midi_ctrl.set_fondo(m.get_fondo())
+        name = m.get_fondo()
+        self._midi_ctrl.set_fondo(name)
         self._fondo_dirty = True
         self._sync_unsaved()
+        self._apply_fondo_live(name)
 
 
     def _editor_grid(self):
@@ -1083,9 +1103,20 @@ class Robotracker2App(App):
     def _dispatch_project(self, button, active):
         m = self.editor_screen.project_menu
         key, typ, _label, _icon = m.current_item()
-        if button in DPAD and A in active and typ in ("value", "toggle"):
+        if button in DPAD and A in active and typ in ("value", "toggle", "fvalue"):
             if typ == "toggle":
                 m.adjust_by(0)
+                self._a_consumed = True
+                return True
+            if key == "fondo_loop_s":
+                if button == UP:
+                    self._fondo_loop_s_adjust(1.0)
+                elif button == DOWN:
+                    self._fondo_loop_s_adjust(-1.0)
+                elif button == RIGHT:
+                    self._fondo_loop_s_adjust(0.1)
+                elif button == LEFT:
+                    self._fondo_loop_s_adjust(-0.1)
                 self._a_consumed = True
                 return True
             delta = A_DIR_DELTA[button]
@@ -1628,6 +1659,7 @@ class Robotracker2App(App):
                     or self._robot_play.hit_note is not None):
                 self._robot_play.reset()
                 ed.live_grid.reset()
+                self._apply_fondo_live(self._midi_ctrl.fondo_state())
             elif ed.current == "live":
                 ed.live_grid.tick_pulse(dt)
             return
@@ -1735,6 +1767,7 @@ class Robotracker2App(App):
         self._preview_instr = None
         self._preview_held.clear()
         self.editor_screen.live_grid.reset()
+        self._apply_fondo_live(self._midi_ctrl.fondo_state())
         self.dirty = False
         self._pads_dirty = False
         self._pots_dirty = False
@@ -1749,6 +1782,8 @@ class Robotracker2App(App):
         self.editor_screen.set_tracks(self._midi_ctrl.tracks_state())
         self.editor_screen.project_menu.set_fondos(
             self._available_fondos, self._midi_ctrl.fondo_state())
+        self.editor_screen.project_menu.set_fondo_loop_s(
+            self._midi_ctrl.fondo_loop_s_state())
         self._sync_unsaved()
         self.sm.current = "editor"
 
