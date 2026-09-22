@@ -410,7 +410,7 @@ def procesa_textos(path: Path, config: Dict[str, Any]) -> Dict:
         # así que las filas por encima/debajo del margen son fondo puro → negro.
         canvas_arr = np.array(canvas)
         top_rows = max(0, y - glow_stroke * 6)
-        bot_rows = min(H, y + nh + glow_stroke * 6)
+        bot_rows = min(H, y + h + glow_stroke * 6)
         canvas_arr[:top_rows, :] = (0, 0, 0, 255)
         canvas_arr[bot_rows:, :] = (0, 0, 0, 255)
         canvas = Image.fromarray(canvas_arr, 'RGBA')
