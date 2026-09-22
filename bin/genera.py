@@ -64,7 +64,7 @@ DATOS_TERMINAL: Dict[str, Dict[str, Any]] = {
 
 # Versión de la lógica de generación/empaquetado. Incrementar para forzar la
 # regeneración completa (invalida todos los .manifest.json existentes).
-GENERATOR_VERSION = 3
+GENERATOR_VERSION = 4
 
 
 class Cartera(Enum):  # alias semántico (evita conflicto con folder) (unused but placeholder)
@@ -404,6 +404,16 @@ def procesa_textos(path: Path, config: Dict[str, Any]) -> Dict:
                        stroke_width=stroke_width, stroke_fill=(0, 0, 0))
         if invert:
             canvas = canvas.transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
+        # Limpiar glow residual fuera del área del texto: la banda superior/inferior
+        # del canvas puede tener píxeles del blur de neón con lum>6 que crearían
+        # un doble fondo visible. El texto siempre está centrado con margen 10%,
+        # así que las filas por encima/debajo del margen son fondo puro → negro.
+        canvas_arr = np.array(canvas)
+        top_rows = max(0, y - glow_stroke * 6)
+        bot_rows = min(H, y + nh + glow_stroke * 6)
+        canvas_arr[:top_rows, :] = (0, 0, 0, 255)
+        canvas_arr[bot_rows:, :] = (0, 0, 0, 255)
+        canvas = Image.fromarray(canvas_arr, 'RGBA')
         filename = f"{idx:03d}.png"
         try:
             bin_path = out_dir / f"{filename.split('.')[0]}.bin"
