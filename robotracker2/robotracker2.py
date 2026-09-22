@@ -132,6 +132,7 @@ class Robotracker2App(App):
         self._tracks_dirty = False # tipos de pista sin guardar (robotraca)
         self._mute_dirty = False   # mute de canales sin guardar (robotraca)
         self._fondo_dirty = False  # fondo de canción sin guardar (robotraca)
+        self._available_fondos: list = []  # poblado en build() desde images/fondos/
         self.fullscreen = fullscreen
         self.held = set()          # botones lógicos pulsados ahora
         self._pc_keys = set()     # teclas PC no-LGPT (p.ej. Intro) pulsadas
