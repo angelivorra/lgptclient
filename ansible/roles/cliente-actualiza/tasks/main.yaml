@@ -64,6 +64,14 @@
     delete: yes
     rsync_opts:
       - "--chown=angel:angel"
+      - "--exclude=fondos"
+
+- name: Sync fondo images
+  synchronize:
+    src: /home/angel/git/lgptclient/images/fondos/
+    dest: /home/angel/images/fondos/
+    rsync_opts:
+      - "--chown=angel:angel"
 
 - name: Configure cliente service
   become: true

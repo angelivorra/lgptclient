@@ -250,7 +250,7 @@ class MediaManager:
             return None
         try:
             lines = [l.strip() for l in textos_path.read_text(encoding="utf-8").splitlines() if l.strip()]
-            idx = (value - 1) if value > 0 else 0
+            idx = max(0, value)  # 0-based, igual que lgpt_engine
             if idx >= len(lines):
                 return None
             text = lines[idx]

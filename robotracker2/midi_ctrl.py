@@ -382,6 +382,16 @@ class MidiControl:
         else:
             self._cfg.pop("fondo", None)
 
+    def fondo_loop_s_state(self) -> float:
+        if self._cfg is None:
+            return 1.0
+        return float(self._cfg.get("fondo_loop_s", 1.0))
+
+    def set_fondo_loop_s(self, val: float):
+        if self._cfg is None:
+            return
+        self._cfg["fondo_loop_s"] = round(max(0.1, min(60.0, float(val))), 1)
+
     def clear_song(self):
         self.engine_ref["engine"] = None
         self.pots.clear()

@@ -1,5 +1,6 @@
 {
   "fondo": "001",
+  "fondo_loop_s": 0.5,
   "fx_mix": {
     "0": {
       "metal": 40
@@ -14,6 +15,7 @@
     }
   },
   "mute": [
+    6,
     7
   ],
   "pad_volume": {

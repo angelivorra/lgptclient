@@ -35,6 +35,7 @@ ITEMS = [
     ("tempo", "value", "Tempo", "tempo"),
     ("master", "value", "Master", "master"),
     ("fondo", "choice", "Fondo", "pads"),
+    ("fondo_loop_s", "fvalue", "Loop fondo (s)", "tempo"),
     ("record", "toggle", "Grabar audio", "record"),
     (None, "gap", None, None),
     ("compact_seq", "action", "Compactar secuencia", "compact_seq"),
@@ -61,6 +62,7 @@ class ProjectMenu(Widget):
         self.record_audio = False
         self._fondos: list = []    # carpetas disponibles en images/fondos/
         self._fondo_idx: int = 0   # 0 = "---", 1..n = _fondos[idx-1]
+        self._fondo_loop_s: float = 1.0
         self.index = self._first_selectable()
         self._tex = {}
         self.bind(pos=self._redraw, size=self._redraw)
@@ -91,6 +93,13 @@ class ProjectMenu(Widget):
         n = len(self._fondos) + 1   # 0="---", 1..n=fondos
         self._fondo_idx = (self._fondo_idx + delta) % n
         self._redraw()
+
+    def set_fondo_loop_s(self, val: float):
+        self._fondo_loop_s = round(max(0.1, min(60.0, float(val))), 1)
+        self._redraw()
+
+    def get_fondo_loop_s(self) -> float:
+        return self._fondo_loop_s
 
     def _first_selectable(self):
         return next(i for i, it in enumerate(ITEMS) if it[1] != "gap")
@@ -156,6 +165,8 @@ class ProjectMenu(Widget):
             return "sí" if self.record_audio else "no"
         if key == "fondo":
             return self.get_fondo() or "---"
+        if key == "fondo_loop_s":
+            return f"{self._fondo_loop_s:.1f} s"
         val = int(self.project.project.get(key, "0")) if self.project else 0
         if key == "tempo":
             return f"{val}  [{val:02X}]"
@@ -203,7 +214,7 @@ class ProjectMenu(Widget):
             bg = _BTN_EXIT
             ink = COLOR_ERROR
             val_ink = COLOR_ERROR
-        elif typ in ("value", "toggle", "choice"):
+        elif typ in ("value", "toggle", "choice", "fvalue"):
             bg = COLOR_HEADER_BG
             ink = COLOR_ITEM
             val_ink = COLOR_VALUE
@@ -222,7 +233,7 @@ class ProjectMenu(Widget):
         Color(*ink)
         Rectangle(texture=tex, size=(tw, th),
                   pos=(tx, y + (h - th) / 2))
-        if typ in ("value", "toggle", "choice"):
+        if typ in ("value", "toggle", "choice", "fvalue"):
             vtex = self._texture(self._value_text(key), FONT_VAL)
             vw, vh = vtex.size
             Color(*val_ink)

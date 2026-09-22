@@ -822,7 +822,7 @@
         </INSTRUMENT>
         <INSTRUMENT ID="20" TYPE="Sample">
             <PARAM NAME="sample" VALUE="pulse25_C2.wav" />
-            <PARAM NAME="volume" VALUE="95" />
+            <PARAM NAME="volume" VALUE="63" />
             <PARAM NAME="interpol" VALUE="linear" />
             <PARAM NAME="crush" VALUE="16" />
             <PARAM NAME="crushdrive" VALUE="255" />
