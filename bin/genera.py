@@ -64,7 +64,7 @@ DATOS_TERMINAL: Dict[str, Dict[str, Any]] = {
 
 # Versión de la lógica de generación/empaquetado. Incrementar para forzar la
 # regeneración completa (invalida todos los .manifest.json existentes).
-GENERATOR_VERSION = 2
+GENERATOR_VERSION = 3
 
 
 class Cartera(Enum):  # alias semántico (evita conflicto con folder) (unused but placeholder)
@@ -460,7 +460,7 @@ def procesa_imagenes(path: Path, config: Dict[str, Any]) -> Dict:
             new_size = (max(1, int(ow * scale)), max(1, int(oh * scale)))
             if new_size != (ow, oh):
                 fg = fg.resize(new_size, Image.LANCZOS)
-            lienzo = bg.copy()
+            lienzo = Image.new('RGBA', (W, H), (0, 0, 0, 255))  # negro: alpha=0 en el PNG → negro → transparente en composite
             nw, nh = fg.size
             x = (W - nw) // 2
             y = (H - nh) // 2
