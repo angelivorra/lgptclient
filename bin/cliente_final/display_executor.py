@@ -474,12 +474,13 @@ class DisplayExecutor:
 
     @staticmethod
     def _composite_rgb565(bg: bytes, fg: bytes) -> bytes:
-        """Overlay con clave de luminancia: píxeles muy oscuros del fg son transparentes.
+        """Overlay con doble criterio de transparencia:
 
-        Usa suma de canales RGB565 ≤ 6 como umbral de transparencia. Esto
-        equivale aproximadamente a RGB888 luminancia < 15 (muy oscuro).
-        Evita que píxeles grises oscuros del contenido (ej. sombras del robot,
-        que en RGB565 suman 9) sean tratados incorrectamente como transparentes.
+        1. Píxeles muy oscuros (sum ≤ 6): negro puro y casi-negro, siempre transparentes.
+        2. Píxeles azul-dominantes y oscuros (b > r AND sum ≤ 25): tron grid baked
+           en los .bin de CC — se muestra el fondo animado a través de ellos.
+
+        Los grises neutros del robot (r ≈ b, sum 7-25) quedan opacos (contenido).
         """
         if len(bg) != len(fg):
             return bg
@@ -489,10 +490,9 @@ class DisplayExecutor:
         r = (fg32 >> 11) & 0x1F
         g = (fg32 >> 5) & 0x3F
         b = fg32 & 0x1F
-        # Umbral de luminancia suma: transparente si r+g+b ≤ 6 en RGB565.
-        # (0,0,0)=0, (4,4,4)RGB888→(0,1,0)=1, (12,12,12)→(1,3,1)=5 → transp.
-        # (20,20,20)→(2,5,2)=9, (30,30,30)→(3,7,3)=13 → opaco (contenido).
-        transparent = (r + g + b) <= 6
+        lum = r + g + b
+        # Transparente si: muy oscuro (sum ≤ 6) O (azul-dominante Y oscuro ≤ 25)
+        transparent = (lum <= 6) | ((b > r) & (lum <= 25))
         return np.where(transparent, bg_arr, fg_arr).astype("<u2").tobytes()
 
     def _get_slideshow_frame(self, now: float) -> Optional[bytes]:
@@ -530,24 +530,20 @@ class DisplayExecutor:
 
     def _write_live_frame(self):
         now = time.time()
-        # Imagen CC: sustituye el fondo completamente (evita doble grid)
-        if self._overlay_image:
-            write_ok = self.fb_writer.write(self._overlay_image, skip_black_check=True)
-            if write_ok:
-                self.stats['frames_rendered'] += 1
-                self.stats['fb_writes_ok'] += 1
-            else:
-                self.stats['fb_writes_failed'] += 1
-            return
         slideshow = self._get_slideshow_frame(now)
         if slideshow is not None:
-            frame = slideshow
+            bg = slideshow
         else:
             if self.scenes.name != "live":
                 self.scenes.set_scene("live")
-            frame = self.scenes.render()
-            if not frame:
+            bg = self.scenes.render()
+            if not bg:
                 return
+        # Imagen CC: composite sobre el fondo animado (muestra fondo a través de píxeles oscuros/azules)
+        if self._overlay_image:
+            frame = self._composite_rgb565(bg, self._overlay_image)
+        else:
+            frame = bg
         write_ok = self.fb_writer.write(frame, skip_black_check=True)
         if write_ok:
             self.stats['frames_rendered'] += 1
