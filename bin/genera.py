@@ -360,7 +360,7 @@ def procesa_textos(path: Path, config: Dict[str, Any]) -> Dict:
             if w <= max_w and h <= max_h:
                 break
             font_size -= 2
-        canvas = bg.copy()
+        canvas = Image.new('RGBA', (W, H), (0, 0, 0, 255))  # negro: transparente en composite
         glow_stroke = 8
         draw = ImageDraw.Draw(canvas)
         bbox = draw.textbbox((0, 0), palabra, font=font, stroke_width=glow_stroke)
