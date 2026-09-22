@@ -463,16 +463,26 @@ class DisplayExecutor:
 
     @staticmethod
     def _composite_rgb565(bg: bytes, fg: bytes) -> bytes:
-        """Overlay con clave de color: píxeles 0x0000 (negro) del fg son transparentes.
+        """Overlay con clave de luminancia: píxeles muy oscuros del fg son transparentes.
 
-        Elimina los bordes oscuros que aparecen al componer imágenes con fondo
-        negro sobre el slideshow de fondo.
+        Trata como transparentes los píxeles cuya suma de canales RGB565 es ≤ 8
+        (≈ RGB888 < 20 en todos los canales). Esto elimina fondos negros y
+        bordes de anti-aliasing sin afectar al contenido coloreado.
         """
         if len(bg) != len(fg):
             return bg
-        b = np.frombuffer(bg, dtype="<u2")
-        f = np.frombuffer(fg, dtype="<u2")
-        return np.where(f != 0, f, b).astype("<u2").tobytes()
+        bg_arr = np.frombuffer(bg, dtype="<u2")
+        fg_arr = np.frombuffer(fg, dtype="<u2")
+        fg32 = fg_arr.astype(np.uint32)
+        r = (fg32 >> 11) & 0x1F
+        g = (fg32 >> 5) & 0x3F
+        b = fg32 & 0x1F
+        # Umbral por canal: transparente si TODOS los canales son muy oscuros.
+        # Así los colores saturados oscuros (rojo oscuro, azul oscuro) NO son
+        # transparentes, solo los grises y negros de fondo.
+        # Equiv. aprox. RGB888 < (17, 21, 17) en todos los canales a la vez.
+        transparent = (r <= 2) & (g <= 5) & (b <= 2)
+        return np.where(transparent, bg_arr, fg_arr).astype("<u2").tobytes()
 
     def _get_slideshow_frame(self, now: float) -> Optional[bytes]:
         """Devuelve el frame del slideshow para el instante `now`.
