@@ -476,9 +476,10 @@ class DisplayExecutor:
     def _composite_rgb565(bg: bytes, fg: bytes) -> bytes:
         """Overlay con clave de luminancia: píxeles muy oscuros del fg son transparentes.
 
-        Trata como transparentes los píxeles cuya suma de canales RGB565 es ≤ 8
-        (≈ RGB888 < 20 en todos los canales). Esto elimina fondos negros y
-        bordes de anti-aliasing sin afectar al contenido coloreado.
+        Usa suma de canales RGB565 ≤ 6 como umbral de transparencia. Esto
+        equivale aproximadamente a RGB888 luminancia < 15 (muy oscuro).
+        Evita que píxeles grises oscuros del contenido (ej. sombras del robot,
+        que en RGB565 suman 9) sean tratados incorrectamente como transparentes.
         """
         if len(bg) != len(fg):
             return bg
@@ -488,11 +489,10 @@ class DisplayExecutor:
         r = (fg32 >> 11) & 0x1F
         g = (fg32 >> 5) & 0x3F
         b = fg32 & 0x1F
-        # Umbral por canal: transparente si TODOS los canales son muy oscuros.
-        # Así los colores saturados oscuros (rojo oscuro, azul oscuro) NO son
-        # transparentes, solo los grises y negros de fondo.
-        # Equiv. aprox. RGB888 < (17, 21, 17) en todos los canales a la vez.
-        transparent = (r <= 2) & (g <= 5) & (b <= 2)
+        # Umbral de luminancia suma: transparente si r+g+b ≤ 6 en RGB565.
+        # (0,0,0)=0, (4,4,4)RGB888→(0,1,0)=1, (12,12,12)→(1,3,1)=5 → transp.
+        # (20,20,20)→(2,5,2)=9, (30,30,30)→(3,7,3)=13 → opaco (contenido).
+        transparent = (r + g + b) <= 6
         return np.where(transparent, bg_arr, fg_arr).astype("<u2").tobytes()
 
     def _get_slideshow_frame(self, now: float) -> Optional[bytes]:

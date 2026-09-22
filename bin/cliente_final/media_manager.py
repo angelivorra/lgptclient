@@ -206,27 +206,29 @@ class MediaManager:
             return []
 
         for png_path in pngs:
+            # Preferir .bin pre-convertido (carga instantánea vs loop Python lento)
+            bin_path = png_path.with_suffix(".bin")
+            if bin_path.exists():
+                try:
+                    result.append(bin_path.read_bytes())
+                    logger.debug(f"🖼️  Fondo frame (bin): {bin_path.name}")
+                    continue
+                except Exception as e:
+                    logger.warning(f"⚠️  Error leyendo {bin_path}, intentando PNG: {e}")
             if _pil_ok:
                 try:
+                    import numpy as np
                     img = _PILImage.open(png_path).convert("RGB")
                     img = img.resize((width, height), _PILImage.LANCZOS)
-                    pixels = img.tobytes()
-                    # RGB888 → RGB565 (little-endian, igual que el resto)
-                    import struct
-                    out = bytearray(width * height * 2)
-                    for i in range(width * height):
-                        r, g, b = pixels[i*3], pixels[i*3+1], pixels[i*3+2]
-                        v = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
-                        struct.pack_into("<H", out, i * 2, v)
-                    result.append(bytes(out))
-                    logger.debug(f"🖼️  Fondo frame: {png_path.name}")
+                    arr = np.array(img, dtype=np.uint16)
+                    r = (arr[:, :, 0] >> 3)
+                    g = (arr[:, :, 1] >> 2)
+                    b = (arr[:, :, 2] >> 3)
+                    rgb565 = ((r << 11) | (g << 5) | b).astype('<u2')
+                    result.append(rgb565.tobytes())
+                    logger.debug(f"🖼️  Fondo frame (png): {png_path.name}")
                 except Exception as e:
                     logger.error(f"❌ Error cargando {png_path}: {e}")
-            else:
-                # Sin PIL: busca .bin pre-convertido junto al PNG
-                bin_path = png_path.with_suffix(".bin")
-                if bin_path.exists():
-                    result.append(bin_path.read_bytes())
                 else:
                     logger.warning(f"⚠️  Sin PIL y sin .bin para {png_path.name}")
 
