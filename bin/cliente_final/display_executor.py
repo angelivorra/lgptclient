@@ -461,6 +461,19 @@ class DisplayExecutor:
         b = (pb * ia + ib * a).astype(np.uint16)
         return ((r << 11) | (g << 5) | b).astype("<u2").tobytes()
 
+    @staticmethod
+    def _composite_rgb565(bg: bytes, fg: bytes) -> bytes:
+        """Overlay con clave de color: píxeles 0x0000 (negro) del fg son transparentes.
+
+        Elimina los bordes oscuros que aparecen al componer imágenes con fondo
+        negro sobre el slideshow de fondo.
+        """
+        if len(bg) != len(fg):
+            return bg
+        b = np.frombuffer(bg, dtype="<u2")
+        f = np.frombuffer(fg, dtype="<u2")
+        return np.where(f != 0, f, b).astype("<u2").tobytes()
+
     def _get_slideshow_frame(self, now: float) -> Optional[bytes]:
         """Devuelve el frame del slideshow para el instante `now`.
 
@@ -506,7 +519,7 @@ class DisplayExecutor:
             if not frame:
                 return
         if self._overlay_image:
-            frame = self._blend_rgb565(frame, self._overlay_image, 0.5)
+            frame = self._composite_rgb565(frame, self._overlay_image)
         write_ok = self.fb_writer.write(frame, skip_black_check=True)
         if write_ok:
             self.stats['frames_rendered'] += 1

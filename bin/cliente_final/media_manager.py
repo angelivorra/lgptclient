@@ -83,6 +83,11 @@ class MediaManager:
         image_path = self.base_path / f"{cc:03d}" / f"{value:03d}.bin"
         
         if not image_path.exists():
+            if cc == 2:
+                data = self._render_lyric_rgb565(value)
+                if data:
+                    self._add_to_cache(key, data)
+                    return data
             logger.debug(f"❌ Imagen no encontrada: {image_path}")
             return None
         
@@ -228,6 +233,66 @@ class MediaManager:
         logger.info(f"🎞️  Fondo '{name}': {len(result)} frames cargados")
         return result
     
+    def _render_lyric_rgb565(self, value: int,
+                             width: int = 800, height: int = 480) -> Optional[bytes]:
+        """Renderiza on-the-fly la línea `value` de images/002/textos a RGB565.
+
+        Usa images/002/fondo.png como fondo y images/002/fuente*.ttf como tipo.
+        Requiere Pillow. Si no está disponible o no hay textos, devuelve None.
+        """
+        textos_path = self.base_path / "002" / "textos"
+        if not textos_path.exists():
+            return None
+        try:
+            from PIL import Image as _PILImage, ImageDraw, ImageFont
+        except ImportError:
+            logger.warning("⚠️  PIL no disponible — textos no se pueden renderizar")
+            return None
+        try:
+            lines = [l.strip() for l in textos_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+            idx = (value - 1) if value > 0 else 0
+            if idx >= len(lines):
+                return None
+            text = lines[idx]
+
+            fondo_path = self.base_path / "002" / "fondo.png"
+            if fondo_path.exists():
+                img = _PILImage.open(fondo_path).convert("RGB").resize((width, height), _PILImage.LANCZOS)
+            else:
+                img = _PILImage.new("RGB", (width, height), (0, 0, 0))
+
+            draw = ImageDraw.Draw(img)
+            font_size = max(40, height // 6)
+            font = None
+            for fname in ("fuente22.ttf", "fuente2.ttf", "fuente.ttf"):
+                fp = self.base_path / "002" / fname
+                if fp.exists():
+                    try:
+                        font = ImageFont.truetype(str(fp), font_size)
+                        break
+                    except Exception:
+                        continue
+            if font is None:
+                font = ImageFont.load_default()
+
+            bbox = draw.textbbox((0, 0), text, font=font)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            x, y = (width - tw) // 2, (height - th) // 2
+            draw.text((x, y), text, fill=(255, 255, 255), font=font)
+
+            import struct
+            pixels = img.tobytes()
+            out = bytearray(width * height * 2)
+            for i in range(width * height):
+                r, g, b = pixels[i * 3], pixels[i * 3 + 1], pixels[i * 3 + 2]
+                v = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
+                struct.pack_into("<H", out, i * 2, v)
+            logger.info(f"📝 Texto CC=2/{value}: \"{text}\"")
+            return bytes(out)
+        except Exception as e:
+            logger.error(f"❌ Error renderizando texto CC=2/{value}: {e}")
+            return None
+
     def _add_to_cache(self, key: Tuple[int, int], data: bytes):
         """Agrega una imagen al cache LRU."""
         if key in self._image_cache:

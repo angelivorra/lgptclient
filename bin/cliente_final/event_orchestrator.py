@@ -355,16 +355,29 @@ class EventOrchestrator:
         except Exception as e:
             logger.error(f"❌ Error activando escena {name}: {e}")
 
-    def handle_fondo(self, name: str):
-        """Recibe el nombre de la carpeta de fondo (FONDO,001) del sinte.
+    def handle_fondo(self, name: str, loop_s: float = 1.0):
+        """Recibe el nombre de la carpeta de fondo (FONDO,001,loop_s) del sinte.
 
         Pre-carga todas las PNGs de fondos/{name}/ para que estén listas
-        cuando llegue el START.
+        cuando llegue el START. El intervalo por imagen = loop_s / n_frames.
+        Un nombre vacío (FONDO,) borra el fondo activo.
         """
-        self._fondo_config = {"name": name, "interval": 6.0, "transition": "cut"}
+        if not name:
+            self._fondo_config = {}
+            self._fondo_images = []
+            return
+        # Cache hit: mismo fondo ya cargado — solo actualizar el intervalo
+        if self._fondo_config.get("name") == name and self._fondo_images:
+            n = max(1, len(self._fondo_images))
+            self._fondo_config["interval"] = max(0.05, loop_s / n)
+            logger.info(f"🖼️  Fondo '{name}' ya en cache ({len(self._fondo_images)} frames), interval={self._fondo_config['interval']:.3f}s")
+            return
         loaded = self.media_manager.load_fondo_images(name)
+        n = max(1, len(loaded))
+        interval = max(0.05, loop_s / n)
+        self._fondo_config = {"name": name, "interval": interval, "transition": "cut"}
         self._fondo_images = loaded
-        logger.info(f"🖼️  Fondo '{name}': {len(loaded)} frames pre-cargados")
+        logger.info(f"🖼️  Fondo '{name}': {len(loaded)} frames, loop={loop_s}s, interval={interval:.3f}s")
 
     def handle_start(self, server_ts_ms: int):
         logger.info(f"▶️  START recibido (ts={server_ts_ms}) - Iniciando canción")
@@ -444,8 +457,8 @@ class EventOrchestrator:
         self._playing = False
         self.display_executor.set_live(False)
         self.display_executor.clear_slideshow()
-        self._fondo_config = {}
-        self._fondo_images = []
+        # _fondo_images se conserva: en el siguiente START se reutiliza sin recargar.
+        # El sinte siempre emite FONDO (vacío si no hay) antes de cada START.
         self._show_idle()
 
     def cleanup(self):

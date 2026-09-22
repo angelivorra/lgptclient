@@ -280,6 +280,7 @@ class EventMidiOut:
         # que hayamos mandado STOP. Esos eventos se descartan.
         self.suppress_notes = False
         self._fondo_name: str | None = None
+        self._fondo_loop_s: float = 1.0
 
     def _ts(self) -> int:
         engine = self._engine_ref.get("engine")
@@ -317,16 +318,19 @@ class EventMidiOut:
             return
         self.server.emit("ACRD", self._ts(), channel, velocity, *notes)
 
-    def set_fondo(self, name: str | None):
+    def set_fondo(self, name: str | None, loop_s: float = 1.0):
         """Nombre de la carpeta de fondo para la canción actual (de robotraca.json)."""
         self._fondo_name = str(name) if name else None
+        self._fondo_loop_s = max(0.1, float(loop_s))
 
     def program_change(self, channel, program):
         pass                                # sin equivalente en el protocolo
 
     def transport_start(self):
         if self._fondo_name:
-            self.server.broadcast_line(f"FONDO,{self._fondo_name}\n")
+            self.server.broadcast_line(f"FONDO,{self._fondo_name},{self._fondo_loop_s}\n")
+        else:
+            self.server.broadcast_line("FONDO,\n")  # sin fondo: el cliente limpia
         self.server.emit("START", self._ts())
         engine = self._engine_ref.get("engine")
         tempo = getattr(engine, "tempo", None) if engine is not None else None
