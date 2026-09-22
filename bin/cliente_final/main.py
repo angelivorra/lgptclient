@@ -256,11 +256,13 @@ class MIDIClient:
                 self.orchestrator.handle_cc(server_ts_ms, value, channel, controller)
                 
             elif line.startswith('FONDO,'):
-                fondo_parts = line[len('FONDO,'):].strip().split(',', 1)
+                fondo_parts = line[len('FONDO,'):].strip().split(',')
                 name = fondo_parts[0]
                 loop_s = float(fondo_parts[1]) if len(fondo_parts) > 1 else 1.0
+                loop_beats = float(fondo_parts[2]) if len(fondo_parts) > 2 else None
                 if name:
-                    self.orchestrator.handle_fondo(name, loop_s=loop_s)
+                    self.orchestrator.handle_fondo(name, loop_s=loop_s,
+                                                   loop_beats=loop_beats)
                 else:
                     logger.warning("⚠️  Mensaje FONDO sin nombre de carpeta")
 

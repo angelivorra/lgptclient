@@ -1,6 +1,7 @@
 {
   "fondo": "001",
-  "fondo_loop_s": 0.5,
+  "fondo_loop_beats": 4,
+  "fondo_loop_s": 1.333,
   "fx_mix": {
     "0": {
       "metal": 40

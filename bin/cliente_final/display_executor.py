@@ -181,6 +181,7 @@ class DisplayExecutor:
         # Slideshow de fondo: cicla imágenes pre-cargadas mientras dura la canción
         self._slideshow_images: list = []
         self._slideshow_interval: float = 6.0
+        self._slideshow_loop_beats: Optional[float] = None  # si no None, interval se recalcula con BPM
         self._slideshow_transition: str = "cut"   # "cut" | "fade"
         self._slideshow_fade_s: float = 0.5
         self._slideshow_start: float = 0.0
@@ -351,18 +352,22 @@ class DisplayExecutor:
             )
 
     def set_slideshow(self, images: list, interval: float = 6.0,
-                      transition: str = "cut", fade_s: float = 0.5):
+                      transition: str = "cut", fade_s: float = 0.5,
+                      loop_beats: float = None):
         """Configura el slideshow de fondo para la canción actual.
 
         Args:
             images: Lista de bytes (RGB565) pre-cargados.
-            interval: Segundos por imagen.
+            interval: Segundos por imagen (ignorado si loop_beats está definido y hay BPM).
             transition: "cut" (instantáneo) o "fade" (crossfade).
             fade_s: Duración del crossfade en segundos.
+            loop_beats: Duración del loop en beats. Si se recibe BPM, el interval
+                        se recalcula automáticamente: interval = (loop_beats/bpm*60) / n_frames.
         """
         with self._state_lock:
             self._slideshow_images = list(images)
-            self._slideshow_interval = max(0.5, float(interval))
+            self._slideshow_loop_beats = float(loop_beats) if loop_beats else None
+            self._slideshow_interval = max(0.01, float(interval))
             self._slideshow_transition = transition if transition in ("cut", "fade") else "cut"
             self._slideshow_fade_s = max(0.1, float(fade_s))
             self._slideshow_start = time.time()
@@ -444,6 +449,12 @@ class DisplayExecutor:
 
     def set_bpm(self, bpm: float):
         self.scenes.set_bpm(bpm)
+        if bpm > 0:
+            with self._state_lock:
+                n = len(self._slideshow_images)
+                if self._slideshow_loop_beats and n:
+                    self._slideshow_interval = max(
+                        0.01, (self._slideshow_loop_beats / bpm * 60) / n)
 
     @staticmethod
     def _blend_rgb565(plasma: bytes, image: bytes, img_w: float) -> bytes:

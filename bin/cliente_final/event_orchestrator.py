@@ -355,29 +355,33 @@ class EventOrchestrator:
         except Exception as e:
             logger.error(f"❌ Error activando escena {name}: {e}")
 
-    def handle_fondo(self, name: str, loop_s: float = 1.0):
-        """Recibe el nombre de la carpeta de fondo (FONDO,001,loop_s) del sinte.
+    def handle_fondo(self, name: str, loop_s: float = 1.0, loop_beats: float = None):
+        """Recibe el nombre de la carpeta de fondo (FONDO,001,loop_s[,loop_beats]).
 
         Pre-carga todas las PNGs de fondos/{name}/ para que estén listas
-        cuando llegue el START. El intervalo por imagen = loop_s / n_frames.
+        cuando llegue el START. Si loop_beats está definido, el interval se
+        recalcula dinámicamente con cada BPM; si no, interval = loop_s / n_frames.
         Un nombre vacío (FONDO,) borra el fondo activo.
         """
         if not name:
             self._fondo_config = {}
             self._fondo_images = []
             return
-        # Cache hit: mismo fondo ya cargado — solo actualizar el intervalo
+        loop_beats = float(loop_beats) if loop_beats else None
+        # Cache hit: mismo fondo ya cargado — solo actualizar parámetros
         if self._fondo_config.get("name") == name and self._fondo_images:
             n = max(1, len(self._fondo_images))
-            self._fondo_config["interval"] = max(0.05, loop_s / n)
-            logger.info(f"🖼️  Fondo '{name}' ya en cache ({len(self._fondo_images)} frames), interval={self._fondo_config['interval']:.3f}s")
+            self._fondo_config["loop_beats"] = loop_beats
+            self._fondo_config["interval"] = max(0.01, loop_s / n)
+            logger.info(f"🖼️  Fondo '{name}' cache hit ({n} frames), loop_beats={loop_beats}")
             return
         loaded = self.media_manager.load_fondo_images(name)
         n = max(1, len(loaded))
-        interval = max(0.05, loop_s / n)
-        self._fondo_config = {"name": name, "interval": interval, "transition": "cut"}
+        interval = max(0.01, loop_s / n)
+        self._fondo_config = {"name": name, "interval": interval,
+                              "loop_beats": loop_beats, "transition": "cut"}
         self._fondo_images = loaded
-        logger.info(f"🖼️  Fondo '{name}': {len(loaded)} frames, loop={loop_s}s, interval={interval:.3f}s")
+        logger.info(f"🖼️  Fondo '{name}': {n} frames, loop={loop_s}s, beats={loop_beats}")
 
     def handle_start(self, server_ts_ms: int):
         logger.info(f"▶️  START recibido (ts={server_ts_ms}) - Iniciando canción")
@@ -397,6 +401,7 @@ class EventOrchestrator:
                     interval=self._fondo_config.get("interval", 6.0),
                     transition=self._fondo_config.get("transition", "cut"),
                     fade_s=self._fondo_config.get("fade_s", 0.5),
+                    loop_beats=self._fondo_config.get("loop_beats"),
                 )
             execution_time_ms = server_ts_ms + self.base_delay_ms
             self.scheduler.schedule_at_walltime(
