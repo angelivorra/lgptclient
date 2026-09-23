@@ -24,6 +24,13 @@ logger = logging.getLogger("cliente.display")
 
 SYSTEM_FPS = 30
 FRAME_INTERVAL = 1.0 / SYSTEM_FPS
+
+# Fondo slideshow: segundos por frame al tempo base de la canción (knob de
+# tempo abajo) y exponente con el que el knob acelera (interval / ratio**N).
+# Con TEMPO_BOOST_MAX=0.12 del sinte: 1.12**8 ≈ 2.5x → ~0.031 s/frame arriba,
+# justo el ritmo del render (30 FPS); más rápido ya se saltaría frames.
+FONDO_BASE_INTERVAL = 0.076
+FONDO_BPM_CURVE = 8
 # Imagen estática durante una canción: se ve un rato y vuelve al plasma.
 IMAGE_HOLD_S = 2.0
 
@@ -180,8 +187,10 @@ class DisplayExecutor:
 
         # Slideshow de fondo: cicla imágenes pre-cargadas mientras dura la canción
         self._slideshow_images: list = []
-        self._slideshow_interval: float = 6.0
-        self._slideshow_loop_beats: Optional[float] = None  # si no None, interval se recalcula con BPM
+        self._slideshow_interval: float = FONDO_BASE_INTERVAL
+        self._slideshow_base_interval: float = FONDO_BASE_INTERVAL  # interval al BPM canónico de la canción
+        self._slideshow_base_bpm: float = 0.0        # BPM de referencia (0 = aún no recibido)
+        self._slideshow_loop_beats: Optional[float] = None  # si no None, base_bpm se deriva de loop_beats
         self._slideshow_transition: str = "cut"   # "cut" | "fade"
         self._slideshow_fade_s: float = 0.5
         self._slideshow_start: float = 0.0
@@ -368,6 +377,8 @@ class DisplayExecutor:
             self._slideshow_images = list(images)
             self._slideshow_loop_beats = float(loop_beats) if loop_beats else None
             self._slideshow_interval = max(0.01, float(interval))
+            self._slideshow_base_interval = self._slideshow_interval
+            self._slideshow_base_bpm = 0.0  # se fija en el primer set_bpm tras set_slideshow
             self._slideshow_transition = transition if transition in ("cut", "fade") else "cut"
             self._slideshow_fade_s = max(0.1, float(fade_s))
             self._slideshow_start = time.time()
@@ -447,14 +458,40 @@ class DisplayExecutor:
         """Impulso de bombo/caja/crash. El render lo consume; el GPIO no."""
         self.scenes.pulse(kind, velocity)
 
+    def set_slideshow_bpm(self, bpm: float):
+        """Actualiza el intervalo del slideshow en tiempo real (sin delay).
+        No toca scenes — solo el fondo."""
+        if bpm <= 0:
+            return
+        with self._state_lock:
+            n = len(self._slideshow_images)
+            if n and self._slideshow_base_interval:
+                if self._slideshow_loop_beats:
+                    base_bpm = self._slideshow_loop_beats * 60 / (self._slideshow_base_interval * n)
+                else:
+                    if not self._slideshow_base_bpm:
+                        self._slideshow_base_bpm = bpm
+                        logger.info(f"[FONDO] base_bpm fijado={bpm:.2f} (inmediato)")
+                    base_bpm = self._slideshow_base_bpm
+                ratio = bpm / base_bpm
+                new_interval = max(0.01, self._slideshow_base_interval / ratio ** FONDO_BPM_CURVE)
+                # El frame se calcula como (now - start) / interval: si solo
+                # cambiamos interval se reescala TODO el tiempo transcurrido y
+                # el índice salta (carrera mientras se gira el knob, marcha
+                # atrás al bajarlo). Re-anclamos start para que la fase actual
+                # sea continua y solo cambie la velocidad a partir de ahora.
+                now = time.time()
+                phase = (now - self._slideshow_start) / self._slideshow_interval
+                self._slideshow_start = now - phase * new_interval
+                logger.debug(
+                    f"[FONDO] bpm={bpm:.2f} base={base_bpm:.2f} ratio={ratio:.4f} "
+                    f"interval {self._slideshow_interval:.4f}→{new_interval:.4f}s"
+                )
+                self._slideshow_interval = new_interval
+
     def set_bpm(self, bpm: float):
+        """Actualiza scenes al instante audible (sincronizado). No toca el fondo."""
         self.scenes.set_bpm(bpm)
-        if bpm > 0:
-            with self._state_lock:
-                n = len(self._slideshow_images)
-                if self._slideshow_loop_beats and n:
-                    self._slideshow_interval = max(
-                        0.01, (self._slideshow_loop_beats / bpm * 60) / n)
 
     @staticmethod
     def _blend_rgb565(plasma: bytes, image: bytes, img_w: float) -> bytes:

@@ -599,9 +599,7 @@ class Player:
         self.args.pots_red.clear()
         self.args.pots_red.extend(pots_red)
         if self.event_out is not None:
-            self.event_out.set_fondo(cfg.get("fondo"),
-                                     loop_s=float(cfg.get("fondo_loop_s", 1.0)),
-                                     loop_beats=cfg.get("fondo_loop_beats"))
+            self.event_out.set_fondo(cfg.get("fondo"))
 
     def _build_global_pots_red(self):
         """Pots de red FIJOS para todas las canciones: los del TOML marcados

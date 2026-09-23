@@ -19,7 +19,7 @@ from config_loader import ConfigLoader
 from scheduler import Scheduler
 from gpio_executor import GPIOExecutor
 from media_manager import MediaManager
-from display_executor import DisplayExecutor
+from display_executor import DisplayExecutor, FONDO_BASE_INTERVAL
 from status_screen import StatusScreenRunner
 
 logger = logging.getLogger("cliente.orchestrator")
@@ -355,36 +355,29 @@ class EventOrchestrator:
         except Exception as e:
             logger.error(f"❌ Error activando escena {name}: {e}")
 
-    def handle_fondo(self, name: str, loop_s: float = 1.0, loop_beats: float = None):
-        """Recibe el nombre de la carpeta de fondo (FONDO,001,loop_s[,loop_beats]).
+    def handle_fondo(self, name: str, loop_s: float = None, loop_beats: float = None):
+        """Recibe el nombre de la carpeta de fondo (FONDO,nombre).
 
-        Pre-carga todas las PNGs de fondos/{name}/ para que estén listas
-        cuando llegue el START. Si loop_beats está definido, el interval se
-        recalcula dinámicamente con cada BPM; si no, interval = loop_s / n_frames.
+        Pre-carga todas las imágenes de fondos/{name}/ para que estén listas
+        cuando llegue el START. El intervalo base es FONDO_BASE_INTERVAL;
+        el BPM del knob de tempo lo escala dinámicamente.
         Un nombre vacío (FONDO,) borra el fondo activo.
         """
         if not name:
             self._fondo_config = {}
             self._fondo_images = []
             return
-        loop_beats = float(loop_beats) if loop_beats else None
-        # Cache hit: mismo fondo ya cargado — solo actualizar parámetros
+        # Cache hit: mismo fondo ya cargado
         if self._fondo_config.get("name") == name and self._fondo_images:
-            n = max(1, len(self._fondo_images))
-            self._fondo_config["loop_beats"] = loop_beats
-            self._fondo_config["interval"] = max(0.01, loop_s / n)
-            logger.info(f"🖼️  Fondo '{name}' cache hit ({n} frames), loop_beats={loop_beats}")
+            logger.info(f"🖼️  Fondo '{name}' cache hit ({len(self._fondo_images)} frames)")
             return
         loaded = self.media_manager.load_fondo_images(name)
-        n = max(1, len(loaded))
-        interval = max(0.01, loop_s / n)
-        self._fondo_config = {"name": name, "interval": interval,
-                              "loop_beats": loop_beats, "transition": "cut"}
+        self._fondo_config = {"name": name, "interval": FONDO_BASE_INTERVAL, "transition": "cut"}
         self._fondo_images = loaded
-        logger.info(f"🖼️  Fondo '{name}': {n} frames, loop={loop_s}s, beats={loop_beats}")
+        logger.info(f"🖼️  Fondo '{name}': {len(loaded)} frames @ {FONDO_BASE_INTERVAL}s/frame")
 
     def handle_start(self, server_ts_ms: int):
-        logger.info(f"▶️  START recibido (ts={server_ts_ms}) - Iniciando canción")
+        logger.info(f"▶️  START recibido (ts={server_ts_ms}) - Iniciando canción current_bpm={self.current_bpm:.2f}")
         self._transport_seq += 1
         self._playing = True
         self._stop_production_idle()
@@ -394,14 +387,14 @@ class EventOrchestrator:
         # Escena live al mismo reloj que el audio. Sin MDCC en la canción.
         if self._pantalla:
             if self.current_bpm > 0:
+                logger.info(f"[FONDO] handle_start → set_bpm({self.current_bpm:.2f}) (antes del set_slideshow)")
                 self.display_executor.set_bpm(self.current_bpm)
             if self._fondo_images:
                 self.display_executor.set_slideshow(
                     self._fondo_images,
-                    interval=self._fondo_config.get("interval", 6.0),
+                    interval=self._fondo_config.get("interval", FONDO_BASE_INTERVAL),
                     transition=self._fondo_config.get("transition", "cut"),
                     fade_s=self._fondo_config.get("fade_s", 0.5),
-                    loop_beats=self._fondo_config.get("loop_beats"),
                 )
             execution_time_ms = server_ts_ms + self.base_delay_ms
             self.scheduler.schedule_at_walltime(
@@ -418,8 +411,11 @@ class EventOrchestrator:
     def handle_bpm(self, server_ts_ms: int, bpm: float):
         self.current_bpm = bpm
         self.stats['bpm_recibidos'] += 1
-        logger.info(f"🎵 BPM: {bpm:.2f}")
         execution_time_ms = server_ts_ms + self.base_delay_ms
+        logger.info(f"🎵 BPM recibido={bpm:.2f} ts={server_ts_ms} exec_at={execution_time_ms}")
+        # Fondo: actualizar intervalo INMEDIATAMENTE (no necesita sync temporal)
+        self.display_executor.set_slideshow_bpm(bpm)
+        # Scenes: sincronizar al instante audible (1s delay)
         self.scheduler.schedule_at_walltime(
             wall_time_ms=execution_time_ms,
             callback=self.display_executor.set_bpm,

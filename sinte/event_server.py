@@ -280,8 +280,6 @@ class EventMidiOut:
         # que hayamos mandado STOP. Esos eventos se descartan.
         self.suppress_notes = False
         self._fondo_name: str | None = None
-        self._fondo_loop_s: float = 1.0
-        self._fondo_loop_beats: float | None = None
 
     def _ts(self) -> int:
         engine = self._engine_ref.get("engine")
@@ -319,27 +317,47 @@ class EventMidiOut:
             return
         self.server.emit("ACRD", self._ts(), channel, velocity, *notes)
 
-    def set_fondo(self, name: str | None, loop_s: float = 1.0, loop_beats=None):
+    def set_fondo(self, name: str | None):
         """Nombre de la carpeta de fondo para la canción actual (de robotraca.json)."""
         self._fondo_name = str(name) if name else None
-        self._fondo_loop_s = max(0.1, float(loop_s))
-        self._fondo_loop_beats = float(loop_beats) if loop_beats else None
+
+    def emit_bpm(self, bpm: float):
+        """Emite BPM al cambiar el tempo por el knob. Sin throttle: el engine
+        solo llama cuando cambia el valor del CC (≤128 pasos por recorrido), y
+        descartar mensajes perdía el último valor y dejaba el fondo a medias."""
+        import timing_log
+        engine = self._engine_ref.get("engine")
+        base = getattr(engine, "base_tempo", None)
+        scale = getattr(engine, "tempo_scale", None)
+        timing_log.log("BPM_emit_knob", bpm=round(bpm, 2),
+                       base_tempo=base, tempo_scale=round(scale, 4) if scale else None)
+        self.server.emit("BPM", self._ts(), round(bpm, 2))
 
     def program_change(self, channel, program):
         pass                                # sin equivalente en el protocolo
 
     def transport_start(self):
+        import timing_log
         if self._fondo_name:
-            beats_field = f",{self._fondo_loop_beats}" if self._fondo_loop_beats else ""
-            self.server.broadcast_line(
-                f"FONDO,{self._fondo_name},{self._fondo_loop_s}{beats_field}\n")
+            self.server.broadcast_line(f"FONDO,{self._fondo_name}\n")
         else:
             self.server.broadcast_line("FONDO,\n")  # sin fondo: el cliente limpia
         self.server.emit("START", self._ts())
         engine = self._engine_ref.get("engine")
-        tempo = getattr(engine, "tempo", None) if engine is not None else None
-        if tempo:
-            self.server.emit("BPM", self._ts(), tempo)
+        base_tempo = getattr(engine, "base_tempo", None) if engine is not None else None
+        scaled_tempo = getattr(engine, "tempo", None) if engine is not None else None
+        tempo_scale = getattr(engine, "tempo_scale", None) if engine is not None else None
+        timing_log.log("transport_start_BPM",
+                       base_tempo=base_tempo, scaled_tempo=scaled_tempo,
+                       tempo_scale=round(tempo_scale, 4) if tempo_scale else None,
+                       sending=base_tempo)
+        if base_tempo:
+            # Primero el base_tempo para que el cliente fije el base_bpm de referencia
+            self.server.emit("BPM", self._ts(), round(base_tempo, 2))
+            # Si el knob está arriba, enviar también el tempo escalado para que el
+            # fondo arranque ya a la velocidad correcta (el knob no re-emite si no cambia)
+            if scaled_tempo and tempo_scale and tempo_scale > 1.001:
+                self.server.emit("BPM", self._ts(), round(scaled_tempo, 2))
 
     def transport_stop(self, finished: bool):
         self.server.emit("END" if finished else "STOP", self._ts())

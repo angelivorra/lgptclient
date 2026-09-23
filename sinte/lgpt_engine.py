@@ -102,8 +102,9 @@ def glch_unpack(param: int) -> tuple[int, int]:
 # mute y al stop. No es un efecto: solo evita el chasquido de un salto
 # de amplitud.
 DECLICK_SECONDS = 0.004
-# Tope de aceleración del knob de tempo. Las canciones ya van rápidas, así
-# que interesa que se note sin desmadrarse: +12% son 180->202 BPM.
+# Tope de aceleración del knob de tempo: +12% son 125->140 / 180->202 BPM.
+# Si se cambia, reajustar FONDO_BPM_CURVE en bin/cliente_final/display_executor.py
+# (velocidad del fondo de las robotas con el knob arriba).
 TEMPO_BOOST_MAX = 0.12
 
 # Compensación de presencia tras los FX de tono (no los `after_presence`
@@ -1952,6 +1953,9 @@ class Engine:
         self.tempo_scale = scale
         self.tempo = self.base_tempo * scale
         self.samples_per_tick = self._tick_samples()
+        emit_bpm = getattr(getattr(self, "midi_out", None), "emit_bpm", None)
+        if emit_bpm is not None:
+            emit_bpm(self.tempo)
 
     # -- render --------------------------------------------------------------
 
