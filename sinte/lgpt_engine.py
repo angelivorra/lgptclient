@@ -52,8 +52,9 @@ import soundfile as sf
 
 from chords import arp_pool_notes, chord_intervals, expand_chord_notes
 from filter_ui import SVF_MODES, mode_from_param, normalize_mode
-from lgpt_parser import (CHANNEL_COUNT, LGPTProject, VOCODER_TRACK,
-                         expand_song)
+from lgpt_parser import (CHANNEL_COUNT, LIGHTS_TRACK, LGPTProject,
+                         VOCODER_TRACK, expand_song)
+import lights
 from play_stats import PlayLog
 import scream_numpy
 
@@ -1646,6 +1647,9 @@ class Engine:
         # Sink de eventos MIDI (instrumentos MIDI, MDCC/MDPG); lo asigna
         # el reproductor. None = no se emite nada.
         self.midi_out: Optional[MidiOut] = None
+        # Salida de la pista LUCES (lights.DmxOut o compatible); None =
+        # la pista no hace nada. Nunca suena: ver _trigger_lights.
+        self.lights_out = None
         # Datos de groove: 0x20 grooves x 16 pasos (0xFF = fin de patrón).
         # Si el proyecto no trae datos, patrón recto [6, 6].
         g = project.grooves
@@ -1911,10 +1915,12 @@ class Engine:
                    + self.audio_delay * 1000.0)
 
     def _transport(self, name: str, *args):
-        """Avisa al sink de un cambio de transporte, si lo soporta."""
-        hook = getattr(self.midi_out, name, None)
-        if hook is not None:
-            hook(*args)
+        """Avisa a los sinks (eventos y luces) de un cambio de transporte,
+        si lo soportan."""
+        for sink in (self.midi_out, self.lights_out):
+            hook = getattr(sink, name, None)
+            if hook is not None:
+                hook(*args)
 
     def panic(self):
         """Note off de todas las notas MIDI activas (al cambiar de canción
@@ -2602,6 +2608,9 @@ class Engine:
         if not ch.playing or ch.phrase == 0xFF:
             return
         row = ch.phrase * 16 + ch.phrase_pos
+        if ch.idx == LIGHTS_TRACK:
+            self._trigger_lights(ch, row)
+            return
         note = self.project.notes[row]
         instr = self.project.instruments[row]
         arp_param = self._arpr_param(row)
@@ -2845,9 +2854,38 @@ class Engine:
                 still.append(v)
         self.preview_releases = still
 
+    def _trigger_lights(self, ch: Channel, row: int):
+        """Step de la pista LUCES -> evento DMX a la hora audible (ver
+        lights.py). Nunca suena ni dispara instrumentos. Muteada = las
+        luces se quedan como están."""
+        out = self.lights_out
+        if out is None or ch.idx in self.muted:
+            return
+        p = self.project
+        note = p.notes[row]
+        color = lights.color_rgb(note) if note != 0xFF else None
+        bril = strobe = None
+        fade_s = 0.0
+        for cmd, param in ((p.cmd1[row], p.param1[row]),
+                           (p.cmd2[row], p.param2[row])):
+            if cmd == "BRIL":
+                bril = param & 0xFF
+            elif cmd == "STRB":
+                strobe = param & 0xFF
+            elif cmd == "FADE":
+                ticks = self._fade_row_ticks(ch, param & 0xFF)
+                fade_s = ticks * self.samples_per_tick / self.sr
+        if color is None and bril is None and strobe is None:
+            return
+        targets = lights.luz_targets(p.instruments[row], len(out.fixtures))
+        out.event(self.event_time_ms(), targets, color=color, bril=bril,
+                  strobe=strobe, fade_s=fade_s)
+
     def _process_row_commands(self, ch: Channel):
         if not ch.playing or ch.phrase == 0xFF:
             return
+        if ch.idx == LIGHTS_TRACK:
+            return                  # BRIL/FADE/STRB ya van en _trigger_lights
         row = ch.phrase * 16 + ch.phrase_pos
         self._exec_command(ch, self.project.cmd1[row], self.project.param1[row])
         self._exec_command(ch, self.project.cmd2[row], self.project.param2[row])

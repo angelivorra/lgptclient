@@ -90,3 +90,12 @@ pantalla = 1
 "192.168.0.4" = "Carmen"      # sombrilla
 "192.168.0.10" = "Vocoder"    # vocoder
 "192.168.0.20" = "Guitarra"   # roboguitarra
+
+[luces]
+# Luces DMX de la pista LUCES (canal 10 en robotracker2). Cable Eurolite
+# USB-DMX512 (FTDI, protocolo Open DMX) y PAR U'King en modo 7 canales.
+# Sin el cable enchufado no pasa nada: reintenta abrir el puerto solo.
+# activo = false para desactivarlas. luces = nombre -> dirección DMX
+# (el orden es el del campo LUZ de la phrase: 1 = la primera).
+puerto = "/dev/ttyUSB0"
+luces = { IZQ = 1, DER = 8 }

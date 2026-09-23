@@ -27,6 +27,8 @@ from filter_ui import (  # noqa: E402
     res_label, type_label,
 )
 from lgpt_writer import save_project  # noqa: E402
+from lights import (LIGHT_FX, LIGHT_FX_HELP, PALETTE, DmxOut,  # noqa: E402
+                    color_label, color_rgb, luz_label)
 from wav_recorder import WavRecorder  # noqa: E402
 from midi_control import _apply_pad_volume, apply_song_config, \
     build_song_pots, load_song_cfg, match_button, match_pot, \
@@ -35,6 +37,8 @@ from midi_control import _apply_pad_volume, apply_song_config, \
 
 __all__ = ["LGPTProject", "EFFECT_PRESETS", "Engine",
            "CHANNEL_COUNT", "EXTRA_TRACK", "LIGHTS_TRACK", "expand_song",
+           "LIGHT_FX", "LIGHT_FX_HELP", "PALETTE", "DmxOut", "color_label",
+           "color_rgb", "luz_label",
            "note_byte_to_name", "save_project",
            "CHORD_TYPES", "chord_label", "cycle_chord",
            "slid_pack", "slid_unpack", "glch_pack", "glch_unpack",

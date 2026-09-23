@@ -32,6 +32,9 @@ del proyecto.
   reproducción del sinte sale en vivo la carga del callback y los canales
   más caros (`x` = corte PortAudio, `s` = salto del DAC, `a` = bloque
   apurado).
+- `lights.py` — luces DMX de la pista LUCES (canal LGPT 9): paleta,
+  comandos `BRIL`/`FADE`/`STRB` y `DmxOut`, el hilo que manda la trama
+  Open DMX por el cable Eurolite USB-DMX512 (ver "Luces DMX").
 - `lgpt_player.py` — reproductor: UI curses retro (estética Pip-Boy),
   salida de audio con `sounddevice`, entrada/salida MIDI.
 - `tests/` — tests headless (unittest/pytest).
@@ -39,7 +42,8 @@ del proyecto.
 ## Dependencias
 
 Python 3 con lo listado en `requirements.txt` (`numpy`, `soundfile`,
-`sounddevice`, `mido`, `python-rtmidi`). En la Pi las instala el rol de
+`sounddevice`, `mido`, `python-rtmidi`, `pyserial`; este último solo para
+las luces DMX: sin él las luces se desactivan y el player suena igual). En la Pi las instala el rol de
 Ansible `sintetizador-actualiza`; para probar en local:
 
 ```sh
@@ -64,6 +68,28 @@ La configuración está fijada en `lttileplayer.toml` (incluida en el repo):
 - `[pots]`: 8 potenciómetros `potN = { cc = "cc:canal:control",
   target = "canal:parametro" }` con `parametro` ∈ `lp_cutoff`, `lp_res`,
   `volume`, `pan`, `pitch`.
+
+- `[luces]`: salida DMX de la pista LUCES: `puerto` (`/dev/ttyUSB0`) y
+  `luces = { IZQ = 1, DER = 8 }` (nombre -> dirección DMX; el orden es el
+  del campo LUZ de la phrase). `activo = false` las desactiva.
+
+### Luces DMX
+
+La pista LUCES (canal LGPT 9, la 10 en robotracker2) no suena: cada step
+es un evento de luz que se aplica a la hora audible (con el mismo
+`delay` que el audio). Por step: **nota** = color (índice de
+`lights.PALETTE`: APAGA, ROJO, NARANJA, AMARILLO, VERDE, CIAN, AZUL,
+VIOLETA, MAGENTA, ROSA, BLANCO, CALIDO), **instrumento** = luz (vacío = todas,
+1 = la primera de `[luces]`…), y en FX1/FX2 `BRIL xx` (brillo), `FADE xx`
+(fundido en xx steps) y `STRB xx` (estrobo, 00 = apagado). Cada luz
+mantiene su estado hasta el siguiente cambio; STOP/fin de canción = todo
+apagado. Muteada, la pista no cambia las luces.
+
+Hardware probado: cable Eurolite USB-DMX512 (FTDI FT232R, protocolo Open
+DMX: 250 kbaud 8N2, break + start code 0, refresco continuo a 40 fps) y
+PAR U'King 36 LED en modo DMX de 7 canales (`d001`/`d008` en su menú):
+dimmer, R, G, B, estrobo, modo, velocidad. Sin cable no pasa nada: la
+salida reintenta abrir el puerto cada 3 s.
 
 Los argumentos de línea de comandos (`--songs`, `--device`, `--midi`,
 `--midi-out`, `--samplerate`, `--blocksize`, `--delay`, `--record`,

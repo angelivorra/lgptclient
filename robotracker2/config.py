@@ -10,6 +10,8 @@ Guarda en un JSON en el directorio de la app las preferencias globales:
                   de cada canción (ver midi_ctrl.py)
   - pad_volume:   volumen global de los pads sampler (0-100), como
                   `[audio] pad_volume` del TOML
+  - luces:        salida DMX de la pista LUCES, como `[luces]` del TOML
+                  (puerto + nombre -> dirección DMX de cada luz)
 
 Se persiste entre ejecuciones. Si una interfaz guardada ya no existe al
 arrancar, se conserva en el fichero (para la siguiente ejecución) pero se
@@ -49,6 +51,7 @@ DEFAULTS = {
         "pot8": {"cc": "cc:0:77"},
     },
     "pad_volume": 45,
+    "luces": {"puerto": "/dev/ttyUSB0", "luces": {"IZQ": 1, "DER": 8}},
 }
 
 

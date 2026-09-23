@@ -47,9 +47,13 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    (bandas por compás/beat, celda naranja sólida, marco y escuadras en el
    canal del cursor, tira de color por canal). Las columnas van: **pista
    extra primero** (canal LGPT 8, la novena), luego 0–5, vocoder, robot
-   y **luces** (canal LGPT 9, la décima) al final. La pista de luces es
-   para las luces DMX (Eurolite USB-DMX512 + 2 PAR U'King 36 LED RGB); de
-   momento es solo el canal, sin contenido propio. Cabecera con el **nº, icono y
+   y **luces** (canal LGPT 9, la décima) al final. La pista de luces
+   controla las luces DMX (Eurolite USB-DMX512 + 2 PAR U'King 36 LED RGB):
+   en PHRASE sus columnas son **COLOR** (con muestra de color), **LUZ**
+   (TODAS / IZQ / DER) y FX1/FX2 con `BRIL` (brillo), `FADE` (fundido en
+   steps) y `STRB` (estrobo). No suena; al dar play las luces siguen la
+   canción (config.json `"luces"`: puerto y dirección DMX de cada luz;
+   `ROBOTRACKER2_DMX=0` las desactiva). Detalle en `sinte/README.md`. Cabecera con el **nº, icono y
    nombre** del tipo de cada pista (drum / bass / synth / noise / robot /
    vocoder; se editan en TRACKS). Dpad mueve el cursor (izq en la
    primera columna salta a la última y al revés), **A+dir**
