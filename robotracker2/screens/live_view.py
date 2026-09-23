@@ -1,14 +1,19 @@
 """Pantalla LIVE: preview de lo que suena en el canal robot (solo lectura).
 
 Muestra la imagen de SCREEN sostenida (último MDCC) y tres pads de batería
-(BOMBO / CAJA1 / CAJA2) que destellan al golpear. No edita la canción: la
-navegación es L+dpad; START/STOP siguen siendo globales.
+(BOMBO / CAJA1 / CAJA2) que destellan al golpear. A los lados de la
+pantalla, las luces DMX de la pista LUCES (IZQ / DER) con su color,
+brillo, fundido y estrobo en ese instante: el mismo estado que manda el
+cable (`DmxOut.snapshot`). No edita la canción: la navegación es L+dpad;
+START/STOP siguen siendo globales.
 """
 
+import time
 from pathlib import Path
 
 from kivy.core.image import Image as CoreImage
-from kivy.graphics import Color, Line, Rectangle, RoundedRectangle, ScissorPop, ScissorPush
+from kivy.graphics import (Color, Ellipse, Line, Rectangle, RoundedRectangle,
+                           ScissorPop, ScissorPush)
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
@@ -45,6 +50,18 @@ _PAD_DRAW = {62: lambda cx, cy, s, c: draw_kick(cx, cy, s, c),
              63: lambda cx, cy, s, c: draw_snare(cx, cy, s, c, hoop=False),
              65: lambda cx, cy, s, c: draw_snare(cx, cy, s, c, hoop=True)}
 _PAD_NAME = {62: "BOMBO", 63: "CAJA1", 65: "CAJA2"}
+LIGHT_W = dp(96)          # columna de cada foco a los lados de la pantalla
+
+
+def light_visual(rgb, dim, strobe, now):
+    """(r, g, b) 0-1 que se ve del foco: color × dimmer, y apagado en la
+    fase oscura del estrobo (1-16 Hz aprox., como el PAR real)."""
+    if strobe:
+        hz = 1.0 + strobe / 255.0 * 15.0
+        if (now * hz) % 1.0 >= 0.5:
+            return (0.0, 0.0, 0.0)
+    k = dim / 255.0 / 255.0
+    return tuple(c * k for c in rgb)
 
 
 class LiveGrid(Widget):
@@ -68,7 +85,16 @@ class LiveGrid(Widget):
         self._fondo_interval: float = 1.0
         self._images_dir: Path | None = None
         self._lyric_text: str | None = None  # texto activo CC=2
+        self.lights: list = []   # DmxOut.snapshot(): (nombre, rgb, dim, strobe, color)
         self.bind(pos=self._redraw, size=self._redraw)
+
+    def set_lights(self, states):
+        """Estado de las luces (DmxOut.snapshot). Redibuja si ha cambiado
+        o si alguna está en estrobo (parpadea aunque el estado no cambie)."""
+        states = list(states or [])
+        if states != self.lights or any(s[3] for s in states):
+            self.lights = states
+            self._redraw()
 
     def reset(self):
         self.cc = None
@@ -250,7 +276,8 @@ class LiveGrid(Widget):
             pad_y = self.y + GAP
             preview_bottom = pad_y + PAD_H + GAP
             avail_h = self.height - (preview_bottom - self.y) - GAP * 2 - dp(28)
-            avail_w = self.width - GAP * 2
+            side = (LIGHT_W + GAP) if self.lights else 0
+            avail_w = self.width - GAP * 2 - side * 2
             # Aspect ratio de la pantalla de las Pi: 800×480
             scale = min(avail_w / 800, avail_h / 480)
             pw = max(dp(1), 800 * scale)
@@ -258,6 +285,8 @@ class LiveGrid(Widget):
             px = self.x + (self.width - pw) / 2
             py = preview_bottom + GAP + dp(28)
             self._draw_preview(px, py, pw, ph)
+            if self.lights:
+                self._draw_lights(px, py, pw, ph)
             tag = "----"
             if self.cc is not None and self.value is not None:
                 tag = screen_label(self.cc, self.value)
@@ -304,6 +333,48 @@ class LiveGrid(Widget):
         ScissorPop()
         Color(*COLOR_BORDER)
         Line(rectangle=(px, py, pw, ph), width=1.2)
+
+    def _draw_lights(self, px, py, pw, ph):
+        """Focos PAR a los lados de la pantalla: la 1ª a la izquierda, la 2ª
+        a la derecha (más de dos: se reparten alternando)."""
+        now = time.monotonic()
+        lens = min(LIGHT_W * 0.78, ph * 0.42)
+        for i, (name, rgb, dim, strobe, cname) in enumerate(self.lights):
+            left = i % 2 == 0
+            row = i // 2
+            cx = (px - GAP - LIGHT_W / 2) if left else (px + pw + GAP + LIGHT_W / 2)
+            cy = py + ph * 0.62 - row * (lens + dp(48))
+            r, g, b = light_visual(rgb, dim, strobe, now)
+            lit = max(r, g, b)
+            # halo
+            if lit > 0.02:
+                for grow, alpha in ((1.9, 0.10), (1.45, 0.22)):
+                    d = lens * grow
+                    Color(r, g, b, alpha * lit)
+                    Ellipse(pos=(cx - d / 2, cy - d / 2), size=(d, d))
+            # carcasa
+            body = lens + dp(12)
+            Color(0.13, 0.14, 0.17, 1)
+            RoundedRectangle(pos=(cx - body / 2, cy - body / 2),
+                             size=(body, body), radius=[dp(12)])
+            Color(*COLOR_BORDER)
+            Line(rounded_rectangle=(cx - body / 2, cy - body / 2, body, body,
+                                    dp(12)), width=1.2)
+            # lente: color de la luz sobre fondo oscuro
+            Color(0.05, 0.05, 0.06, 1)
+            Ellipse(pos=(cx - lens / 2, cy - lens / 2), size=(lens, lens))
+            if lit > 0.0:
+                Color(r, g, b, 1)
+                Ellipse(pos=(cx - lens / 2, cy - lens / 2), size=(lens, lens))
+            label = f"{name} STRB" if strobe else name
+            self._text_center(cx - LIGHT_W / 2, cy - body / 2 - dp(26),
+                              LIGHT_W, label, COLOR_HEADER_TXT,
+                              h=dp(22), font_size=FONT_SMALL)
+            # nombre del color (se lee aunque no se distingan los colores)
+            if cname and cname != "APAGA" and dim:
+                self._text_center(cx - LIGHT_W / 2, cy - body / 2 - dp(48),
+                                  LIGHT_W, cname, (1, 1, 1, 1),
+                                  h=dp(22), font_size=FONT_SMALL)
 
     def _draw_pads(self, y, hit_txt):
         w = min(self.width - GAP * 2, dp(720))
