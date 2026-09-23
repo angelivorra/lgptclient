@@ -17,6 +17,7 @@ desplegados: líneas ASCII terminadas en \\n, puerto 8888, TCP_NODELAY.
     CC,<ts_ms>,<valor>,<canal>,<control>
     START,<ts_ms> / STOP,<ts_ms> / END,<ts_ms>
     BPM,<ts_ms>,<bpm>
+    FONDO,<nombre_carpeta>                         al iniciar canción (slideshow de fondo)
     CALIB,<ts_ms>,<robot>,<pin>,<tiempo_ms>,<delay_ms>   calibración en vivo
     CALTEST,<ts_ms>,<robot>,<pin>                        dispara el pin ya
     CALSAVE,<ts_ms>,<robot>,<pin>                        persiste al JSON local
@@ -99,6 +100,16 @@ class EventServer:
             return
         parts = ",".join(str(f) for f in fields)
         line = f"{kind},{ts_ms}" + (f",{parts}" if parts else "") + "\n"
+        if self._queued >= MAX_QUEUED:
+            self.dropped += 1
+            return
+        self._queue.put(line.encode("ascii", "replace"))
+        self._queued += 1
+
+    def broadcast_line(self, line: str):
+        """Emite una línea ya formateada (sin ts) a todos los clientes."""
+        if not self._running:
+            return
         if self._queued >= MAX_QUEUED:
             self.dropped += 1
             return
@@ -268,6 +279,7 @@ class EventMidiOut:
         # terminar el bloque de la vieja y emitir NOTA/CC/ACRD después de
         # que hayamos mandado STOP. Esos eventos se descartan.
         self.suppress_notes = False
+        self._fondo_name: str | None = None
 
     def _ts(self) -> int:
         engine = self._engine_ref.get("engine")
@@ -305,15 +317,47 @@ class EventMidiOut:
             return
         self.server.emit("ACRD", self._ts(), channel, velocity, *notes)
 
+    def set_fondo(self, name: str | None):
+        """Nombre de la carpeta de fondo para la canción actual (de robotraca.json)."""
+        self._fondo_name = str(name) if name else None
+
+    def emit_bpm(self, bpm: float):
+        """Emite BPM al cambiar el tempo por el knob. Sin throttle: el engine
+        solo llama cuando cambia el valor del CC (≤128 pasos por recorrido), y
+        descartar mensajes perdía el último valor y dejaba el fondo a medias."""
+        import timing_log
+        engine = self._engine_ref.get("engine")
+        base = getattr(engine, "base_tempo", None)
+        scale = getattr(engine, "tempo_scale", None)
+        timing_log.log("BPM_emit_knob", bpm=round(bpm, 2),
+                       base_tempo=base, tempo_scale=round(scale, 4) if scale else None)
+        self.server.emit("BPM", self._ts(), round(bpm, 2))
+
     def program_change(self, channel, program):
         pass                                # sin equivalente en el protocolo
 
     def transport_start(self):
+        import timing_log
+        if self._fondo_name:
+            self.server.broadcast_line(f"FONDO,{self._fondo_name}\n")
+        else:
+            self.server.broadcast_line("FONDO,\n")  # sin fondo: el cliente limpia
         self.server.emit("START", self._ts())
         engine = self._engine_ref.get("engine")
-        tempo = getattr(engine, "tempo", None) if engine is not None else None
-        if tempo:
-            self.server.emit("BPM", self._ts(), tempo)
+        base_tempo = getattr(engine, "base_tempo", None) if engine is not None else None
+        scaled_tempo = getattr(engine, "tempo", None) if engine is not None else None
+        tempo_scale = getattr(engine, "tempo_scale", None) if engine is not None else None
+        timing_log.log("transport_start_BPM",
+                       base_tempo=base_tempo, scaled_tempo=scaled_tempo,
+                       tempo_scale=round(tempo_scale, 4) if tempo_scale else None,
+                       sending=base_tempo)
+        if base_tempo:
+            # Primero el base_tempo para que el cliente fije el base_bpm de referencia
+            self.server.emit("BPM", self._ts(), round(base_tempo, 2))
+            # Si el knob está arriba, enviar también el tempo escalado para que el
+            # fondo arranque ya a la velocidad correcta (el knob no re-emite si no cambia)
+            if scaled_tempo and tempo_scale and tempo_scale > 1.001:
+                self.server.emit("BPM", self._ts(), round(scaled_tempo, 2))
 
     def transport_stop(self, finished: bool):
         self.server.emit("END" if finished else "STOP", self._ts())

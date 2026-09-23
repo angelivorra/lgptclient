@@ -24,6 +24,13 @@ logger = logging.getLogger("cliente.display")
 
 SYSTEM_FPS = 30
 FRAME_INTERVAL = 1.0 / SYSTEM_FPS
+
+# Fondo slideshow: segundos por frame al tempo base de la canción (knob de
+# tempo abajo) y exponente con el que el knob acelera (interval / ratio**N).
+# Con TEMPO_BOOST_MAX=0.12 del sinte: 1.12**8 ≈ 2.5x → ~0.031 s/frame arriba,
+# justo el ritmo del render (30 FPS); más rápido ya se saltaría frames.
+FONDO_BASE_INTERVAL = 0.076
+FONDO_BPM_CURVE = 8
 # Imagen estática durante una canción: se ve un rato y vuelve al plasma.
 IMAGE_HOLD_S = 2.0
 
@@ -177,6 +184,19 @@ class DisplayExecutor:
         self._paused = False
         self._last_frame_time: float = 0
         self._frame_accumulator: float = 0
+
+        # Slideshow de fondo: cicla imágenes pre-cargadas mientras dura la canción
+        self._slideshow_images: list = []
+        self._slideshow_interval: float = FONDO_BASE_INTERVAL
+        self._slideshow_base_interval: float = FONDO_BASE_INTERVAL  # interval al BPM canónico de la canción
+        self._slideshow_base_bpm: float = 0.0        # BPM de referencia (0 = aún no recibido)
+        self._slideshow_loop_beats: Optional[float] = None  # si no None, base_bpm se deriva de loop_beats
+        self._slideshow_transition: str = "cut"   # "cut" | "fade"
+        self._slideshow_fade_s: float = 0.5
+        self._slideshow_start: float = 0.0
+        self._slideshow_last_idx: int = 0
+        self._slideshow_fade_from: Optional[bytes] = None
+        self._slideshow_fade_begin: float = 0.0
         
         self.stats = {
             'images_shown': 0,
@@ -340,6 +360,43 @@ class DisplayExecutor:
                 f"({len(config.frames)} frames @ {fps} FPS)"
             )
 
+    def set_slideshow(self, images: list, interval: float = 6.0,
+                      transition: str = "cut", fade_s: float = 0.5,
+                      loop_beats: float = None):
+        """Configura el slideshow de fondo para la canción actual.
+
+        Args:
+            images: Lista de bytes (RGB565) pre-cargados.
+            interval: Segundos por imagen (ignorado si loop_beats está definido y hay BPM).
+            transition: "cut" (instantáneo) o "fade" (crossfade).
+            fade_s: Duración del crossfade en segundos.
+            loop_beats: Duración del loop en beats. Si se recibe BPM, el interval
+                        se recalcula automáticamente: interval = (loop_beats/bpm*60) / n_frames.
+        """
+        with self._state_lock:
+            self._slideshow_images = list(images)
+            self._slideshow_loop_beats = float(loop_beats) if loop_beats else None
+            self._slideshow_interval = max(0.01, float(interval))
+            self._slideshow_base_interval = self._slideshow_interval
+            self._slideshow_base_bpm = 0.0  # se fija en el primer set_bpm tras set_slideshow
+            self._slideshow_transition = transition if transition in ("cut", "fade") else "cut"
+            self._slideshow_fade_s = max(0.1, float(fade_s))
+            self._slideshow_start = time.time()
+            self._slideshow_last_idx = 0
+            self._slideshow_fade_from = None
+            self._slideshow_fade_begin = 0.0
+        logger.info(
+            f"🖼️  Slideshow: {len(images)} imágenes, "
+            f"intervalo={interval}s, transición={transition}"
+        )
+
+    def clear_slideshow(self):
+        """Desactiva el slideshow; el plasma vuelve como fondo."""
+        with self._state_lock:
+            self._slideshow_images = []
+            self._slideshow_fade_from = None
+        logger.info("🖼️  Slideshow desactivado")
+
     def set_live(self, on: bool):
         """START/STOP: el plasma es el fondo de la canción. Un MDCC de
         imagen o animación pinta encima y, al terminar, se vuelve aquí."""
@@ -401,7 +458,39 @@ class DisplayExecutor:
         """Impulso de bombo/caja/crash. El render lo consume; el GPIO no."""
         self.scenes.pulse(kind, velocity)
 
+    def set_slideshow_bpm(self, bpm: float):
+        """Actualiza el intervalo del slideshow en tiempo real (sin delay).
+        No toca scenes — solo el fondo."""
+        if bpm <= 0:
+            return
+        with self._state_lock:
+            n = len(self._slideshow_images)
+            if n and self._slideshow_base_interval:
+                if self._slideshow_loop_beats:
+                    base_bpm = self._slideshow_loop_beats * 60 / (self._slideshow_base_interval * n)
+                else:
+                    if not self._slideshow_base_bpm:
+                        self._slideshow_base_bpm = bpm
+                        logger.info(f"[FONDO] base_bpm fijado={bpm:.2f} (inmediato)")
+                    base_bpm = self._slideshow_base_bpm
+                ratio = bpm / base_bpm
+                new_interval = max(0.01, self._slideshow_base_interval / ratio ** FONDO_BPM_CURVE)
+                # El frame se calcula como (now - start) / interval: si solo
+                # cambiamos interval se reescala TODO el tiempo transcurrido y
+                # el índice salta (carrera mientras se gira el knob, marcha
+                # atrás al bajarlo). Re-anclamos start para que la fase actual
+                # sea continua y solo cambie la velocidad a partir de ahora.
+                now = time.time()
+                phase = (now - self._slideshow_start) / self._slideshow_interval
+                self._slideshow_start = now - phase * new_interval
+                logger.debug(
+                    f"[FONDO] bpm={bpm:.2f} base={base_bpm:.2f} ratio={ratio:.4f} "
+                    f"interval {self._slideshow_interval:.4f}→{new_interval:.4f}s"
+                )
+                self._slideshow_interval = new_interval
+
     def set_bpm(self, bpm: float):
+        """Actualiza scenes al instante audible (sincronizado). No toca el fondo."""
         self.scenes.set_bpm(bpm)
 
     @staticmethod
@@ -420,14 +509,78 @@ class DisplayExecutor:
         b = (pb * ia + ib * a).astype(np.uint16)
         return ((r << 11) | (g << 5) | b).astype("<u2").tobytes()
 
+    @staticmethod
+    def _composite_rgb565(bg: bytes, fg: bytes) -> bytes:
+        """Overlay con doble criterio de transparencia:
+
+        1. Píxeles muy oscuros (sum ≤ 6): negro puro y casi-negro, siempre transparentes.
+        2. Píxeles azul-dominantes y oscuros (b > r AND sum ≤ 25): tron grid baked
+           en los .bin de CC — se muestra el fondo animado a través de ellos.
+
+        Los grises neutros del robot (r ≈ b, sum 7-25) quedan opacos (contenido).
+        """
+        if len(bg) != len(fg):
+            return bg
+        bg_arr = np.frombuffer(bg, dtype="<u2")
+        fg_arr = np.frombuffer(fg, dtype="<u2")
+        fg32 = fg_arr.astype(np.uint32)
+        r = (fg32 >> 11) & 0x1F
+        g = (fg32 >> 5) & 0x3F
+        b = fg32 & 0x1F
+        lum = r + g + b
+        # Transparente si: muy oscuro (sum ≤ 6) O (azul-dominante Y oscuro ≤ 25)
+        transparent = (lum <= 6) | ((b > r) & (lum <= 25))
+        return np.where(transparent, bg_arr, fg_arr).astype("<u2").tobytes()
+
+    def _get_slideshow_frame(self, now: float) -> Optional[bytes]:
+        """Devuelve el frame del slideshow para el instante `now`.
+
+        Llamado desde _write_live_frame() bajo _state_lock. Gestiona
+        internamente el estado del fade sin locks adicionales.
+        """
+        images = self._slideshow_images
+        if not images:
+            return None
+        n = len(images)
+        elapsed = now - self._slideshow_start
+        idx = int(elapsed / self._slideshow_interval) % n
+
+        if self._slideshow_transition == "cut":
+            return images[idx]
+
+        # fade: detectar cambio de imagen y arrancar transición
+        if idx != self._slideshow_last_idx:
+            self._slideshow_fade_from = images[self._slideshow_last_idx]
+            self._slideshow_fade_begin = now
+            self._slideshow_last_idx = idx
+
+        if self._slideshow_fade_from is not None:
+            fade_elapsed = now - self._slideshow_fade_begin
+            if fade_elapsed >= self._slideshow_fade_s:
+                self._slideshow_fade_from = None
+            else:
+                alpha = fade_elapsed / self._slideshow_fade_s
+                return self._blend_rgb565(
+                    self._slideshow_fade_from, images[idx], alpha)
+
+        return images[idx]
+
     def _write_live_frame(self):
-        if self.scenes.name != "live":
-            self.scenes.set_scene("live")
-        frame = self.scenes.render()
-        if not frame:
-            return
+        now = time.time()
+        slideshow = self._get_slideshow_frame(now)
+        if slideshow is not None:
+            bg = slideshow
+        else:
+            if self.scenes.name != "live":
+                self.scenes.set_scene("live")
+            bg = self.scenes.render()
+            if not bg:
+                return
+        # Imagen CC: composite sobre el fondo animado (muestra fondo a través de píxeles oscuros/azules)
         if self._overlay_image:
-            frame = self._blend_rgb565(frame, self._overlay_image, 0.5)
+            frame = self._composite_rgb565(bg, self._overlay_image)
+        else:
+            frame = bg
         write_ok = self.fb_writer.write(frame, skip_black_check=True)
         if write_ok:
             self.stats['frames_rendered'] += 1

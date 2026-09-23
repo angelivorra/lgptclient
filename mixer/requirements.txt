@@ -1,6 +1,0 @@
-kivy>=2.3,<3
-numpy
-sounddevice
-soundfile
-mido
-python-rtmidi

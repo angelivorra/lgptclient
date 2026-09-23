@@ -83,6 +83,11 @@ class MediaManager:
         image_path = self.base_path / f"{cc:03d}" / f"{value:03d}.bin"
         
         if not image_path.exists():
+            if cc == 2:
+                data = self._render_lyric_rgb565(value)
+                if data:
+                    self._add_to_cache(key, data)
+                    return data
             logger.debug(f"❌ Imagen no encontrada: {image_path}")
             return None
         
@@ -177,7 +182,119 @@ class MediaManager:
         """Verifica si un CC/value es una animación."""
         anim_dir = self.base_path / f"{cc:03d}" / f"{value:03d}"
         return anim_dir.is_dir()
+
+    def load_fondo_images(self, name: str, width: int = 800,
+                          height: int = 480) -> List[bytes]:
+        """Carga todas las PNGs de images/fondos/{name}/ y las convierte a
+        RGB565 (formato del framebuffer). Requiere Pillow; si no está
+        disponible, intenta cargar .bin pre-convertidos con el mismo nombre.
+        Devuelve lista de bytes lista para set_slideshow()."""
+        fondo_dir = self.base_path / "fondos" / name
+        if not fondo_dir.is_dir():
+            logger.warning(f"⚠️  Carpeta de fondo no encontrada: {fondo_dir}")
+            return []
+        try:
+            from PIL import Image as _PILImage
+            _pil_ok = True
+        except ImportError:
+            _pil_ok = False
+
+        result: List[bytes] = []
+        pngs = sorted(fondo_dir.glob("*.png"))
+        if not pngs:
+            logger.warning(f"⚠️  No hay PNGs en {fondo_dir}")
+            return []
+
+        for png_path in pngs:
+            # Preferir .bin pre-convertido (carga instantánea vs loop Python lento)
+            bin_path = png_path.with_suffix(".bin")
+            if bin_path.exists():
+                try:
+                    result.append(bin_path.read_bytes())
+                    logger.debug(f"🖼️  Fondo frame (bin): {bin_path.name}")
+                    continue
+                except Exception as e:
+                    logger.warning(f"⚠️  Error leyendo {bin_path}, intentando PNG: {e}")
+            if _pil_ok:
+                try:
+                    import numpy as np
+                    img = _PILImage.open(png_path).convert("RGB")
+                    img = img.resize((width, height), _PILImage.LANCZOS)
+                    arr = np.array(img, dtype=np.uint16)
+                    r = (arr[:, :, 0] >> 3)
+                    g = (arr[:, :, 1] >> 2)
+                    b = (arr[:, :, 2] >> 3)
+                    rgb565 = ((r << 11) | (g << 5) | b).astype('<u2')
+                    result.append(rgb565.tobytes())
+                    logger.debug(f"🖼️  Fondo frame (png): {png_path.name}")
+                except Exception as e:
+                    logger.error(f"❌ Error cargando {png_path}: {e}")
+                else:
+                    logger.warning(f"⚠️  Sin PIL y sin .bin para {png_path.name}")
+
+        logger.info(f"🎞️  Fondo '{name}': {len(result)} frames cargados")
+        return result
     
+    def _render_lyric_rgb565(self, value: int,
+                             width: int = 800, height: int = 480) -> Optional[bytes]:
+        """Renderiza on-the-fly la línea `value` de images/002/textos a RGB565.
+
+        Usa images/002/fondo.png como fondo y images/002/fuente*.ttf como tipo.
+        Requiere Pillow. Si no está disponible o no hay textos, devuelve None.
+        """
+        textos_path = self.base_path / "002" / "textos"
+        if not textos_path.exists():
+            return None
+        try:
+            from PIL import Image as _PILImage, ImageDraw, ImageFont
+        except ImportError:
+            logger.warning("⚠️  PIL no disponible — textos no se pueden renderizar")
+            return None
+        try:
+            lines = [l.strip() for l in textos_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+            idx = max(0, value)  # 0-based, igual que lgpt_engine
+            if idx >= len(lines):
+                return None
+            text = lines[idx]
+
+            fondo_path = self.base_path / "002" / "fondo.png"
+            if fondo_path.exists():
+                img = _PILImage.open(fondo_path).convert("RGB").resize((width, height), _PILImage.LANCZOS)
+            else:
+                img = _PILImage.new("RGB", (width, height), (0, 0, 0))
+
+            draw = ImageDraw.Draw(img)
+            font_size = max(40, height // 6)
+            font = None
+            for fname in ("fuente22.ttf", "fuente2.ttf", "fuente.ttf"):
+                fp = self.base_path / "002" / fname
+                if fp.exists():
+                    try:
+                        font = ImageFont.truetype(str(fp), font_size)
+                        break
+                    except Exception:
+                        continue
+            if font is None:
+                font = ImageFont.load_default()
+
+            bbox = draw.textbbox((0, 0), text, font=font)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            x, y = (width - tw) // 2, (height - th) // 2
+            draw.text((x, y), text, fill=(255, 255, 255), font=font)
+
+            import struct
+            pixels = img.tobytes()
+            out = bytearray(width * height * 2)
+            for i in range(width * height):
+                r, g, b = pixels[i * 3], pixels[i * 3 + 1], pixels[i * 3 + 2]
+                v = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
+                struct.pack_into("<H", out, i * 2, v)
+            logger.info(f"📝 Texto CC=2/{value}: \"{text}\"")
+            return bytes(out)
+        except Exception as e:
+            logger.error(f"❌ Error renderizando texto CC=2/{value}: {e}")
+            return None
+
     def _add_to_cache(self, key: Tuple[int, int], data: bytes):
         """Agrega una imagen al cache LRU."""
         if key in self._image_cache:

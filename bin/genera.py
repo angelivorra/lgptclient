@@ -64,7 +64,7 @@ DATOS_TERMINAL: Dict[str, Dict[str, Any]] = {
 
 # Versión de la lógica de generación/empaquetado. Incrementar para forzar la
 # regeneración completa (invalida todos los .manifest.json existentes).
-GENERATOR_VERSION = 2
+GENERATOR_VERSION = 4
 
 
 class Cartera(Enum):  # alias semántico (evita conflicto con folder) (unused but placeholder)
@@ -360,7 +360,7 @@ def procesa_textos(path: Path, config: Dict[str, Any]) -> Dict:
             if w <= max_w and h <= max_h:
                 break
             font_size -= 2
-        canvas = bg.copy()
+        canvas = Image.new('RGBA', (W, H), (0, 0, 0, 255))  # negro: transparente en composite
         glow_stroke = 8
         draw = ImageDraw.Draw(canvas)
         bbox = draw.textbbox((0, 0), palabra, font=font, stroke_width=glow_stroke)
@@ -404,6 +404,16 @@ def procesa_textos(path: Path, config: Dict[str, Any]) -> Dict:
                        stroke_width=stroke_width, stroke_fill=(0, 0, 0))
         if invert:
             canvas = canvas.transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
+        # Limpiar glow residual fuera del área del texto: la banda superior/inferior
+        # del canvas puede tener píxeles del blur de neón con lum>6 que crearían
+        # un doble fondo visible. El texto siempre está centrado con margen 10%,
+        # así que las filas por encima/debajo del margen son fondo puro → negro.
+        canvas_arr = np.array(canvas)
+        top_rows = max(0, y - glow_stroke * 6)
+        bot_rows = min(H, y + h + glow_stroke * 6)
+        canvas_arr[:top_rows, :] = (0, 0, 0, 255)
+        canvas_arr[bot_rows:, :] = (0, 0, 0, 255)
+        canvas = Image.fromarray(canvas_arr, 'RGBA')
         filename = f"{idx:03d}.png"
         try:
             bin_path = out_dir / f"{filename.split('.')[0]}.bin"
@@ -460,7 +470,7 @@ def procesa_imagenes(path: Path, config: Dict[str, Any]) -> Dict:
             new_size = (max(1, int(ow * scale)), max(1, int(oh * scale)))
             if new_size != (ow, oh):
                 fg = fg.resize(new_size, Image.LANCZOS)
-            lienzo = bg.copy()
+            lienzo = Image.new('RGBA', (W, H), (0, 0, 0, 255))  # negro: alpha=0 en el PNG → negro → transparente en composite
             nw, nh = fg.size
             x = (W - nw) // 2
             y = (H - nh) // 2

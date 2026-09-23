@@ -5,21 +5,42 @@ Muestra la imagen de SCREEN sostenida (último MDCC) y tres pads de batería
 navegación es L+dpad; START/STOP siguen siendo globales.
 """
 
+from pathlib import Path
+
 from kivy.core.image import Image as CoreImage
-from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
+from kivy.graphics import Color, Line, Rectangle, RoundedRectangle, ScissorPop, ScissorPush
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
-from robots import (HIT_PADS, ayuda_preview_path, hit_label, hit_pad_notes,
-                    screen_label)
+from robots import (CC_LYRIC, HIT_PADS, ayuda_preview_path, hit_label,
+                    hit_pad_notes, lyric_lines, screen_label)
 from screens.hit_icons import draw_kick, draw_snare
 from theme import (COLOR_BG, COLOR_BORDER, COLOR_EMPTY, COLOR_HEADER_TXT,
                    COLOR_HIT, COLOR_MUTE_OVERLAY, COLOR_SCREEN, core_label)
+
+def _load_rgba_texture(path):
+    """Carga un PNG como textura RGBA preservando el canal alpha (via PIL)."""
+    try:
+        from PIL import Image as _PIL
+        from kivy.graphics.texture import Texture as _Tex
+        img = _PIL.open(str(path)).convert('RGBA')
+        tex = _Tex.create(size=(img.width, img.height), colorfmt='rgba')
+        tex.blit_buffer(img.tobytes(), colorfmt='rgba', bufferfmt='ubyte')
+        tex.flip_vertical()
+        return tex
+    except Exception:
+        pass
+    try:
+        return CoreImage(str(path)).texture
+    except Exception:
+        return None
+
 
 PAD_H = dp(120)
 GAP = dp(16)
 FONT = dp(18)
 FONT_SMALL = dp(14)
+FONT_LYRIC = dp(36)
 _PAD_DRAW = {62: lambda cx, cy, s, c: draw_kick(cx, cy, s, c),
              63: lambda cx, cy, s, c: draw_snare(cx, cy, s, c, hoop=False),
              65: lambda cx, cy, s, c: draw_snare(cx, cy, s, c, hoop=True)}
@@ -41,6 +62,12 @@ class LiveGrid(Widget):
         self._preview_path = None
         self._preview_tex = None
         self._loaded = (None, None)
+        self._fondo_textures: list = []
+        self._fondo_idx: int = 0
+        self._fondo_elapsed: float = 0.0
+        self._fondo_interval: float = 1.0
+        self._images_dir: Path | None = None
+        self._lyric_text: str | None = None  # texto activo CC=2
         self.bind(pos=self._redraw, size=self._redraw)
 
     def reset(self):
@@ -53,7 +80,46 @@ class LiveGrid(Widget):
             self.pulse[n] = 0.0
         self._preview_path = None
         self._preview_tex = None
+        self._lyric_text = None
         self._loaded = (None, None)
+        self._fondo_textures = []
+        self._fondo_idx = 0
+        self._fondo_elapsed = 0.0
+        self._images_dir = None
+        self._redraw()
+
+    def set_fondo(self, fondo_dir, images_dir=None, loop_s=1.0):
+        """Carga las PNGs de fondos/{name}/ para el slideshow del live preview.
+        loop_s: duración total del loop en segundos (interval = loop_s / n_imgs).
+        images_dir: raíz de images/ para cargar imágenes MDCC sin procesar."""
+        self._fondo_textures = []
+        self._fondo_idx = 0
+        self._fondo_elapsed = 0.0
+        self._fondo_interval = 1.0  # se recalcula tras cargar imágenes
+        self._images_dir = Path(images_dir) if images_dir else None
+        self._img_cache.clear()
+        # Limpia texturas líricas cacheadas (fuente puede cambiar por canción)
+        self._tex = {k: v for k, v in self._tex.items()
+                     if not (isinstance(k, tuple) and k[0] == "lyric")}
+        self._loaded = (None, None)   # fuerza recarga de la imagen MDCC
+        self._preview_path = None
+        self._preview_tex = None
+        if not fondo_dir:
+            self._redraw()
+            return
+        p = Path(fondo_dir)
+        if not p.is_dir():
+            self._redraw()
+            return
+        for png in sorted(p.glob("*.png")):
+            try:
+                tex = CoreImage(str(png)).texture
+                self._fondo_textures.append(tex)
+            except Exception:
+                pass
+        n = len(self._fondo_textures)
+        if n:
+            self._fondo_interval = max(0.05, float(loop_s) / n)
         self._redraw()
 
     def set_from(self, pb):
@@ -78,9 +144,32 @@ class LiveGrid(Widget):
 
     def _load_preview(self):
         self._loaded = (self.cc, self.value)
+        self._lyric_text = None
         path = None
         if self.cc is not None and self.value is not None:
-            path = ayuda_preview_path(self.ayuda_dir, self.cc, self.value)
+            # CC=2 (TXT): leer línea de texto directamente del banco de lyrics
+            if self.cc == CC_LYRIC and self._images_dir:
+                lines = lyric_lines(self._images_dir)
+                idx = max(0, self.value)  # 0-based, igual que lgpt_engine
+                self._lyric_text = lines[idx] if idx < len(lines) else f"TXT {self.value:03d}"
+                self._preview_tex = None
+                self._preview_path = None
+                return
+            if self._fondo_textures and self._images_dir:
+                # Fondo activo: PNG crudo con alpha, cargado como RGBA
+                raw = self._images_dir / f"{self.cc:03d}" / "png" / f"{self.value:03d}.png"
+                if raw.exists():
+                    key = f"rgba:{raw}"
+                    if key == self._preview_path:
+                        return
+                    if key not in self._img_cache:
+                        self._img_cache[key] = _load_rgba_texture(raw)
+                    self._preview_path = key
+                    self._preview_tex = self._img_cache[key]
+                    return
+                path = None
+            else:
+                path = ayuda_preview_path(self.ayuda_dir, self.cc, self.value)
         if path == self._preview_path:
             return
         self._preview_path = path
@@ -109,6 +198,12 @@ class LiveGrid(Widget):
             if self.pulse[n] > 0:
                 self.pulse[n] = max(0.0, self.pulse[n] - decay)
                 alive = True
+        if self._fondo_textures:
+            self._fondo_elapsed += dt
+            new_idx = int(self._fondo_elapsed / self._fondo_interval) % len(self._fondo_textures)
+            if new_idx != self._fondo_idx:
+                self._fondo_idx = new_idx
+                alive = True
         if alive:
             self._redraw()
 
@@ -117,6 +212,26 @@ class LiveGrid(Widget):
         tex = self._tex.get(key)
         if tex is None:
             tex = core_label(text, font_size).texture
+            self._tex[key] = tex
+        return tex
+
+    def _lyric_texture(self, text, font_size=FONT_LYRIC):
+        """Textura de texto lírico usando images/002/fuente.ttf."""
+        key = ("lyric", text, font_size)
+        tex = self._tex.get(key)
+        if tex is None:
+            from kivy.core.text import Label as CoreLabel
+            font_path = None
+            if self._images_dir:
+                for fname in ("fuente.ttf", "fuente2.ttf", "fuente22.ttf"):
+                    p = self._images_dir / "002" / fname
+                    if p.exists():
+                        font_path = str(p)
+                        break
+            lbl = CoreLabel(text=text, font_size=font_size,
+                            font_name=font_path or "Roboto")
+            lbl.refresh()
+            tex = lbl.texture
             self._tex[key] = tex
         return tex
 
@@ -136,34 +251,59 @@ class LiveGrid(Widget):
             preview_bottom = pad_y + PAD_H + GAP
             avail_h = self.height - (preview_bottom - self.y) - GAP * 2 - dp(28)
             avail_w = self.width - GAP * 2
-            size = max(dp(1), min(avail_w, avail_h))
-            px = self.x + (self.width - size) / 2
+            # Aspect ratio de la pantalla de las Pi: 800×480
+            scale = min(avail_w / 800, avail_h / 480)
+            pw = max(dp(1), 800 * scale)
+            ph = max(dp(1), 480 * scale)
+            px = self.x + (self.width - pw) / 2
             py = preview_bottom + GAP + dp(28)
-            self._draw_preview(px, py, size)
+            self._draw_preview(px, py, pw, ph)
             tag = "----"
             if self.cc is not None and self.value is not None:
                 tag = screen_label(self.cc, self.value)
             ink = COLOR_SCREEN if not self.muted else COLOR_EMPTY
-            self._text_center(px, py - dp(28), size, tag, ink,
+            self._text_center(px, py - dp(28), pw, tag, ink,
                               h=dp(28), font_size=FONT)
             hit_txt = hit_label(self.note) if self.note is not None else "----"
             self._draw_pads(pad_y, hit_txt)
 
-    def _draw_preview(self, px, py, size):
+    def _draw_preview(self, px, py, pw, ph):
         Color(0.09, 0.10, 0.13, 1)
-        Rectangle(pos=(px, py), size=(size, size))
-        if self._preview_tex is not None:
+        Rectangle(pos=(px, py), size=(pw, ph))
+        # Clip todo el contenido al área del preview para que el COVER no desborde
+        ScissorPush(x=int(px), y=int(py), width=int(pw), height=int(ph))
+        if self._fondo_textures:
+            tex = self._fondo_textures[self._fondo_idx]
+            tw, th = tex.size
+            if tw and th:
+                scale = max(pw / tw, ph / th)
+                dw, dh = tw * scale, th * scale
+                Color(1, 1, 1, 1)
+                Rectangle(texture=tex, size=(dw, dh),
+                          pos=(px + (pw - dw) / 2, py + (ph - dh) / 2))
+        if self._lyric_text is not None:
+            tex = self._lyric_texture(self._lyric_text, FONT_LYRIC)
+            tw, th = tex.size
+            # Escala para caber en el 80% del área (margen 10% por lado)
+            scale = min(pw * 0.8 / tw, ph * 0.8 / th) if tw and th else 1
+            dw, dh = tw * scale, th * scale
+            Color(*COLOR_SCREEN)
+            Rectangle(texture=tex, size=(dw, dh),
+                      pos=(px + (pw - dw) / 2, py + (ph - dh) / 2))
+        elif self._preview_tex is not None:
             tw, th = self._preview_tex.size
-            scale = min(size / tw, size / th) if tw and th else 1
+            # FIT con margen mínimo del 10% por lado (máx 80% del área)
+            scale = min(pw * 0.8 / tw, ph * 0.8 / th) if tw and th else 1
             dw, dh = tw * scale, th * scale
             Color(1, 1, 1, 1)
             Rectangle(texture=self._preview_tex, size=(dw, dh),
-                      pos=(px + (size - dw) / 2, py + (size - dh) / 2))
+                      pos=(px + (pw - dw) / 2, py + (ph - dh) / 2))
         if self.muted:
             Color(*COLOR_MUTE_OVERLAY)
-            Rectangle(pos=(px, py), size=(size, size))
+            Rectangle(pos=(px, py), size=(pw, ph))
+        ScissorPop()
         Color(*COLOR_BORDER)
-        Line(rectangle=(px, py, size, size), width=1.2)
+        Line(rectangle=(px, py, pw, ph), width=1.2)
 
     def _draw_pads(self, y, hit_txt):
         w = min(self.width - GAP * 2, dp(720))

@@ -430,6 +430,13 @@ def save_song_cfg(project_dir: Path, cfg: dict):
         print(f"[config] no se pudo guardar {cfg_file.name}: {exc}")
 
 
+# Knob de tempo FIJO en todas las canciones: el robotraca.json no puede
+# quitarlo ni reasignarlo (antes dependía de `"pot8": "0:tempo"` en cada
+# canción y las que no lo tenían, p.ej. gobiernoIA, no respondían).
+TEMPO_POT = "pot8"
+TEMPO_TARGET = "0:tempo"
+
+
 def build_song_pots(hw_pots: dict, cfg: dict) -> tuple[list, list]:
     """Construye las listas (pots, pots_red) para open_midi_input.
 
@@ -441,13 +448,16 @@ def build_song_pots(hw_pots: dict, cfg: dict) -> tuple[list, list]:
     pots_red: (spec, control) para los knobs listados en `pots_red` del
     JSON: no controlan nada local, solo se reenvían por red (el control de
     red es el propio número de pot, "pot3" -> control 3).
+    El knob TEMPO_POT es siempre tempo, ignore lo que diga la canción.
     """
     pots = []
     for key, entry in hw_pots.items():
         if not isinstance(entry, dict):
             continue
         spec = parse_button_spec(entry.get("cc", ""))
-        target = parse_pot_target(cfg.get("pots", {}).get(key, ""))
+        target_str = (TEMPO_TARGET if key == TEMPO_POT
+                      else cfg.get("pots", {}).get(key, ""))
+        target = parse_pot_target(target_str)
         if spec is None or target is None:
             continue
         try:
@@ -459,6 +469,8 @@ def build_song_pots(hw_pots: dict, cfg: dict) -> tuple[list, list]:
         pots.append((spec, target, idx))
     pots_red = []
     for key in set(cfg.get("pots_red", [])):
+        if key == TEMPO_POT:
+            continue
         entry = hw_pots.get(key)
         if not isinstance(entry, dict):
             continue

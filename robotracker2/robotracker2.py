@@ -131,6 +131,8 @@ class Robotracker2App(App):
         self._pots_dirty = False   # knobs de la canción sin guardar (memoria)
         self._tracks_dirty = False # tipos de pista sin guardar (robotraca)
         self._mute_dirty = False   # mute de canales sin guardar (robotraca)
+        self._fondo_dirty = False  # fondo de canción sin guardar (robotraca)
+        self._available_fondos: list = []  # poblado en build() desde images/fondos/
         self.fullscreen = fullscreen
         self.held = set()          # botones lógicos pulsados ahora
         self._pc_keys = set()     # teclas PC no-LGPT (p.ej. Intro) pulsadas
@@ -161,6 +163,10 @@ class Robotracker2App(App):
         self.songs = find_songs(self.songs_dir)
         if not self.songs:
             raise SystemExit(f"No hay canciones LGPT en {self.songs_dir}")
+        fondos_dir = self.images_dir / "fondos"
+        self._available_fondos = sorted(
+            p.name for p in fondos_dir.iterdir() if p.is_dir()
+        ) if fondos_dir.is_dir() else []
 
         self.sm = ScreenManager(transition=NoTransition())
         self.load_screen = LoadSongScreen(self.songs, name="load")
@@ -709,6 +715,34 @@ class Robotracker2App(App):
         self._sync_unsaved()
         self.editor_screen.toast_msg("Pistas guardadas")
 
+    def _apply_fondo_live(self, name, loop_s=None):
+        """Actualiza el slideshow de fondo del live preview."""
+        fondo_dir = (self.images_dir / "fondos" / name) if name else None
+        if loop_s is None:
+            loop_s = self._midi_ctrl.fondo_loop_s_state()
+        self.editor_screen.live_grid.set_fondo(
+            fondo_dir, images_dir=self.images_dir, loop_s=loop_s)
+
+    def _fondo_loop_s_adjust(self, delta: float):
+        """Ajusta el loop_s del fondo de la canción."""
+        m = self.editor_screen.project_menu
+        new_val = round(max(0.1, min(60.0, m.get_fondo_loop_s() + delta)), 1)
+        m.set_fondo_loop_s(new_val)
+        self._midi_ctrl.set_fondo_loop_s(new_val)
+        self._fondo_dirty = True
+        self._sync_unsaved()
+        self._apply_fondo_live(self._midi_ctrl.fondo_state(), loop_s=new_val)
+
+    def _fondo_cycle(self, delta):
+        """Cicla la selección de fondo (LEFT/RIGHT en PROJECT > Fondo)."""
+        m = self.editor_screen.project_menu
+        m.cycle_fondo(delta)
+        name = m.get_fondo()
+        self._midi_ctrl.set_fondo(name)
+        self._fondo_dirty = True
+        self._sync_unsaved()
+        self._apply_fondo_live(name)
+
 
     def _editor_grid(self):
         """Parrilla de SONG/CHAIN/PHRASE, o None en otras pantallas."""
@@ -1069,9 +1103,20 @@ class Robotracker2App(App):
     def _dispatch_project(self, button, active):
         m = self.editor_screen.project_menu
         key, typ, _label, _icon = m.current_item()
-        if button in DPAD and A in active and typ in ("value", "toggle"):
+        if button in DPAD and A in active and typ in ("value", "toggle", "fvalue"):
             if typ == "toggle":
                 m.adjust_by(0)
+                self._a_consumed = True
+                return True
+            if key == "fondo_loop_s":
+                if button == UP:
+                    self._fondo_loop_s_adjust(1.0)
+                elif button == DOWN:
+                    self._fondo_loop_s_adjust(-1.0)
+                elif button == RIGHT:
+                    self._fondo_loop_s_adjust(0.1)
+                elif button == LEFT:
+                    self._fondo_loop_s_adjust(-0.1)
                 self._a_consumed = True
                 return True
             delta = A_DIR_DELTA[button]
@@ -1089,6 +1134,8 @@ class Robotracker2App(App):
             delta = 1 if button == RIGHT else -1
             if typ == "value" and key == "tempo":
                 self._nudge_tempo(delta)
+            elif key == "fondo":
+                self._fondo_cycle(delta)
             else:
                 m.adjust(delta)
         elif button == A:
@@ -1165,7 +1212,7 @@ class Robotracker2App(App):
             msg = f"Error: {exc}"
         self._midi_ctrl.sync_mute()
         if self._pads_dirty or self._pots_dirty or self._tracks_dirty \
-                or self._mute_dirty:
+                or self._mute_dirty or self._fondo_dirty:
             extra = []
             if self._pads_dirty or self._pots_dirty:
                 extra.append("pads/knobs")
@@ -1173,11 +1220,14 @@ class Robotracker2App(App):
                 extra.append("pistas")
             if self._mute_dirty:
                 extra.append("mute")
+            if self._fondo_dirty:
+                extra.append("fondo")
             self._midi_ctrl.save()
             self._pads_dirty = False
             self._pots_dirty = False
             self._tracks_dirty = False
             self._mute_dirty = False
+            self._fondo_dirty = False
             msg += " + " + "/".join(extra)
         self._sync_unsaved()
         ed.toast_msg(msg)
@@ -1609,6 +1659,7 @@ class Robotracker2App(App):
                     or self._robot_play.hit_note is not None):
                 self._robot_play.reset()
                 ed.live_grid.reset()
+                self._apply_fondo_live(self._midi_ctrl.fondo_state())
             elif ed.current == "live":
                 ed.live_grid.tick_pulse(dt)
             return
@@ -1665,7 +1716,7 @@ class Robotracker2App(App):
     # ------------------------------------------------------------------
     def _session_dirty(self):
         return self.dirty or self._pads_dirty or self._pots_dirty \
-            or self._tracks_dirty or self._mute_dirty
+            or self._tracks_dirty or self._mute_dirty or self._fondo_dirty
 
     def _sync_unsaved(self):
         """Asterisco en cabecera si hay cambios de canción, pads, knobs
@@ -1716,17 +1767,23 @@ class Robotracker2App(App):
         self._preview_instr = None
         self._preview_held.clear()
         self.editor_screen.live_grid.reset()
+        self._apply_fondo_live(self._midi_ctrl.fondo_state())
         self.dirty = False
         self._pads_dirty = False
         self._pots_dirty = False
         self._tracks_dirty = False
         self._mute_dirty = False
+        self._fondo_dirty = False
         self.editor_screen.set_play_indicator(False)
         self.editor_screen.enter_song(project, display_name(song_dir.name))
-        # PADS/POTS/TRACKS: estado de esta canción (robotraca.json)
+        # PADS/POTS/TRACKS/FONDO: estado de esta canción (robotraca.json)
         self.editor_screen.pads_grid.set_state(self._midi_ctrl.pads_state())
         self.editor_screen.pots_grid.set_state(self._midi_ctrl.pots_state())
         self.editor_screen.set_tracks(self._midi_ctrl.tracks_state())
+        self.editor_screen.project_menu.set_fondos(
+            self._available_fondos, self._midi_ctrl.fondo_state())
+        self.editor_screen.project_menu.set_fondo_loop_s(
+            self._midi_ctrl.fondo_loop_s_state())
         self._sync_unsaved()
         self.sm.current = "editor"
 

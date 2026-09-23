@@ -363,6 +363,35 @@ class MidiControl:
         self.pots.clear()
         self.pots.extend(pots)
 
+    # -- slideshow de fondo por canción (pantalla PROJECT) ---------------
+    def fondo_state(self):
+        """Nombre de la carpeta de fondo (p.ej. "001") del robotraca.json,
+        o None si la canción no tiene fondo configurado."""
+        if self._cfg is None:
+            return None
+        val = self._cfg.get("fondo")
+        return str(val) if val else None
+
+    def set_fondo(self, name):
+        """Asigna (o quita, name=None) la carpeta de fondo de la canción
+        en memoria. Se persiste al guardar (save() o Guardar canción)."""
+        if self._cfg is None:
+            return
+        if name:
+            self._cfg["fondo"] = str(name)
+        else:
+            self._cfg.pop("fondo", None)
+
+    def fondo_loop_s_state(self) -> float:
+        if self._cfg is None:
+            return 1.0
+        return float(self._cfg.get("fondo_loop_s", 1.0))
+
+    def set_fondo_loop_s(self, val: float):
+        if self._cfg is None:
+            return
+        self._cfg["fondo_loop_s"] = round(max(0.1, min(60.0, float(val))), 1)
+
     def clear_song(self):
         self.engine_ref["engine"] = None
         self.pots.clear()

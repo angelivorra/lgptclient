@@ -19,6 +19,7 @@ Protocolo de mensajes (ASCII, terminados en \\n):
   STOP,<server_ts_ms>    <- Corta en ts+delay (mismo reloj que las notas)
   END,<server_ts_ms>     <- Igual que STOP al terminar la canción
   RCONFIG,<json>          <- Config íntegra de esta robota (al conectar, antes de NOTA)
+  FONDO,<json>            <- Config de slideshow de fondo (antes de START, por canción)
   CALIB,<server_ts_ms>,<robot>,<pin>,<tiempo_ms>,<delay_ms>  <- Calibración en vivo
   CALTEST,<server_ts_ms>,<robot>,<pin>            <- Programa el pin (ts+1s-delay)
 
@@ -254,6 +255,17 @@ class MIDIClient:
                 logger.debug(f"🎛️  CC {controller}={value} (canal {channel})")
                 self.orchestrator.handle_cc(server_ts_ms, value, channel, controller)
                 
+            elif line.startswith('FONDO,'):
+                fondo_parts = line[len('FONDO,'):].strip().split(',')
+                name = fondo_parts[0]
+                loop_s = float(fondo_parts[1]) if len(fondo_parts) > 1 else 1.0
+                loop_beats = float(fondo_parts[2]) if len(fondo_parts) > 2 else None
+                if name:
+                    self.orchestrator.handle_fondo(name, loop_s=loop_s,
+                                                   loop_beats=loop_beats)
+                else:
+                    logger.warning("⚠️  Mensaje FONDO sin nombre de carpeta")
+
             elif msg_type == 'START' and len(parts) >= 2:
                 server_ts_ms = int(parts[1])
                 self.orchestrator.handle_start(server_ts_ms)

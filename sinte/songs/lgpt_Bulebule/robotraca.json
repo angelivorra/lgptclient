@@ -1,4 +1,6 @@
 {
+  "fondo": "001",
+  "fondo_loop_s": 0.5,
   "fx": {},
   "fx_mix": {
     "1": {

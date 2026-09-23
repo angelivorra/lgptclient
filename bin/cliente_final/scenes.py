@@ -71,8 +71,14 @@ class SceneEngine:
         self._last = self._t0
 
     def set_bpm(self, bpm: float):
-        if bpm > 0:
-            self.bpm = float(bpm)
+        if bpm <= 0 or bpm == self.bpm:
+            return
+        # La fase es bpm * (now - t0): re-anclar t0 para que no salte al
+        # cambiar el tempo (si no, el plasma da un tirón proporcional al
+        # tiempo transcurrido de canción).
+        now = time.monotonic()
+        self._t0 = now - (now - self._t0) * self.bpm / float(bpm)
+        self.bpm = float(bpm)
 
     def pulse(self, kind: str, velocity: int = 127):
         """Impulso 0-1 según velocity. Se suma y satura a 1."""
