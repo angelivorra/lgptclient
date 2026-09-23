@@ -47,6 +47,8 @@ PALETTE = (
     ("CALIDO", (255, 150, 60)),
 )
 
+_COLOR_NAME = {rgb: name for name, rgb in PALETTE}
+
 LIGHT_FX = ("BRIL", "FADE", "STRB")
 LIGHT_FX_HELP = {
     "BRIL": "brillo de la luz (00 apagada, FF a tope)",
@@ -207,6 +209,18 @@ class DmxOut:
                     if 0 <= base + k < self.frame_len:
                         levels[base + k] = v
         return bytes(levels)
+
+    def snapshot(self, now_ms: Optional[float] = None) -> list:
+        """[(nombre, (r, g, b), dim, strobe, color)] de cada luz en
+        `now_ms`, para pintarlas en pantalla (LIVE de robotracker2).
+        `color` es el nombre de la paleta al que va (o está) la luz."""
+        if now_ms is None:
+            now_ms = time.time() * 1000.0
+        with self._lock:
+            self._apply_due(now_ms)
+            return [(name, f.rgb(now_ms), f.dim, f.strobe,
+                     _COLOR_NAME.get(tuple(f.rgb_to), ""))
+                    for name, f in zip(self.names, self.fixtures)]
 
     # -- hilo de salida ----------------------------------------------------
     def start(self):

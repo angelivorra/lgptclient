@@ -192,15 +192,17 @@ class Robotracker2App(App):
             self._midi_ctrl.open(self.config["midi_control"])
         # Luces DMX de la pista LUCES (config.json "luces"); una salida para
         # toda la app, colgada del engine de cada canción al cargarla.
-        # ROBOTRACKER2_DMX=0 la desactiva (tests).
-        self.dmx = None
-        if os.environ.get("ROBOTRACKER2_DMX", "1") != "0":
-            self.dmx = DmxOut.from_config(self.config.get("luces"))
-            if self.dmx is not None:
-                self.dmx.start()
-        luces = (self.config.get("luces") or {}).get("luces") or {}
-        if luces:
-            self.editor_screen.phrase_grid.light_names = list(luces)
+        # Sin cable o desactivada (activo=false, o ROBOTRACKER2_DMX=0 en
+        # tests) queda una salida virtual, sin hilo: la pantalla LIVE sigue
+        # pintando los focos con el mismo estado.
+        luces_cfg = self.config.get("luces") or {}
+        luces = luces_cfg.get("luces") or {}
+        self.dmx = DmxOut.from_config(luces_cfg)
+        if self.dmx is None:
+            self.dmx = DmxOut(fixtures=luces or None)
+        elif os.environ.get("ROBOTRACKER2_DMX", "1") != "0":
+            self.dmx.start()
+        self.editor_screen.phrase_grid.light_names = list(self.dmx.names)
         self.sm.add_widget(self.load_screen)
         self.sm.add_widget(self.editor_screen)
         self.sm.current = "load"
@@ -1650,6 +1652,8 @@ class Robotracker2App(App):
         ed.pads_grid.tick_pulse(dt)
         if p is not None and ed.current == "song":
             ed.song_grid.set_muted(p.engine.muted)   # refleja mutes en vivo
+        if ed.current == "live" and self.dmx is not None:
+            ed.live_grid.set_lights(self.dmx.snapshot())   # focos DMX
         playing = self.sm.current == "editor" and p is not None and p.playing
         self._sync_tick_rate(playing)
         if playing and self._play_start is not None:

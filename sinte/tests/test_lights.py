@@ -83,6 +83,12 @@ class TestDmxOut(unittest.TestCase):
         self.assertTrue(all(s[0] == 0 for s in sent), "start code 0")
         self.assertIn(bytes([0, 255, 1, 2, 3]), [s[:5] for s in sent])
 
+    def test_snapshot(self):
+        self.dmx.event(0, [1], color=(0, 0, 255), bril=0x40)
+        snap = self.dmx.snapshot(10)
+        self.assertEqual(snap[0], ("IZQ", (0, 0, 0), 255, 0, "APAGA"))
+        self.assertEqual(snap[1], ("DER", (0, 0, 255), 0x40, 0, "AZUL"))
+
     def test_from_config(self):
         self.assertIsNone(DmxOut.from_config(None))
         self.assertIsNone(DmxOut.from_config({"activo": False}))
