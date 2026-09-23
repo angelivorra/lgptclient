@@ -76,9 +76,16 @@ class StubEngine:
                 self.pad_names[i] = rel
 
 
+
+def _song_pots(ctrl):
+    """Knobs de la canción, sin el de tempo (pot8), que va siempre."""
+    return [p for p in ctrl.pots if p[2] != 7]
+
+
 def test_build_song_pots():
     """build_song_pots: targets de robotraca.json sobre los físicos del
-    config; los knobs sin target en la canción se quedan fuera."""
+    config; los knobs sin target en la canción se quedan fuera, salvo pot8
+    (TEMPO_POT), que es tempo siempre, diga lo que diga la canción."""
     cfg = {"pots": {"pot1": "2:acid", "pot8": "0:tempo:50"},
            "pots_red": ["pot3"]}
     pots, pots_red = build_song_pots(HW_POTS, cfg)
@@ -88,10 +95,14 @@ def test_build_song_pots():
     assert target == ((2,), "acid", 1.0)
     spec, target, idx = pots[1]
     assert spec == ("control_change", 0, 77) and idx == 7
-    assert target == ((0,), "tempo", 0.5)     # tope 50%
+    assert target == ((0,), "tempo", 1.0)     # el tope de la canción no cuenta
     assert pots_red == [(("control_change", 0, 72), 3)], pots_red
-    # canción sin pots: sin knobs y sin red
-    assert build_song_pots(HW_POTS, {}) == ([], [])
+    # canción sin pots: solo el knob de tempo, sin red
+    tempo_only = [(("control_change", 0, 77), ((0,), "tempo", 1.0), 7)]
+    assert build_song_pots(HW_POTS, {}) == (tempo_only, [])
+    # pot8 reasignado o metido en pots_red: sigue siendo tempo
+    assert build_song_pots(HW_POTS, {"pots": {"pot8": "2:acid"},
+                                     "pots_red": ["pot8"]}) == (tempo_only, [])
     print("  build_song_pots OK")
 
 
@@ -127,8 +138,8 @@ def test_midictrl_set_song():
         assert engine.pad_names[3] == "adios.wav"
         assert engine.pad_names[1] is None
         assert engine.reloads == 0, "con 'pads' no se toca el banco global"
-        assert len(ctrl.pots) == 1, ctrl.pots
-        spec, target, idx = ctrl.pots[0]
+        assert len(_song_pots(ctrl)) == 1, _song_pots(ctrl)
+        spec, target, idx = _song_pots(ctrl)[0]
         assert spec == ("control_change", 0, 71) and idx == 1
         assert target == ((5,), "bode", 1.0)
         assert ctrl.engine_ref["engine"] is engine
@@ -137,7 +148,7 @@ def test_midictrl_set_song():
         ctrl.set_song(engine, Path(tmp))
         assert engine.muted == set()
         assert engine.channels[6].vocoder_out
-        assert ctrl.pots == []
+        assert _song_pots(ctrl) == []
         assert engine.pad_bank == ({}, pads_dir), engine.pad_bank
         assert engine.reloads == 0, "sin 'pads' no se recarga ningún banco"
     print("  MidiControl.set_song OK")
@@ -279,13 +290,13 @@ def test_pots_state_y_edicion():
         assert ctrl.pots_state() == [(3, "acid", 40), (None, None, 100),
                                      (None, None, 100), (None, None, 100)], \
             ctrl.pots_state()
-        assert ctrl.pots[0][1] == ((2,), "acid", 1.0), ctrl.pots
+        assert _song_pots(ctrl)[0][1] == ((2,), "acid", 1.0), _song_pots(ctrl)
 
         # canal +1: spec "canal-1:efecto" en memoria, targets al momento
         ctrl.set_pot_canal(1, 1)
         assert ctrl.pots_state()[0] == (4, "acid", 100), ctrl.pots_state()
         assert ctrl._cfg["pots"] == {"pot1": "3:acid"}, ctrl._cfg["pots"]
-        assert ctrl.pots[0][1] == ((3,), "acid", 1.0)
+        assert _song_pots(ctrl)[0][1] == ((3,), "acid", 1.0)
 
         # efecto +1: acid -> acid_lfo (orden de EFFECT_PRESETS)
         ctrl.set_pot_efecto(1, 1)
@@ -311,7 +322,7 @@ def test_pots_state_y_edicion():
         while ctrl.pots_state()[0][1] is not None:
             ctrl.set_pot_efecto(1, 1)
         assert "pot1" not in ctrl._cfg["pots"], ctrl._cfg["pots"]
-        assert ctrl.pots == [], ctrl.pots
+        assert _song_pots(ctrl) == [], _song_pots(ctrl)
 
         # canción sin "pots": borrador en cualquier orden (canal primero)
         ctrl.set_song(engine, Path(tmp))
@@ -320,7 +331,7 @@ def test_pots_state_y_edicion():
         ctrl.set_pot_efecto(5, 1)           # primer efecto: valve
         assert ctrl._cfg["pots"] == {"pot5": "8:valve"}, ctrl._cfg["pots"]
         assert ctrl.pots_state()[2] == (9, "valve", 100)
-        assert ctrl.pots[0][1] == ((8,), "valve", 1.0)
+        assert _song_pots(ctrl)[0][1] == ((8,), "valve", 1.0)
 
         # borrador en el otro orden (efecto primero, por la lista del
         # picker): set_pot_efecto_nombre guarda el draft y, al elegir el
@@ -336,7 +347,7 @@ def test_pots_state_y_edicion():
         # "off" desde la lista deja el knob sin target
         ctrl.set_pot_efecto_nombre(6, "off")
         assert "pot6" not in ctrl._cfg["pots"], ctrl._cfg["pots"]
-        assert ctrl.pots == [], ctrl.pots
+        assert _song_pots(ctrl) == [], _song_pots(ctrl)
         print("  pots_state y set_pot_* OK")
 
 

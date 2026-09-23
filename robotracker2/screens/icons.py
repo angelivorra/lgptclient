@@ -15,6 +15,7 @@ GLYPH = {
     "noise": "\ue802",           # waveform
     "robot": "\ue762",           # robot
     "vocoder": "\ue326",         # microphone
+    "lights": "\ue2dc",          # lightbulb
     "tempo": "\uec8e",           # metronome
     "master": "\ue44a",          # speaker-high
     "record": "\uecac",          # vinyl-record (grabar mezcla a disco)

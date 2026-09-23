@@ -65,6 +65,7 @@ COLOR_SONG_TRACK = (
     (0.38, 0.78, 0.28, 1),
     (0.32, 0.86, 0.42, 1),
     (0.22, 0.78, 0.55, 1),
+    (0.20, 0.72, 0.86, 1),   # luces
 )
 
 # Columnas de datos (como el pattern de Renoise)

@@ -38,7 +38,7 @@ from sinte_bridge import EFFECT_PRESETS, \
     save_song_cfg
 from tracks import (FIXED_TRACKS, cycle_kind, parse_tracks, slot_of,
                     track_at_slot)
-from lgpt_model import NUM_TRACKS
+from lgpt_model import LIGHTS_TRACK, NUM_TRACKS
 
 # Knobs configurables desde la pantalla POTS (los CC del LPD8: pot1/2/5/6).
 POTS_KNOBS = [1, 2, 5, 6]
@@ -212,8 +212,8 @@ class MidiControl:
         return parse_tracks(self._cfg)
 
     def cycle_track_kind(self, track, delta):
-        """Cicla el tipo de la pista `track` (0-8) en memoria.
-        Vocoder (6) y robotas (7) son fijas."""
+        """Cicla el tipo de la pista `track` (0-9) en memoria.
+        Vocoder (6), robotas (7) y luces (9) son fijas."""
         if self._cfg is None or not 0 <= track < NUM_TRACKS:
             return
         if track in FIXED_TRACKS:
@@ -252,7 +252,7 @@ class MidiControl:
 
     def pots_state(self):
         """[(canal, efecto, pct)] de los knobs 1/2/5/6 para la pantalla
-        POTS (canal 1-9 o None; efecto de EFFECT_PRESETS o None; pct = el
+        POTS (canal 1-10 o None; efecto de EFFECT_PRESETS o None; pct = el
         "fx_mix" de ese canal/efecto, 100 si no hay)."""
         return [self._pot_state(pot) for pot in POTS_KNOBS]
 
@@ -260,14 +260,17 @@ class MidiControl:
         """Canal del knob `pot` +/- (cicla en orden visual; None empieza
         en la primera o la última pista). En memoria ("pots" del
         robotraca.json como "canal-1:efecto"); si aún no hay efecto
-        elegido, el canal queda en el borrador hasta elegirlo."""
+        elegido, el canal queda en el borrador hasta elegirlo. La pista
+        de luces no entra: los efectos de los knobs son de audio."""
         canal, efecto, _pct = self._pot_state(pot)
-        n = NUM_TRACKS
-        if canal is None:
-            slot = 0 if delta > 0 else n - 1
+        slots = [s for s in range(NUM_TRACKS)
+                 if track_at_slot(s) != LIGHTS_TRACK]
+        n = len(slots)
+        if canal is None or slot_of(canal - 1) not in slots:
+            i = 0 if delta > 0 else n - 1
         else:
-            slot = (slot_of(canal - 1) + delta) % n
-        canal = track_at_slot(slot) + 1
+            i = (slots.index(slot_of(canal - 1)) + delta) % n
+        canal = track_at_slot(slots[i]) + 1
         self._set_pot(pot, canal, efecto)
 
     def set_pot_efecto(self, pot, delta):

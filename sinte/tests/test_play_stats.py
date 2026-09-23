@@ -16,6 +16,7 @@ sys.path.insert(0, str(_TESTS))
 from lgpt_engine import Engine  # noqa: E402
 from play_stats import PlayLog, _pct, enabled  # noqa: E402
 from test_engine import make_project  # noqa: E402
+from lgpt_parser import CHANNEL_COUNT
 
 
 class TestPct(unittest.TestCase):
@@ -101,7 +102,7 @@ class TestPlayLog(unittest.TestCase):
         self.assertIn("fin         stop", text)
         self.assertIn("bloques", text)
         self.assertGreater(engine.play_log.blocks, 0)
-        self.assertEqual(len(engine.prof_mix_ms), 9)
+        self.assertEqual(len(engine.prof_mix_ms), CHANNEL_COUNT)
         engine.prof_mix_ms[1] = 12.0
         engine.prof_fx_label[1] = "metal"
         self.assertIn("metal", engine.prof_line())

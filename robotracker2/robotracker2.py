@@ -52,7 +52,7 @@ from controls import (A, B, BACK, DOWN, DPAD, KEY_ENTERS, L2, LEFT, R2,
                       hat_to_buttons, key_to_button, trigger_axis_buttons)
 from lgpt_model import (EMPTY, NUM_TRACKS, compact_instruments,
                         compact_sequencer, ensure_extra_track,
-                        ensure_track_0)
+                        ensure_lights_track, ensure_track_0)
 from midi_ctrl import POTS_KNOBS, MidiControl
 from midi_input import MidiNotesInput, midi_input_names, resolve_midi_port
 from sinte_bridge import save_project
@@ -1748,9 +1748,11 @@ class Robotracker2App(App):
     def load_song(self, song_dir):
         project = load_project(song_dir)
         # Canciones legacy de LGPT: instrumento 00, chain en canal 0 si
-        # falta, y la novena pista (canal 8, visualmente la primera).
+        # falta, la novena pista (canal 8, visualmente la primera) y la de
+        # luces (canal 9, visualmente la última).
         ensure_track_0(project)
         ensure_extra_track(project)
+        ensure_lights_track(project)
         if self.player is not None:
             self.player.close()
         # Sin banco global de pads: los pads son SOLO por canción

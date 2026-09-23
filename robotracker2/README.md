@@ -12,9 +12,10 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    Si la lista no cabe (muchas canciones o densidad ×2 en Odin), una ventana
    de scroll sigue al cursor; con pocas se centra. **A** carga la canción.
    Si el proyecto no trae el instrumento **00**, la columna 0 de SONG está
-   vacía, o no existe la novena pista (canciones LGPT de 8 canales), se
-   crean al cargar: Sample vacío, chain en la fila 0 del canal 0 y chain
-   en la pista extra. Quedan en memoria hasta Guardar.
+   vacía, o no existen la novena pista ni la de luces (canciones LGPT de 8
+   canales), se crean al cargar: Sample vacío, chain en la fila 0 del
+   canal 0, de la pista extra y de la de luces. Quedan en memoria hasta
+   Guardar.
 2. **Editor** (`screens/editor.py`): al cargar entra en la pantalla SONG. Las
    pantallas estilo LGPT están dispuestas en rejilla (`navmap.py`):
 
@@ -42,11 +43,13 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    en la tira D S C P I.
    **Esc** vuelve a la lista de canciones.
 
-3. **SONG** (`screens/song_view.py`): parrilla 256×9 de índices de chain
+3. **SONG** (`screens/song_view.py`): parrilla 256×10 de índices de chain
    (bandas por compás/beat, celda naranja sólida, marco y escuadras en el
    canal del cursor, tira de color por canal). Las columnas van: **pista
-   extra primero** (canal LGPT 8, la novena), luego 0–5, vocoder y robot
-   al final. Cabecera con el **nº, icono y
+   extra primero** (canal LGPT 8, la novena), luego 0–5, vocoder, robot
+   y **luces** (canal LGPT 9, la décima) al final. La pista de luces es
+   para las luces DMX (Eurolite USB-DMX512 + 2 PAR U'King 36 LED RGB); de
+   momento es solo el canal, sin contenido propio. Cabecera con el **nº, icono y
    nombre** del tipo de cada pista (drum / bass / synth / noise / robot /
    vocoder; se editan en TRACKS). Dpad mueve el cursor (izq en la
    primera columna salta a la última y al revés), **A+dir**
@@ -235,9 +238,10 @@ skin inspirada en Renoise 3 (gris, columnas de color, selección azul; ver
    instrumento **00** (pista 0) y el del canal de robotas (**0x80**) nunca
    se eliminan: no hay UI de creación de instrumentos y perderlos dejaría
    esa pista muda. Al **cargar** una canción, si el instrumento 00, la
-   columna 0 de SONG o la novena pista no existen (canciones LGPT de 8
-   canales), se crean en memoria — un Sample vacío y chains en la fila 0
-   del canal 0 y de la pista extra — y quedan persistidos al guardar.
+   columna 0 de SONG, la novena pista o la de luces no existen (canciones
+   LGPT de 8 canales), se crean en memoria — un Sample vacío y chains en
+   la fila 0 del canal 0, de la pista extra y de la de luces — y quedan
+   persistidos al guardar.
    *Save Song As* queda pendiente (toast).
    Arriba/abajo navegan, **A** activa.
 10. **CONFIG** (`screens/config_view.py`): selección de las **interfaces MIDI
@@ -406,21 +410,24 @@ se cae a ningún banco global). El mixer conserva su propio banco
 ### Pantalla TRACKS (tipo de cada pista)
 
 Debajo de PADS (L2+abajo desde PADS, **N** magenta en la columna D). Cada
-canal elige un tipo de **drum / bass / synth / noise / robot / vocoder**:
-el icono y el nombre van juntos. Las filas van en el mismo orden que las
-columnas de SONG (pista extra arriba, vocoder y robot abajo). Se ve en la
+canal elige un tipo de **drum / bass / synth / noise / robot / vocoder**
+(más **luces**, fija): el icono y el nombre van juntos. Las filas van en el
+mismo orden que las columnas de SONG (pista extra arriba, vocoder, robot y
+luces abajo). Se ve en la
 cabecera de **SONG** (nº + icono + nombre por columna), en **CHAIN** y
 **PHRASE**, y en el campo CANAL de **EFECTOS**. Se guarda en el
 `robotraca.json` de la canción:
 
 ```json
 {
-  "tracks": ["drum", "bass", "synth", "synth", "noise", "synth", "vocoder", "robot", "synth"]
+  "tracks": ["drum", "bass", "synth", "synth", "noise", "synth", "vocoder", "robot", "synth", "lights"]
 }
 ```
 
-Sin la clave, esas mismas nueve son el valor por defecto (vocoder y robot
-en los canales 7 y 8; la extra es el canal 9). Controles: **arr/abj**
+Sin la clave, esas mismas diez son el valor por defecto (vocoder, robot y
+luces en los canales 7, 8 y 10, fijos; la extra es el canal 9). Las
+canciones con la lista antigua de 9 siguen valiendo: la pista de luces
+toma su valor fijo. Controles: **arr/abj**
 elige pista (y baja a **GUARDAR**) · **izq/dcha** cicla el tipo · **A
 sobre GUARDAR** persiste. Como PADS/EFECTOS, los cambios viven en memoria
 hasta guardar.

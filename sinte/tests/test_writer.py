@@ -6,7 +6,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lgpt_parser import LGPTProject
+from lgpt_parser import (CHANNEL_COUNT, EXTRA_TRACK, LEGACY_CHANNEL_COUNT,
+                         LIGHTS_TRACK, SONG_EMPTY, SONG_ROWS, LGPTProject,
+                         collapse_song_for_disk, expand_song)
 from lgpt_writer import project_to_xml, save_project
 
 SONGS_DIR = Path(__file__).resolve().parent.parent / "songs"
@@ -115,6 +117,49 @@ class TestWriterRoundTrip(unittest.TestCase):
         self.assertEqual(reloaded.instrument_bank[0]["params"]["sample"], "")
         self.assertEqual(reloaded.instrument_bank[0]["params"]["volume"],
                          "255")
+
+
+class TestSongWidth(unittest.TestCase):
+    """En memoria SONG tiene CHANNEL_COUNT columnas; en disco solo las
+    necesarias: 8 (LGPT), 9 (pista extra) o 10 (luces)."""
+
+    def _song(self, **cells):
+        data = bytearray([SONG_EMPTY] * (CHANNEL_COUNT * SONG_ROWS))
+        for col, chain in cells.items():
+            data[int(col[1:])] = chain
+        return data
+
+    def test_anchura_en_disco(self):
+        self.assertEqual(len(collapse_song_for_disk(self._song(c0=1))),
+                         LEGACY_CHANNEL_COUNT * SONG_ROWS)
+        self.assertEqual(
+            len(collapse_song_for_disk(self._song(**{f"c{EXTRA_TRACK}": 2}))),
+            (EXTRA_TRACK + 1) * SONG_ROWS)
+        self.assertEqual(
+            len(collapse_song_for_disk(self._song(**{f"c{LIGHTS_TRACK}": 3}))),
+            CHANNEL_COUNT * SONG_ROWS)
+
+    def test_expand_desde_8_y_9(self):
+        for width in (LEGACY_CHANNEL_COUNT, EXTRA_TRACK + 1):
+            with self.subTest(width=width):
+                disk = bytearray([SONG_EMPTY] * (width * SONG_ROWS))
+                disk[width - 1] = 7          # última columna, fila 0
+                mem = expand_song(disk)
+                self.assertEqual(len(mem), CHANNEL_COUNT * SONG_ROWS)
+                self.assertEqual(mem[width - 1], 7)
+                self.assertEqual(mem[LIGHTS_TRACK], SONG_EMPTY)
+
+    def test_round_trip_luces(self):
+        song_dir = sorted(d for d in SONGS_DIR.iterdir()
+                          if (d / "lgptsav.dat").exists())[0]
+        project = _load(song_dir)
+        project.song[5 * CHANNEL_COUNT + LIGHTS_TRACK] = 0x42
+        with tempfile.TemporaryDirectory() as tmp:
+            out = save_project(project, Path(tmp) / "lgptsav.dat",
+                               backup=False)
+            reloaded = _load(out.parent)
+        self.assertEqual(reloaded.song[5 * CHANNEL_COUNT + LIGHTS_TRACK], 0x42)
+        self.assertEqual(bytes(reloaded.song), bytes(project.song))
 
 
 if __name__ == "__main__":
