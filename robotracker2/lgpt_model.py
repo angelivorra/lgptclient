@@ -5,7 +5,7 @@ SONG da una chain por canal y fila, y cada step de la chain apunta a una
 phrase global de 16 steps. Las tres vistas reusan el mismo widget de
 editor (length/num_tracks/cell + set_* para editar):
 
-- `SongView`: 256 filas × 9 canales de índices de chain.
+- `SongView`: 256 filas × 10 canales de índices de chain.
 - `ChainView`: los 16 steps de la chain de cada canal en una fila de song.
 - `PhraseView`: los 16 steps de la phrase de cada canal en un step de chain.
 
@@ -16,8 +16,8 @@ cosa de `lgpt_writer.save_project` (en sinte).
 from dataclasses import dataclass
 from pathlib import Path
 
-from sinte_bridge import (CHANNEL_COUNT, EXTRA_TRACK, LGPTProject,
-                          expand_song, note_byte_to_name)
+from sinte_bridge import (CHANNEL_COUNT, EXTRA_TRACK, LIGHTS_TRACK,
+                          LGPTProject, expand_song, note_byte_to_name)
 from robots import ROBOT_INSTR
 
 # Instrumento 00: las canciones nuevas de LGPT lo traen; las legacy a
@@ -338,23 +338,35 @@ def ensure_track_0(project: LGPTProject) -> bool:
     return created
 
 
+def _ensure_column(project: LGPTProject, track: int) -> bool:
+    """Asigna una chain vacía en la fila 0 si la columna `track` está
+    entera vacía, para poder entrar en CHAIN/PHRASE. No marca dirty."""
+    _ensure_width(project)
+    col_used = any(
+        project.song[row * NUM_TRACKS + track] != EMPTY
+        for row in range(min(SONG_ROWS, len(project.song) // NUM_TRACKS))
+    )
+    if not col_used and project.song:
+        return SongView(project).new_chain(0, track) is not None
+    return False
+
+
 def ensure_extra_track(project: LGPTProject) -> bool:
     """Crea la novena pista (canal 8) si la columna está vacía.
 
     Es la pista extra de robotracker (visualmente la primera). Las
-    canciones LGPT de 8 canales llegan sin ella: se asigna una chain
-    vacía en la fila 0 para poder entrar en CHAIN/PHRASE. No marca dirty.
+    canciones LGPT de 8 canales llegan sin ella. No marca dirty.
     """
-    _ensure_width(project)
-    created = False
-    col_used = any(
-        project.song[row * NUM_TRACKS + EXTRA_TRACK] != EMPTY
-        for row in range(min(SONG_ROWS, len(project.song) // NUM_TRACKS))
-    )
-    if not col_used and project.song:
-        if SongView(project).new_chain(0, EXTRA_TRACK) is not None:
-            created = True
-    return created
+    return _ensure_column(project, EXTRA_TRACK)
+
+
+def ensure_lights_track(project: LGPTProject) -> bool:
+    """Crea la pista de luces (canal 9) si la columna está vacía.
+
+    Visualmente la última, tras robot. De momento es solo el canal: el
+    control DMX de las luces se añadirá encima. No marca dirty.
+    """
+    return _ensure_column(project, LIGHTS_TRACK)
 
 
 def note_name_to_byte(name: str) -> int:
@@ -622,7 +634,7 @@ def cycle_cell(view, row: int, track: int, delta: int, col: str | None = None,
 
 
 class SongView:
-    """Parrilla song completa: 256 filas × 9 canales de chain index."""
+    """Parrilla song completa: 256 filas × 10 canales de chain index."""
 
     length = SONG_ROWS
     num_tracks = NUM_TRACKS

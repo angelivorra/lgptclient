@@ -52,10 +52,10 @@ from controls import (A, B, BACK, DOWN, DPAD, KEY_ENTERS, L2, LEFT, R2,
                       hat_to_buttons, key_to_button, trigger_axis_buttons)
 from lgpt_model import (EMPTY, NUM_TRACKS, compact_instruments,
                         compact_sequencer, ensure_extra_track,
-                        ensure_track_0)
+                        ensure_lights_track, ensure_track_0)
 from midi_ctrl import POTS_KNOBS, MidiControl
 from midi_input import MidiNotesInput, midi_input_names, resolve_midi_port
-from sinte_bridge import save_project
+from sinte_bridge import DmxOut, save_project
 try:
     from evdev_triggers import GamepadReader  # entrada evdev (Odin)
 except ImportError:
@@ -190,6 +190,17 @@ class Robotracker2App(App):
             on_trigger=self._ensure_pad_audio)
         if self.config.get("midi_control"):
             self._midi_ctrl.open(self.config["midi_control"])
+        # Luces DMX de la pista LUCES (config.json "luces"); una salida para
+        # toda la app, colgada del engine de cada canción al cargarla.
+        # ROBOTRACKER2_DMX=0 la desactiva (tests).
+        self.dmx = None
+        if os.environ.get("ROBOTRACKER2_DMX", "1") != "0":
+            self.dmx = DmxOut.from_config(self.config.get("luces"))
+            if self.dmx is not None:
+                self.dmx.start()
+        luces = (self.config.get("luces") or {}).get("luces") or {}
+        if luces:
+            self.editor_screen.phrase_grid.light_names = list(luces)
         self.sm.add_widget(self.load_screen)
         self.sm.add_widget(self.editor_screen)
         self.sm.current = "load"
@@ -1748,15 +1759,18 @@ class Robotracker2App(App):
     def load_song(self, song_dir):
         project = load_project(song_dir)
         # Canciones legacy de LGPT: instrumento 00, chain en canal 0 si
-        # falta, y la novena pista (canal 8, visualmente la primera).
+        # falta, la novena pista (canal 8, visualmente la primera) y la de
+        # luces (canal 9, visualmente la última).
         ensure_track_0(project)
         ensure_extra_track(project)
+        ensure_lights_track(project)
         if self.player is not None:
             self.player.close()
         # Sin banco global de pads: los pads son SOLO por canción
         # (robotraca.json "pads" contra la biblioteca pads/, aplicado en
         # _midi_ctrl.set_song); el engine se crea sin wavs_dir.
         self.player = Player(project)
+        self.player.engine.lights_out = self.dmx
         # Controlador MIDI del reproductor: aplica el robotraca.json de la
         # canción (mute/vocoder/presence/fx/fx_mix/master/pad_volume/pads)
         # al engine y reconfigura los knobs a sus targets de esa canción.
@@ -1792,6 +1806,8 @@ class Robotracker2App(App):
         if self.player is not None:
             self.player.close()
             self.player = None
+        if getattr(self, "dmx", None) is not None:
+            self.dmx.close()
         if self._ev_pad is not None:
             self._ev_pad.stop()
         self._midi_notes.close()

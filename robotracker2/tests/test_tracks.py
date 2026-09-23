@@ -31,7 +31,8 @@ from kivy.clock import Clock  # noqa: E402
 
 from controls import A, DOWN, L2, LEFT, RIGHT, SELECT, UP  # noqa: E402
 from songs import DEFAULT_SONGS  # noqa: E402
-from tracks import (DEFAULT_TRACKS, EXTRA_TRACK, TRACK_DISPLAY, cycle_kind,
+from tracks import (DEFAULT_TRACKS, EXTRA_TRACK, LIGHTS_TRACK, TRACK_DISPLAY,
+                    cycle_kind,
                     parse_tracks, slot_of, track_at_slot, track_caption,
                     track_label)  # noqa: E402
 
@@ -48,16 +49,24 @@ def test_parse_tracks():
     assert got[0] == DEFAULT_TRACKS[0] and got[1] == "bass"
     got = parse_tracks({"tracks": ["drum"] * 9})
     assert got[6] == "vocoder" and got[7] == "robot"
+    assert got[LIGHTS_TRACK] == "lights", "lista antigua de 9 → luces fija"
+    got = parse_tracks({"tracks": ["drum"] * 10})
+    assert got[LIGHTS_TRACK] == "lights", "luces no se puede cambiar"
     assert cycle_kind("drum", 1) == "bass"
     assert cycle_kind("noise", 1) == "drum"
     assert cycle_kind("drum", -1) == "noise"
     assert track_label("synth") == "SYNTH"
-    assert TRACK_DISPLAY == (EXTRA_TRACK, 0, 1, 2, 3, 4, 5, 6, 7)
+    assert TRACK_DISPLAY == (EXTRA_TRACK, 0, 1, 2, 3, 4, 5, 6, 7,
+                             LIGHTS_TRACK)
     assert slot_of(EXTRA_TRACK) == 0 and track_at_slot(0) == EXTRA_TRACK
     assert slot_of(6) == 7 and track_at_slot(8) == 7
     assert track_caption(EXTRA_TRACK, "synth") == "1 SYNTH"
     assert track_caption(0, "drum") == "2 DRUM"
     assert track_caption(7, kinds=list(DEFAULT_TRACKS)) == "9 ROBOT"
+    assert slot_of(LIGHTS_TRACK) == 9 and track_at_slot(9) == LIGHTS_TRACK
+    assert track_caption(LIGHTS_TRACK, kinds=list(DEFAULT_TRACKS)) == \
+        "10 LUCES"
+    assert cycle_kind("lights", 1) in ("drum", "bass", "synth", "noise")
     print("  parse_tracks / cycle_kind OK")
 
 
@@ -114,7 +123,7 @@ def _run(app, song_a, song_b):
     print("  SELECT no guarda OK")
 
     # --- fila GUARDAR (A) persiste ---------------------------------------
-    for _ in range(9):
+    for _ in range(len(TRACK_DISPLAY)):
         app._dispatch(DOWN, {DOWN})
     assert g.cursor == g.SAVE_ROW, g.cursor
     app._dispatch(A, {A})

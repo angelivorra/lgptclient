@@ -1,4 +1,4 @@
-"""Pantalla SONG: la parrilla 256 filas × 9 canales de índices de chain.
+"""Pantalla SONG: la parrilla 256 filas × 10 canales de índices de chain.
 
 Clon de la pantalla Song de LGPT. Trabaja con
 botones lógicos (`controls`); la app resuelve los acordes y llama a estos

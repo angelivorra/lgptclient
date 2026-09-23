@@ -19,9 +19,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from kivy.clock import Clock  # noqa: E402
 
-from lgpt_model import (EMPTY, EXTRA_TRACK, INSTR_0, NUM_TRACKS, SAMPLE_INSTR_DEFAULTS,  # noqa: E402
-                        SONG_ROWS, SongView, ensure_extra_track, ensure_track_0,
-                        load_project)
+from lgpt_model import (EMPTY, EXTRA_TRACK, INSTR_0, LIGHTS_TRACK,  # noqa: E402
+                        NUM_TRACKS, SAMPLE_INSTR_DEFAULTS, SONG_ROWS,
+                        SongView, ensure_extra_track, ensure_lights_track,
+                        ensure_track_0, load_project)
 from sinte_bridge import save_project  # noqa: E402
 from songs import DEFAULT_SONGS  # noqa: E402
 
@@ -75,6 +76,12 @@ def test_unitario():
         assert extra != chain
         assert ensure_extra_track(p) is False
 
+        assert ensure_lights_track(p) is True
+        luces = SongView(p).chain_at(0, LIGHTS_TRACK)
+        assert luces != EMPTY, "columna de luces vacía → chain en fila 0"
+        assert luces not in (chain, extra)
+        assert ensure_lights_track(p) is False
+
         # columna 0 ya usada: no pisa la chain, sí crea el instrumento
         p2 = _make_project(tmp / "usada")
         p2.song[0] = 0x05
@@ -117,6 +124,8 @@ def _run(app, song):
         "al cargar se crea una chain en el canal 0"
     assert SongView(p).chain_at(0, EXTRA_TRACK) != EMPTY, \
         "al cargar se crea la novena pista"
+    assert SongView(p).chain_at(0, LIGHTS_TRACK) != EMPTY, \
+        "al cargar se crea la pista de luces"
     assert not app.dirty, "crear pista 0 no marca dirty (hasta Guardar)"
     print("  cargar canción legacy crea pista 0 OK")
 
@@ -127,6 +136,7 @@ def _run(app, song):
     assert reloaded.instrument_bank[INSTR_0]["params"]["sample"] == ""
     assert SongView(reloaded).chain_at(0, INSTR_0) != EMPTY
     assert SongView(reloaded).chain_at(0, EXTRA_TRACK) != EMPTY
+    assert SongView(reloaded).chain_at(0, LIGHTS_TRACK) != EMPTY
     xml = (song / "lgptsav.dat").read_text()
     assert 'INSTRUMENT ID="00"' in xml
     print("  Guardar persiste instrumento 00 y chain del canal 0 OK")

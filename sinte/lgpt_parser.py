@@ -16,12 +16,14 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
 
-# Canciones LGPT clásicas: 8 canales × 256 filas. En memoria hay un noveno
-# (índice 8) para la pista extra de robotracker; si esa columna está vacía
-# al guardar, se escribe otra vez en 8 para no romper el LGPT original.
+# Canciones LGPT clásicas: 8 canales × 256 filas. En memoria hay dos más
+# de robotracker: la pista extra (índice 8) y la de luces (índice 9). Al
+# guardar se escriben solo las columnas necesarias (8, 9 o 10) para no
+# romper el LGPT original cuando las nuevas están vacías.
 LEGACY_CHANNEL_COUNT = 8
-CHANNEL_COUNT = 9
+CHANNEL_COUNT = 10
 EXTRA_TRACK = 8
+LIGHTS_TRACK = 9            # pista de luces (DMX); de momento sin contenido
 VOCODER_TRACK = 6           # pista de voz: siempre ACRD al vocoder
 ROBOT_TRACK = 7             # pista de robotas (eventos NOTA)
 SONG_ROWS = 256
@@ -53,18 +55,21 @@ def expand_song(song) -> bytearray:
 
 
 def collapse_song_for_disk(song) -> bytes:
-    """Si la pista extra está vacía, guarda 8 columnas (compatible LGPT)."""
+    """Guarda solo hasta la última columna de robotracker con contenido:
+    8 (compatible LGPT) si extra y luces están vacías, 9 si solo se usa la
+    extra, CHANNEL_COUNT si se usan las luces."""
     data = expand_song(song)
-    extra_used = any(
-        data[row * CHANNEL_COUNT + EXTRA_TRACK] != SONG_EMPTY
-        for row in range(SONG_ROWS)
-    )
-    if extra_used:
+    width = LEGACY_CHANNEL_COUNT
+    for col in range(LEGACY_CHANNEL_COUNT, CHANNEL_COUNT):
+        if any(data[row * CHANNEL_COUNT + col] != SONG_EMPTY
+               for row in range(SONG_ROWS)):
+            width = col + 1
+    if width == CHANNEL_COUNT:
         return bytes(data)
     out = bytearray()
     for row in range(SONG_ROWS):
         base = row * CHANNEL_COUNT
-        out.extend(data[base:base + LEGACY_CHANNEL_COUNT])
+        out.extend(data[base:base + width])
     return bytes(out)
 
 

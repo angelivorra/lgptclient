@@ -1,21 +1,23 @@
 """Tipos de pista (nombre + icono) por canción.
 
-Cada canal 0-8 tiene un tipo de `TRACK_KINDS`. Se persiste en el
-robotraca.json como lista de 9 nombres, en orden de canal LGPT (0-8):
+Cada canal 0-9 tiene un tipo de `TRACK_KINDS`. Se persiste en el
+robotraca.json como lista de 10 nombres, en orden de canal LGPT (0-9):
 
     "tracks": ["drum", "bass", "synth", "synth", "noise", "synth",
-               "vocoder", "robot", "synth"]
+               "vocoder", "robot", "synth", "lights"]
 
-Sin la clave, se usan `DEFAULT_TRACKS` (vocoder y robot en los canales
-6 y 7; la pista extra es el canal 8). En pantalla las columnas/filas no
-van 0..8: la extra se muestra **la primera**, y vocoder/robot al final:
+Sin la clave, se usan `DEFAULT_TRACKS` (vocoder, robot y luces en los
+canales 6, 7 y 9; la pista extra es el canal 8). En pantalla las
+columnas/filas no van 0..9: la extra se muestra **la primera**, y
+vocoder/robot/luces al final:
 
-    extra(8), 0, 1, 2, 3, 4, 5, vocoder, robot
+    extra(8), 0, 1, 2, 3, 4, 5, vocoder, robot, luces(9)
 """
 
-from lgpt_model import EXTRA_TRACK, NUM_TRACKS
+from lgpt_model import EXTRA_TRACK, LIGHTS_TRACK, NUM_TRACKS
 
-TRACK_KINDS = ("drum", "bass", "synth", "noise", "robot", "vocoder")
+TRACK_KINDS = ("drum", "bass", "synth", "noise", "robot", "vocoder",
+               "lights")
 
 TRACK_LABELS = {
     "drum": "DRUM",
@@ -24,26 +26,29 @@ TRACK_LABELS = {
     "noise": "NOISE",
     "robot": "ROBOT",
     "vocoder": "VOCODER",
+    "lights": "LUCES",
 }
 
-# Canal 6 = voz/vocoder, canal 7 = robotas: fijos, no se ciclan.
+# Canal 6 = voz/vocoder, canal 7 = robotas, canal 9 = luces: fijos, no
+# se ciclan.
 DEFAULT_TRACKS = (
     "drum", "bass", "synth", "synth", "noise", "synth", "vocoder", "robot",
-    "synth",
+    "synth", "lights",
 )
 
 # Orden visual (SONG de izq a dcha, TRACKS de arriba a abajo): extra
-# primero, vocoder y robot al final.
-TRACK_DISPLAY = (EXTRA_TRACK, 0, 1, 2, 3, 4, 5, 6, 7)
+# primero, vocoder, robot y luces al final.
+TRACK_DISPLAY = (EXTRA_TRACK, 0, 1, 2, 3, 4, 5, 6, 7, LIGHTS_TRACK)
 VOCODER_TRACK = 6
 ROBOT_TRACK = 7
-FIXED_TRACKS = {VOCODER_TRACK: "vocoder", ROBOT_TRACK: "robot"}
-# En el resto de pistas no se elige vocoder/robot: esas dos son fijas.
+FIXED_TRACKS = {VOCODER_TRACK: "vocoder", ROBOT_TRACK: "robot",
+                LIGHTS_TRACK: "lights"}
+# En el resto de pistas no se elige vocoder/robot/luces: esas son fijas.
 EDITABLE_TRACK_KINDS = ("drum", "bass", "synth", "noise")
 
 
 def slot_of(track) -> int:
-    """Puesto visual 0-8 del canal LGPT `track`."""
+    """Puesto visual 0-9 del canal LGPT `track`."""
     try:
         return TRACK_DISPLAY.index(track)
     except ValueError:
@@ -51,14 +56,14 @@ def slot_of(track) -> int:
 
 
 def track_at_slot(slot) -> int:
-    """Canal LGPT del puesto visual `slot` (0-8)."""
+    """Canal LGPT del puesto visual `slot` (0-9)."""
     if 0 <= slot < len(TRACK_DISPLAY):
         return TRACK_DISPLAY[slot]
     return TRACK_DISPLAY[0]
 
 
 def parse_tracks(cfg) -> list:
-    """Lista de 9 tipos a partir del robotraca.json (`cfg` o {})."""
+    """Lista de 10 tipos a partir del robotraca.json (`cfg` o {})."""
     raw = (cfg or {}).get("tracks")
     out = list(DEFAULT_TRACKS)
     if isinstance(raw, list):
@@ -90,7 +95,7 @@ def track_label(kind) -> str:
 
 
 def kind_at(kinds, track) -> str:
-    """Tipo de la pista `track` (0-8 LGPT), con default si falta."""
+    """Tipo de la pista `track` (0-9 LGPT), con default si falta."""
     if kinds and 0 <= track < len(kinds):
         return kinds[track]
     if 0 <= track < len(DEFAULT_TRACKS):

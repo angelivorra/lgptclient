@@ -43,6 +43,7 @@ import sounddevice as sd
 
 from event_server import EventMidiOut, EventServer
 from lgpt_engine import Engine, MasterChain, MidiOut, SAMPLE_RATE
+from lights import DmxOut
 from wav_recorder import WavRecorder
 # Botones/knobs MIDI, open_midi_input y aplicación de robotraca.json: en
 # midi_control.py, compartido con robotracker2 (que lo importa vía
@@ -404,6 +405,8 @@ class Player:
         # los clientes del robot salen por TCP, no por un puerto MIDI.
         self.event_server: EventServer | None = None
         self.event_out: EventMidiOut | None = None
+        # Luces DMX de la pista LUCES ([luces] del TOML); None = sin luces.
+        self.dmx = DmxOut.from_config(getattr(args, "luces", None))
         self.recorder: WavRecorder | None = None
         self._notice: tuple | None = None   # (mensaje, timestamp) para la UI
         self._expected_dac_time: float | None = None  # reloj real esperado
@@ -545,12 +548,15 @@ class Player:
             self.event_server.drop_pending()
         if out is not None:
             out.transport_stop(False)
+        if self.dmx is not None:
+            self.dmx.blackout()
 
     def _arm_engine(self, engine: Engine):
         """Cuelga el engine nuevo y arranca. El START tiene que salir con
         `engine_ref` ya apuntando al nuevo, si no los timestamps se sellan
         con el viejo (o con now())."""
         engine.midi_out = self.event_out
+        engine.lights_out = self.dmx
         if self.event_out is not None:
             self.event_out.suppress_notes = False
         engine.play_log.set_source("sinte")
@@ -1599,6 +1605,10 @@ class Player:
                     client_delay_ms=int(ev.get("delay", 1000)))
                 print(f"[eventos] servidor TCP en el puerto "
                       f"{self.event_server.port}")
+        if self.dmx is not None:
+            self.dmx.start()
+            print(f"[luces] DMX en {self.dmx.port} "
+                  f"({', '.join(self.dmx.names)})")
         self.engine_ref["raw_queue"] = queue.SimpleQueue()
         self.engine_ref["calib_queue"] = queue.SimpleQueue()
         self._build_global_pots_red()
@@ -1633,6 +1643,8 @@ class Player:
                 self.event_server.close()
             if self.midi_in is not None:
                 self.midi_in.close()
+            if self.dmx is not None:
+                self.dmx.close()
         if self._restart:
             # Se relanza AQUÍ, ya fuera del finally: el audio, los sockets y
             # el MIDI están cerrados y curses ha devuelto la terminal, así
@@ -1794,6 +1806,7 @@ def main():
         args.wavs_dir = None
     args.master_fx = cfg.get("master", {})   # limitador de la mezcla
     args.events = cfg.get("events", {})      # servidor TCP para los clientes
+    args.luces = cfg.get("luces")            # luces DMX (pista LUCES)
     args.pad_volume = audio_cfg.get("pad_volume", 60)
 
     prioridad = sube_prioridad()

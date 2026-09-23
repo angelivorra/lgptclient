@@ -33,6 +33,12 @@ alineados con los steps (vacío si el step no tiene MDCC). En HIT, un
 icono (bombo / caja / combo) acompaña la etiqueta. Encima de las
 columnas, el icono y el nombre del tipo de esa pista, y las etiquetas
 NOTE/INST/FX1/FX2 (HIT/SCREEN en el canal robot).
+
+**Pista de luces** (`track == LIGHTS_TRACK`, la 10): columnas **COLOR**
+(la nota es un índice de `lights.PALETTE`, con muestra de color), **LUZ**
+(el instrumento: vacío = TODAS, 1 = IZQ, 2 = DER…) y FX1/FX2 limitados a
+BRIL / FADE / STRB (ver sinte/lights.py). No suena: el engine la convierte
+en eventos DMX.
 """
 
 import time
@@ -43,14 +49,17 @@ from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
 from controls import DOWN, LEFT, RIGHT, UP
-from lgpt_model import (EMPTY, FX_EMPTY, PHRASE_LEN, PhraseView, inherited_instr,
+from lgpt_model import (EMPTY, FX_EMPTY, LIGHTS_TRACK, PHRASE_LEN, PhraseView,
+                        inherited_instr,
                         alloc_unreferenced_instr_above, note_name_to_byte,
                         nudge_cell)
 from robots import (HIT_NOTES, ROBOT_INSTR, ROBOT_TRACK, ayuda_preview_path,
                     hit_label, mdcc_unpack, screen_label)
 from screens.hit_icons import draw_hit_icon
 from screens.track_icons import draw_track_icon
-from sinte_bridge import (FILTER_MODES, PHRASE_FILTER_HELP, chord_label,
+from sinte_bridge import (FILTER_MODES, LIGHT_FX, LIGHT_FX_HELP, PALETTE,
+                          PHRASE_FILTER_HELP, chord_label, color_label,
+                          luz_label,
                           clamp255, cut_label, cycle_chord, glch_pack,
                           glch_unpack, mode_from_param, mode_index,
                           mode_label, note_byte_to_name, res_label,
@@ -103,15 +112,22 @@ COLS = [("note", dp(70)), ("instr", dp(52)),
         ("fx1cmd", dp(74)), ("fx1prm", dp(124)),
         ("fx2cmd", dp(74)), ("fx2prm", dp(124))]
 ROBOT_COLS = [("hit", dp(148)), ("screen", dp(150))]
+LIGHTS_COLS = [("color", dp(150)), ("luz", dp(80)),
+               ("fx1cmd", dp(74)), ("fx1prm", dp(70)),
+               ("fx2cmd", dp(74)), ("fx2prm", dp(70))]
+# Valor inicial del parámetro al elegir un comando de luz.
+_LIGHT_FX_DEFAULT = {"BRIL": 0xFF, "FADE": 4, "STRB": 0x80}
 
 _HIT_NOTE_LIST = [note for _label, note in HIT_NOTES]
 
 _COL_COLOR = {"note": COLOR_NOTE, "instr": COLOR_INSTR,
               "fx1cmd": COLOR_FX1, "fx1prm": COLOR_FX1,
               "fx2cmd": COLOR_FX2, "fx2prm": COLOR_FX2,
-              "hit": COLOR_HIT, "screen": COLOR_SCREEN}
+              "hit": COLOR_HIT, "screen": COLOR_SCREEN,
+              "color": COLOR_NOTE, "luz": COLOR_INSTR}
 _KIND = {"note": "note", "instr": "instr", "fx1cmd": "cmd", "fx2cmd": "cmd",
-         "fx1prm": "prm", "fx2prm": "prm", "hit": "hit", "screen": "screen"}
+         "fx1prm": "prm", "fx2prm": "prm", "hit": "hit", "screen": "screen",
+         "color": "color", "luz": "luz"}
 _WHICH = {"fx1cmd": 1, "fx1prm": 1, "fx2cmd": 2, "fx2prm": 2}
 _DOUBLE_A_S = 0.4                      # doble A: siguiente instrumento libre
 
@@ -119,6 +135,8 @@ _DOUBLE_A_S = 0.4                      # doble A: siguiente instrumento libre
 _HDR_GROUPS = [("NOTE", COLOR_NOTE, 0, 1), ("INST", COLOR_INSTR, 1, 2),
                ("FX1", COLOR_FX1, 2, 4), ("FX2", COLOR_FX2, 4, 6)]
 _HDR_ROBOT = [("HIT", COLOR_HIT, 0, 1), ("SCREEN", COLOR_SCREEN, 1, 2)]
+_HDR_LIGHTS = [("COLOR", COLOR_NOTE, 0, 1), ("LUZ", COLOR_INSTR, 1, 2),
+               ("FX1", COLOR_FX1, 2, 4), ("FX2", COLOR_FX2, 4, 6)]
 
 
 class PhraseGrid(Widget):
@@ -152,10 +170,26 @@ class PhraseGrid(Widget):
         self._strip_tex = [None] * PHRASE_LEN
         self._last_a_tap = 0.0
         self.fx_picker = None          # índice en fx_commands, o None
+        self.light_names = ["IZQ", "DER"]   # campo LUZ (orden de config)
         self.bind(pos=self._redraw, size=self._redraw)
 
     def _cols(self):
-        return ROBOT_COLS if self.track == ROBOT_TRACK else COLS
+        if self.track == ROBOT_TRACK:
+            return ROBOT_COLS
+        if self.track == LIGHTS_TRACK:
+            return LIGHTS_COLS
+        return COLS
+
+    @property
+    def _is_lights(self):
+        return self.track == LIGHTS_TRACK
+
+    def _fx_cmds(self):
+        """Comandos FX ciclables: los de luz en la pista LUCES."""
+        return list(LIGHT_FX) if self._is_lights else self.fx_commands
+
+    def _fx_help(self):
+        return LIGHT_FX_HELP if self._is_lights else FX_HELP
 
     # -- contexto -------------------------------------------------------
     def set_context(self, project, song_row, track, chain_step):
@@ -288,8 +322,10 @@ class PhraseGrid(Widget):
 
     def _get_raw(self, step, col):
         kind = self._cols()[col][0]
-        if kind == "hit":
+        if kind in ("hit", "color"):
             return self._note(step)
+        if kind == "luz":
+            return self._instr(step)
         if kind == "screen":
             cmd = self._cmd(step, 1)
             if cmd is None:
@@ -307,6 +343,12 @@ class PhraseGrid(Widget):
 
     def _set_raw(self, step, col, value):
         kind = self._cols()[col][0]
+        if kind == "color":
+            self.pv.set_note(step, self.track, value)
+            return
+        if kind == "luz":
+            self.pv.set_instr(step, self.track, value)
+            return
         if kind == "hit":
             self.pv.set_note(step, self.track, value)
             self.pv.set_instr(step, self.track,
@@ -368,7 +410,7 @@ class PhraseGrid(Widget):
     def current_sample_name(self):
         """Nombre del wav del instrumento del step del cursor (o None).
         En el canal de robotas el instrumento es fijo (no hay sample)."""
-        if self.pv is None or self.track == ROBOT_TRACK:
+        if self.pv is None or self.track in (ROBOT_TRACK, LIGHTS_TRACK):
             return None
         iid = self.effective_instr()
         if iid is None:
@@ -388,6 +430,10 @@ class PhraseGrid(Widget):
             delta = big if button == UP else -big
         if kind == "hit":
             self._edit_hit(step, delta)
+        elif kind == "color":
+            self._edit_color(step, delta)
+        elif kind == "luz":
+            self._edit_luz(step, delta)
         elif kind == "screen":
             return                     # el evento de pantalla se elige con A
         elif kind == "note":
@@ -412,7 +458,7 @@ class PhraseGrid(Widget):
                 self._edit_glch(step, which, button)
             elif self._cmd(step, which) == "FADE":
                 self._edit_fade(step, which, button)
-            elif self._cmd(step, which) in ("FCUT", "FRES"):
+            elif self._cmd(step, which) in ("FCUT", "FRES", "BRIL", "STRB"):
                 self._edit_filter_byte(step, which, button)
             elif self._cmd(step, which) == "FMOD":
                 self._edit_fmod(step, which, button)
@@ -452,6 +498,26 @@ class PhraseGrid(Widget):
         idx = _HIT_NOTE_LIST.index(cur)
         self._set_hit(step, _HIT_NOTE_LIST[(idx + d) % len(_HIT_NOTE_LIST)])
 
+    def _edit_color(self, step, delta):
+        """Cicla la paleta de luces. Desde vacío: ROJO hacia delante, el
+        último color de la paleta hacia atrás."""
+        n = len(PALETTE)
+        cur = self._note(step)
+        d = 1 if delta > 0 else -1
+        if cur is None or not 0 <= cur < n:
+            new = 1 if d > 0 else n - 1
+        else:
+            new = (cur + d) % n
+        self.pv.set_note(step, self.track, new)
+
+    def _edit_luz(self, step, delta):
+        """Cicla TODAS (vacío) -> luz 1 -> luz 2 -> ... -> TODAS."""
+        opts = [None] + list(range(1, len(self.light_names) + 1))
+        cur = self._instr(step)
+        i = opts.index(cur) if cur in opts else 0
+        new = opts[(i + (1 if delta > 0 else -1)) % len(opts)]
+        self.pv.set_instr(step, self.track, new)
+
     def _set_hit(self, step, note):
         self.pv.set_note(step, self.track, note)
         self.pv.set_instr(step, self.track, ROBOT_INSTR)
@@ -466,6 +532,11 @@ class PhraseGrid(Widget):
         pisar otros efectos. Escala: velocity MIDI 0-127 -> volumen LGPT
         0-254 (vel*2, la misma escala que usa el engine: VOLM 00FF = máximo).
         """
+        if self._is_lights:
+            # teclado -> color (C = APAGA, C# = ROJO...); sin VOLM
+            self.pv.set_note(step, self.track, (note & 0x7F) % len(PALETTE))
+            self._changed()
+            return
         if self.track == ROBOT_TRACK:
             self._set_hit(step, note & 0x7F)
         else:
@@ -495,7 +566,7 @@ class PhraseGrid(Widget):
 
     def _edit_cmd(self, step, which, delta):
         cur = self._cmd(step, which)
-        cmds = self.fx_commands
+        cmds = self._fx_cmds()
         d = 1 if delta > 0 else -1              # los comandos ciclan de 1 en 1
         if cur is None or cur not in cmds:
             if delta > 0:
@@ -504,6 +575,11 @@ class PhraseGrid(Widget):
             self.pv.set_fx_cmd(step, self.track, which,
                                cmds[(cmds.index(cur) + d) % len(cmds)])
         new = self._cmd(step, which)
+        if self._is_lights:
+            if new in _LIGHT_FX_DEFAULT:
+                self.pv.set_fx_param(step, self.track, which,
+                                     _LIGHT_FX_DEFAULT[new])
+            return
         if new in ("CHRD", "ARPR") and cur not in ("CHRD", "ARPR"):
             self.pv.set_fx_param(step, self.track, which, 0)
         elif new == "SLID":
@@ -586,15 +662,15 @@ class PhraseGrid(Widget):
         kind = self._cols()[self.cursor_col][0]
         if not kind.endswith("cmd"):
             return
-        cmds = self.fx_commands
+        cmds = self._fx_cmds()
         cur = self._cmd(self.cursor_step, _WHICH[kind])
         self.fx_picker = cmds.index(cur) if cur in cmds else 0
         self._redraw()
 
     def fx_picker_move(self, delta):
-        if self.fx_picker is None or not self.fx_commands:
+        if self.fx_picker is None or not self._fx_cmds():
             return
-        n = len(self.fx_commands)
+        n = len(self._fx_cmds())
         self.fx_picker = (self.fx_picker + delta) % n
         self._redraw()
 
@@ -605,11 +681,15 @@ class PhraseGrid(Widget):
         if not kind.endswith("cmd"):
             self.close_fx_picker()
             return
-        cmd = self.fx_commands[self.fx_picker]
+        cmd = self._fx_cmds()[self.fx_picker]
         which = _WHICH[kind]
         prev = self._cmd(self.cursor_step, which)
         self.pv.set_fx_cmd(self.cursor_step, self.track, which, cmd)
-        if cmd in ("CHRD", "ARPR") and prev not in ("CHRD", "ARPR"):
+        if self._is_lights:
+            if cmd != prev and cmd in _LIGHT_FX_DEFAULT:
+                self.pv.set_fx_param(self.cursor_step, self.track, which,
+                                     _LIGHT_FX_DEFAULT[cmd])
+        elif cmd in ("CHRD", "ARPR") and prev not in ("CHRD", "ARPR"):
             self.pv.set_fx_param(self.cursor_step, self.track, which, 0)
         elif cmd == "SLID" and prev != "SLID":
             self.pv.set_fx_param(self.cursor_step, self.track, which,
@@ -772,7 +852,7 @@ class PhraseGrid(Widget):
     def assign_next_free_instr(self):
         """Doble A: el step apunta al primer instrumento no usado en la
         canción y mayor que el actual (circular). No copia el patch."""
-        if self.pv is None or self.track == ROBOT_TRACK:
+        if self.pv is None or self.track in (ROBOT_TRACK, LIGHTS_TRACK):
             return False
         kind = self._cols()[self.cursor_col][0]
         if kind != "instr":
@@ -800,6 +880,14 @@ class PhraseGrid(Widget):
         kind = self._cols()[col][0]
         if kind == "hit":
             self._set_hit(step, _HIT_NOTE_LIST[0])
+        elif kind == "color":
+            self.pv.set_note(step, self.track, 1)          # ROJO
+        elif kind == "luz":
+            self.pv.set_instr(step, self.track, 1)
+        elif kind.endswith("prm") and self._is_lights:
+            cmd = self._cmd(step, _WHICH[kind])
+            self.pv.set_fx_param(step, self.track, _WHICH[kind],
+                                 _LIGHT_FX_DEFAULT.get(cmd, 0))
         elif kind == "note":
             self.pv.set_note(step, self.track,
                              note_name_to_byte(f"C-{self.octave}"))
@@ -811,8 +899,11 @@ class PhraseGrid(Widget):
             self.pv.set_instr(step, self.track, iid)
             self._remember_instr(iid)
         elif kind.endswith("cmd"):
-            self.pv.set_fx_cmd(step, self.track, _WHICH[kind],
-                               self.fx_commands[0])
+            cmd = self._fx_cmds()[0]
+            self.pv.set_fx_cmd(step, self.track, _WHICH[kind], cmd)
+            if self._is_lights:
+                self.pv.set_fx_param(step, self.track, _WHICH[kind],
+                                     _LIGHT_FX_DEFAULT.get(cmd, 0))
         elif self._cmd(step, _WHICH[kind]) == "SLID":
             self.pv.set_fx_param(step, self.track, _WHICH[kind],
                                  self._slid_default_param(step))
@@ -839,6 +930,13 @@ class PhraseGrid(Widget):
         raw = self._get_raw(step, col)
         if kind == "hit":
             return hit_label(raw) if raw is not None else "----"
+        if kind == "color":
+            return color_label(raw)
+        if kind == "luz":
+            if raw is None and self._note(step) is None and \
+                    self._cmd(step, 1) is None and self._cmd(step, 2) is None:
+                return ".."                    # step vacío: nada que aplicar
+            return luz_label(raw, self.light_names)
         if kind == "screen":
             if raw is None:
                 return "-- --"
@@ -866,6 +964,8 @@ class PhraseGrid(Widget):
             return f"{inten:02X} {rows:02d}"
         if self._cmd(step, which) == "FADE":
             return f"{raw & 0xFF:02d}"
+        if self._cmd(step, which) in ("BRIL", "STRB"):
+            return f"{raw & 0xFF:02X}"
         if self._cmd(step, which) == "FCUT":
             return cut_label(raw, self._step_filter_mode(step))
         if self._cmd(step, which) == "FRES":
@@ -903,6 +1003,17 @@ class PhraseGrid(Widget):
         self._text_left(x + icon_w + dp(10), y, w - icon_w - dp(14),
                         text, color)
 
+    def _draw_color_cell(self, x, y, w, note, color, text):
+        """Muestra del color + nombre (ROJO / AZUL / ...)."""
+        sw = ROW_H - dp(12)
+        sy = y + (ROW_H - sw) / 2
+        rgb = PALETTE[note][1] if 0 <= note < len(PALETTE) else (0, 0, 0)
+        Color(*COLOR_BORDER)
+        Rectangle(pos=(x + dp(7), sy - dp(1)), size=(sw + dp(2), sw + dp(2)))
+        Color(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, 1)
+        Rectangle(pos=(x + dp(8), sy), size=(sw, sw))
+        self._text_left(x + sw + dp(16), y, w - sw - dp(20), text, color)
+
     def _draw_hit_icon(self, x, cy, size, note, color):
         draw_hit_icon(x, cy, size, note, color)
 
@@ -933,7 +1044,8 @@ class PhraseGrid(Widget):
         Rectangle(pos=(hx, hy), size=(hw, HEADER_H))
         Color(*COLOR_BORDER)
         Rectangle(pos=(hx, hy), size=(hw, dp(1)))
-        groups = _HDR_ROBOT if is_robot else _HDR_GROUPS
+        groups = (_HDR_ROBOT if is_robot
+                  else _HDR_LIGHTS if self._is_lights else _HDR_GROUPS)
         for label, color, i0, i1 in groups:
             gx = xs[i0]
             gw = sum(cols[i][1] for i in range(i0, i1))
@@ -1009,6 +1121,8 @@ class PhraseGrid(Widget):
                                   size=(w - dp(2), ROW_H - dp(2)))
                     if kind == "hit" and raw is not None:
                         self._draw_hit_cell(cx, y, w, raw, color, text)
+                    elif kind == "color" and raw is not None:
+                        self._draw_color_cell(cx, y, w, raw, color, text)
                     else:
                         self._text(cx, y, w, text, color)
                 if is_robot:
@@ -1080,7 +1194,7 @@ class PhraseGrid(Widget):
 
     def _draw_fx_picker(self):
         """Overlay: comandos FX + mini explicación. Arr/abj mueve, A elige."""
-        cmds = self.fx_commands
+        cmds = self._fx_cmds()
         n = len(cmds)
         pw = min(self.width - dp(40), dp(560))
         ph = (n + 2) * PICK_ROW_H
@@ -1113,7 +1227,7 @@ class PhraseGrid(Widget):
             else:
                 color = COLOR_NAME
             label = cmd.strip().ljust(4)
-            help_txt = FX_HELP.get(cmd, "")
+            help_txt = self._fx_help().get(cmd, "")
             self._text_left(px + dp(28), y, cmd_w, label, color,
                             h=PICK_ROW_H)
             if help_txt:

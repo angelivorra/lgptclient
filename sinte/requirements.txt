@@ -3,3 +3,4 @@ sounddevice
 soundfile
 mido
 python-rtmidi
+pyserial
