@@ -50,11 +50,38 @@ class TestDelayedStop(unittest.TestCase):
     def test_stop_corta_al_vencer_el_delay(self):
         orch, sched, disp = _orch(delay_ms=0)
         orch._playing = True
+        orch._connected = True
+        orch._fondo_images = [b"frame"]
+        orch._fondo_config = {"interval": 0.08, "transition": "cut"}
+        orch._pantalla = True
+        orch.media_manager.get_animation.return_value = MagicMock()
         disp.set_live.reset_mock()
+        disp.clear_slideshow.reset_mock()
         orch.handle_stop(int(time.time() * 1000))
         _run_due(sched)
         self.assertFalse(orch._playing)
         disp.set_live.assert_called_with(False)
+        disp.clear_slideshow.assert_not_called()
+        disp.set_slideshow.assert_called()
+
+    def test_desconectado_conserva_el_fondo(self):
+        """Sin enlace: slideshow + animación idle, sin apagar el fondo."""
+        orch, sched, disp = _orch(delay_ms=0)
+        orch._connected = False
+        orch._debug = False
+        orch._playing = False
+        orch._pantalla = True
+        orch._fondo_images = []
+        orch.media_manager.load_fondo_images.return_value = [b"fondo"]
+        orch.media_manager.get_animation.return_value = MagicMock()
+        disp.clear_slideshow.reset_mock()
+        disp.set_slideshow.reset_mock()
+        disp.play_animation.reset_mock()
+        orch._show_idle()
+        disp.clear_slideshow.assert_not_called()
+        disp.set_slideshow.assert_called()
+        disp.play_animation.assert_called()
+        self.assertEqual(disp.play_animation.call_args.kwargs.get("source"), "idle")
 
     def test_start_anula_el_stop_pendiente(self):
         orch, sched, disp = _orch(delay_ms=0)

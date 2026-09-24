@@ -1,4 +1,6 @@
 {
+  "fondo": "001",
+  "fondo_loop_s": 0.5,
   "fx": {},
   "fx_mix": {
     "1": {
@@ -28,10 +30,12 @@
     "drum",
     "bass",
     "bass",
-    "drum",
-    "noise",
     "synth",
+    "synth",
+    "noise",
     "vocoder",
-    "robot"
+    "robot",
+    "drum",
+    "lights"
   ]
 }

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Tests headless del motor de escenas (sin framebuffer)."""
+import json
 import sys
 import time
 import unittest
@@ -127,3 +128,78 @@ class TestLiveResume(unittest.TestCase):
         self.ex.play_scene("live")
         time.sleep(0.08)
         self.assertNotEqual(self.ex._current_type, "scene")
+
+    def test_idle_ojos_sobre_slideshow(self):
+        """En pausa, los ojos se mezclan encima del fondo, no lo tapán."""
+        import tempfile
+        from media_manager import AnimationConfig
+
+        frame = b"\xFF\xFF" * (FRAME_BYTES // 2)
+        n = 20
+        with tempfile.TemporaryDirectory() as tmp:
+            pack = Path(tmp) / "pack.bin"
+            pack.write_bytes(frame * n)
+            entries = [{"file": f"{i:03d}.bin", "offset": i * len(frame),
+                        "size": len(frame)} for i in range(n)]
+            cfg = AnimationConfig(
+                cc=3, value=3, fps=30, loop=True, max_delay=1,
+                pack_path=str(pack), index_path="",
+                frames=entries, width=800, height=480, bpp=16)
+            self.ex.set_live(False)
+            self.ex.set_slideshow([b"\x00\x00" * (FRAME_BYTES // 2)], interval=1.0)
+            self.ex.play_animation(cfg, source="idle")
+            time.sleep(0.12)
+            self.assertTrue(self.ex._idle_over_fondo)
+            self.assertEqual(self.ex._current_type, "animation")
+            self.assertIsNotNone(self.ex._overlay_image)
+
+    def test_idle_desconectado_sobre_slideshow(self):
+        """Sin conexión, 003/001 se mezcla encima del fondo, igual que los ojos."""
+        import tempfile
+        from media_manager import AnimationConfig
+
+        frame = b"\xFF\xFF" * (FRAME_BYTES // 2)
+        n = 20
+        with tempfile.TemporaryDirectory() as tmp:
+            pack = Path(tmp) / "pack.bin"
+            pack.write_bytes(frame * n)
+            entries = [{"file": f"{i:03d}.bin", "offset": i * len(frame),
+                        "size": len(frame)} for i in range(n)]
+            cfg = AnimationConfig(
+                cc=3, value=1, fps=30, loop=True, max_delay=2,
+                pack_path=str(pack), index_path="",
+                frames=entries, width=800, height=480, bpp=16)
+            self.ex.set_live(False)
+            self.ex.set_slideshow([b"\x00\x00" * (FRAME_BYTES // 2)], interval=1.0)
+            self.ex.play_animation(cfg, source="idle")
+            time.sleep(0.12)
+            self.assertTrue(self.ex._idle_over_fondo)
+            self.assertEqual(self.ex._current_type, "animation")
+            self.assertIsNotNone(self.ex._overlay_image)
+            self.assertEqual(self.ex._current_animation.cc, 3)
+            self.assertEqual(self.ex._current_animation.value, 1)
+
+    def test_animacion_en_live_es_overlay(self):
+        """Un MDCC de animación no sustituye el fondo: queda de overlay."""
+        import json
+        import tempfile
+        from media_manager import AnimationConfig
+
+        frame = b"\xFF\xFF" * (FRAME_BYTES // 2)  # blanco opaco
+        n = 20  # ~0.66 s a 30 FPS: el clip no debe haber vuelto al live
+        with tempfile.TemporaryDirectory() as tmp:
+            pack = Path(tmp) / "pack.bin"
+            pack.write_bytes(frame * n)
+            entries = [{"file": f"{i:03d}.bin", "offset": i * len(frame),
+                        "size": len(frame)} for i in range(n)]
+            index = {"width": 800, "height": 480, "bpp": 16, "entries": entries}
+            (Path(tmp) / "pack.bin.index.json").write_text(json.dumps(index))
+            cfg = AnimationConfig(
+                cc=3, value=2, fps=30, loop=False, max_delay=1,
+                pack_path=str(pack), index_path=str(Path(tmp) / "pack.bin.index.json"),
+                frames=entries, width=800, height=480, bpp=16)
+            self.ex.play_animation(cfg, source="mdcc")
+            time.sleep(0.12)
+            self.assertEqual(self.ex._current_type, "animation")
+            self.assertIsNotNone(self.ex._overlay_image)
+            self.assertEqual(len(self.ex._overlay_image), FRAME_BYTES)

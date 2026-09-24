@@ -29,6 +29,7 @@ IDLE_CC           = 3  # Conectado, no reproduciendo  → 003/003
 IDLE_VALUE        = 3
 DISCONNECTED_CC   = 3  # Sin conexión al servidor     → 003/001
 DISCONNECTED_VALUE = 1
+DEFAULT_FONDO     = "001"  # slideshow en pausa si la canción no trajo FONDO
 
 
 class EventOrchestrator:
@@ -70,6 +71,7 @@ class EventOrchestrator:
         # Slideshow de fondo: config recibida por FONDO antes del START
         self._fondo_config: dict = {}
         self._fondo_images: list = []
+        self._song_wants_fondo = False  # False → la canción va a plasma
 
         self.current_bpm: float = 0.0
 
@@ -119,18 +121,42 @@ class EventOrchestrator:
     # ── Gestión de idle ───────────────────────────────────────────────────────
 
     def _show_idle(self):
-        """Muestra la pantalla según el modo activo:
+        """Pantalla en pausa:
         - debug=True       → pantalla de estado
-        - connected=True   → animación idle (003/003)
-        - connected=False  → animación desconectado (003/001)
+        - connected=True   → fondo animado + ojos (003/003) encima
+        - connected=False  → el mismo fondo + animación sin enlace (003/001)
         """
         self._stop_production_idle()
         if self._debug:
             self.start_status_screen()
         elif self._connected:
+            self._ensure_idle_fondo()
             self._start_idle_animation(IDLE_CC, IDLE_VALUE, "idle")
         else:
+            # Igual que los ojos: el slideshow sigue y 003/001 se mezcla encima.
+            self._ensure_idle_fondo()
             self._start_idle_animation(DISCONNECTED_CC, DISCONNECTED_VALUE, "desconectado")
+
+    def _ensure_idle_fondo(self):
+        """Deja un slideshow activo para la pausa (el de la canción o 001)."""
+        if not self._fondo_images:
+            loaded = self.media_manager.load_fondo_images(DEFAULT_FONDO)
+            if loaded:
+                self._fondo_config = {
+                    "name": DEFAULT_FONDO,
+                    "interval": FONDO_BASE_INTERVAL,
+                    "transition": "cut",
+                }
+                self._fondo_images = loaded
+        if not self._fondo_images:
+            logger.warning("⚠️  Sin fondo para la pausa — ojos a pantalla llena")
+            return
+        self.display_executor.set_slideshow(
+            self._fondo_images,
+            interval=self._fondo_config.get("interval", FONDO_BASE_INTERVAL),
+            transition=self._fondo_config.get("transition", "cut"),
+            fade_s=self._fondo_config.get("fade_s", 0.5),
+        )
 
     def _start_idle_animation(self, cc: int, value: int, mode_name: str):
         """Arranca la animación idle. El display la repite solo (loop)."""
@@ -364,8 +390,9 @@ class EventOrchestrator:
         Un nombre vacío (FONDO,) borra el fondo activo.
         """
         if not name:
-            self._fondo_config = {}
-            self._fondo_images = []
+            # Vacío = la próxima canción no lleva fondo (plasma). En pausa
+            # se conserva el último slideshow para no dejar la pantalla a negro.
+            self._song_wants_fondo = False
             return
         # Cache hit: mismo fondo ya cargado
         if self._fondo_config.get("name") == name and self._fondo_images:
@@ -374,7 +401,11 @@ class EventOrchestrator:
         loaded = self.media_manager.load_fondo_images(name)
         self._fondo_config = {"name": name, "interval": FONDO_BASE_INTERVAL, "transition": "cut"}
         self._fondo_images = loaded
+        self._song_wants_fondo = bool(loaded)
         logger.info(f"🖼️  Fondo '{name}': {len(loaded)} frames @ {FONDO_BASE_INTERVAL}s/frame")
+        if not self._playing and loaded:
+            self.display_executor.set_slideshow(
+                loaded, interval=FONDO_BASE_INTERVAL, transition="cut")
 
     def handle_start(self, server_ts_ms: int):
         logger.info(f"▶️  START recibido (ts={server_ts_ms}) - Iniciando canción current_bpm={self.current_bpm:.2f}")
@@ -389,13 +420,15 @@ class EventOrchestrator:
             if self.current_bpm > 0:
                 logger.info(f"[FONDO] handle_start → set_bpm({self.current_bpm:.2f}) (antes del set_slideshow)")
                 self.display_executor.set_bpm(self.current_bpm)
-            if self._fondo_images:
+            if self._song_wants_fondo and self._fondo_images:
                 self.display_executor.set_slideshow(
                     self._fondo_images,
                     interval=self._fondo_config.get("interval", FONDO_BASE_INTERVAL),
                     transition=self._fondo_config.get("transition", "cut"),
                     fade_s=self._fondo_config.get("fade_s", 0.5),
                 )
+            else:
+                self.display_executor.clear_slideshow()
             execution_time_ms = server_ts_ms + self.base_delay_ms
             self.scheduler.schedule_at_walltime(
                 wall_time_ms=execution_time_ms,
@@ -457,9 +490,8 @@ class EventOrchestrator:
         )
         self._playing = False
         self.display_executor.set_live(False)
-        self.display_executor.clear_slideshow()
-        # _fondo_images se conserva: en el siguiente START se reutiliza sin recargar.
-        # El sinte siempre emite FONDO (vacío si no hay) antes de cada START.
+        # El slideshow se queda: en pausa el fondo sigue y los ojos van encima.
+        # _fondo_images se conserva para no recargar en el siguiente START.
         self._show_idle()
 
     def cleanup(self):

@@ -27,7 +27,9 @@ luego sincroniza *eso* a `/home/angel/images` en la robota. Por carpeta
   motor internamente) se renderiza como una palabra grande con efecto
   glow/glitch sobre `fondo.png`; `value` = índice de línea (0-based).
 - si no, subcarpetas numeradas → animaciones: cada `{value:03d}/` es una
-  secuencia de frames.
+  secuencia de frames. En canción y en pausa se mezclan encima del fondo
+  (negro / alpha = transparente), igual que las imágenes. El desconectado
+  (003/001) también va encima del slideshow.
 
 `bin/genera.py --markdown` (o con `markdown` en su config) además guarda una
 miniatura YA renderizada de cada resultado en `ayuda_imagenes/{cc:03d}/...`
@@ -37,6 +39,7 @@ usa directamente en vez de recomponer nada a mano. Si no existe (no se ha
 regenerado tras añadir algo nuevo), la previsualización queda vacía sin más.
 """
 
+import json
 from pathlib import Path
 
 ROBOT_TRACK = 7            # canal 8 (0-index)
@@ -117,6 +120,38 @@ def lyric_lines(images_dir):
     except OSError:
         return []
     return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def anim_dir(images_dir, cc, value):
+    """Carpeta de frames de una animación (`images/{cc:03d}/{value:03d}`)."""
+    if images_dir is None or cc is None or value is None:
+        return None
+    folder = Path(images_dir) / f"{cc:03d}" / f"{value:03d}"
+    return folder if folder.is_dir() else None
+
+
+def anim_frame_paths(images_dir, cc, value):
+    """PNG de frames de (cc, value), ordenados, o lista vacía."""
+    folder = anim_dir(images_dir, cc, value)
+    if folder is None:
+        return []
+    return sorted(p for p in folder.glob("*.png") if p.is_file())
+
+
+def anim_fps(images_dir, cc, value, default=30):
+    """FPS de `anim.cfg`, o `default` si no hay config."""
+    folder = anim_dir(images_dir, cc, value)
+    if folder is None:
+        return default
+    cfg = folder / "anim.cfg"
+    if not cfg.is_file():
+        return default
+    try:
+        data = json.loads(cfg.read_text(encoding="utf-8"))
+        fps = int(data.get("fps") or default)
+        return fps if fps > 0 else default
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return default
 
 
 def ayuda_preview_path(ayuda_dir, cc, value):

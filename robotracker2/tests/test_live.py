@@ -9,8 +9,8 @@ os.environ.setdefault("KIVY_NO_ARGS", "1")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from robots import (ROBOT_TRACK, RobotPlayback, hit_pad_notes,  # noqa: E402
-                    mdcc_pack)
+from robots import (ROBOT_TRACK, RobotPlayback, anim_fps,  # noqa: E402
+                    anim_frame_paths, hit_pad_notes, mdcc_pack)
 
 
 class _Chan:
@@ -111,6 +111,16 @@ def test_mute_flag():
     print("  mute del canal robot OK")
 
 
+def test_anim_helpers():
+    root = Path(__file__).resolve().parents[2] / "images"
+    frames = anim_frame_paths(root, 3, 2)
+    assert len(frames) == 4, frames
+    assert frames[0].name == "01.png"
+    assert anim_fps(root, 3, 2) == 30
+    assert anim_frame_paths(root, 3, 99) == []
+    print("  anim_frame_paths / anim_fps OK")
+
+
 def test_live_grid_combo_pulse():
     from kivy.app import App
     from screens.live_view import LiveGrid
@@ -136,5 +146,6 @@ if __name__ == "__main__":
     test_mdcc_hold_and_hit()
     test_robot_channel_gap_keeps_screen()
     test_mute_flag()
+    test_anim_helpers()
     test_live_grid_combo_pulse()
     print("TODOS LOS TESTS OK")

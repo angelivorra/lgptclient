@@ -17,18 +17,39 @@ from kivy.graphics import (Color, Ellipse, Line, Rectangle, RoundedRectangle,
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
 
-from robots import (CC_LYRIC, HIT_PADS, ayuda_preview_path, hit_label,
+from robots import (CC_LYRIC, HIT_PADS, anim_frame_paths, anim_fps,
+                    ayuda_preview_path, classify_folder, hit_label,
                     hit_pad_notes, lyric_lines, screen_label)
 from screens.hit_icons import draw_kick, draw_snare
 from theme import (COLOR_BG, COLOR_BORDER, COLOR_EMPTY, COLOR_HEADER_TXT,
                    COLOR_HIT, COLOR_MUTE_OVERLAY, COLOR_SCREEN, core_label)
 
-def _load_rgba_texture(path):
+def _punch_dark_alpha(img):
+    """Si el PNG es opaco, el negro/casi-negro (y el azul-oscuro de la
+    rejilla tron) pasa a alpha=0 — el mismo criterio que
+    `DisplayExecutor._composite_rgb565` en el dispositivo."""
+    import numpy as np
+    arr = np.array(img)
+    if arr[:, :, 3].min() < 255:
+        return img
+    r5 = arr[:, :, 0].astype(np.uint16) >> 3
+    g6 = arr[:, :, 1].astype(np.uint16) >> 2
+    b5 = arr[:, :, 2].astype(np.uint16) >> 3
+    lum = r5 + g6 + b5
+    transparent = (lum <= 6) | ((b5 > r5) & (lum <= 25))
+    arr[:, :, 3] = np.where(transparent, 0, 255)
+    from PIL import Image as _PIL
+    return _PIL.fromarray(arr, 'RGBA')
+
+
+def _load_rgba_texture(path, punch_dark=False):
     """Carga un PNG como textura RGBA preservando el canal alpha (via PIL)."""
     try:
         from PIL import Image as _PIL
         from kivy.graphics.texture import Texture as _Tex
         img = _PIL.open(str(path)).convert('RGBA')
+        if punch_dark:
+            img = _punch_dark_alpha(img)
         tex = _Tex.create(size=(img.width, img.height), colorfmt='rgba')
         tex.blit_buffer(img.tobytes(), colorfmt='rgba', bufferfmt='ubyte')
         tex.flip_vertical()
@@ -85,6 +106,10 @@ class LiveGrid(Widget):
         self._fondo_interval: float = 1.0
         self._images_dir: Path | None = None
         self._lyric_text: str | None = None  # texto activo CC=2
+        self._anim_textures: list = []
+        self._anim_idx: int = 0
+        self._anim_elapsed: float = 0.0
+        self._anim_interval: float = 1.0 / 30
         self.lights: list = []   # DmxOut.snapshot(): (nombre, rgb, dim, strobe, color)
         self.bind(pos=self._redraw, size=self._redraw)
 
@@ -112,6 +137,7 @@ class LiveGrid(Widget):
         self._fondo_idx = 0
         self._fondo_elapsed = 0.0
         self._images_dir = None
+        self._clear_anim()
         self._redraw()
 
     def set_fondo(self, fondo_dir, images_dir=None, loop_s=1.0):
@@ -130,6 +156,7 @@ class LiveGrid(Widget):
         self._loaded = (None, None)   # fuerza recarga de la imagen MDCC
         self._preview_path = None
         self._preview_tex = None
+        self._clear_anim()
         if not fondo_dir:
             self._redraw()
             return
@@ -168,9 +195,44 @@ class LiveGrid(Widget):
         if changed:
             self._redraw()
 
+    def _clear_anim(self):
+        self._anim_textures = []
+        self._anim_idx = 0
+        self._anim_elapsed = 0.0
+        self._anim_interval = 1.0 / 30
+
+    def _load_anim(self, cc, value):
+        """Carga los frames de una animación como RGBA (alpha real o punch)."""
+        frames = anim_frame_paths(self._images_dir, cc, value)
+        if not frames:
+            return False
+        key = f"anim:{self._images_dir}/{cc:03d}/{value:03d}"
+        if key == self._preview_path and self._anim_textures:
+            return True
+        textures = []
+        for png in frames:
+            cache_key = f"rgba:{png}"
+            if cache_key not in self._img_cache:
+                self._img_cache[cache_key] = _load_rgba_texture(
+                    png, punch_dark=True)
+            tex = self._img_cache[cache_key]
+            if tex is not None:
+                textures.append(tex)
+        if not textures:
+            return False
+        self._anim_textures = textures
+        self._anim_idx = 0
+        self._anim_elapsed = 0.0
+        fps = anim_fps(self._images_dir, cc, value)
+        self._anim_interval = 1.0 / fps
+        self._preview_path = key
+        self._preview_tex = None
+        return True
+
     def _load_preview(self):
         self._loaded = (self.cc, self.value)
         self._lyric_text = None
+        self._clear_anim()
         path = None
         if self.cc is not None and self.value is not None:
             # CC=2 (TXT): leer línea de texto directamente del banco de lyrics
@@ -181,19 +243,25 @@ class LiveGrid(Widget):
                 self._preview_tex = None
                 self._preview_path = None
                 return
-            if self._fondo_textures and self._images_dir:
-                # Fondo activo: PNG crudo con alpha, cargado como RGBA
-                raw = self._images_dir / f"{self.cc:03d}" / "png" / f"{self.value:03d}.png"
-                if raw.exists():
-                    key = f"rgba:{raw}"
-                    if key == self._preview_path:
-                        return
-                    if key not in self._img_cache:
-                        self._img_cache[key] = _load_rgba_texture(raw)
-                    self._preview_path = key
-                    self._preview_tex = self._img_cache[key]
+            if self._images_dir:
+                kind = classify_folder(self._images_dir / f"{self.cc:03d}")
+                if kind == "anim" and self._load_anim(self.cc, self.value):
                     return
-                path = None
+                if self._fondo_textures:
+                    # Fondo activo: PNG crudo con alpha, cargado como RGBA
+                    raw = self._images_dir / f"{self.cc:03d}" / "png" / f"{self.value:03d}.png"
+                    if raw.exists():
+                        key = f"rgba:{raw}"
+                        if key == self._preview_path:
+                            return
+                        if key not in self._img_cache:
+                            self._img_cache[key] = _load_rgba_texture(raw)
+                        self._preview_path = key
+                        self._preview_tex = self._img_cache[key]
+                        return
+                    path = None
+                else:
+                    path = ayuda_preview_path(self.ayuda_dir, self.cc, self.value)
             else:
                 path = ayuda_preview_path(self.ayuda_dir, self.cc, self.value)
         if path == self._preview_path:
@@ -229,6 +297,12 @@ class LiveGrid(Widget):
             new_idx = int(self._fondo_elapsed / self._fondo_interval) % len(self._fondo_textures)
             if new_idx != self._fondo_idx:
                 self._fondo_idx = new_idx
+                alive = True
+        if self._anim_textures:
+            self._anim_elapsed += dt
+            new_idx = int(self._anim_elapsed / self._anim_interval) % len(self._anim_textures)
+            if new_idx != self._anim_idx:
+                self._anim_idx = new_idx
                 alive = True
         if alive:
             self._redraw()
@@ -319,6 +393,12 @@ class LiveGrid(Widget):
             Color(*COLOR_SCREEN)
             Rectangle(texture=tex, size=(dw, dh),
                       pos=(px + (pw - dw) / 2, py + (ph - dh) / 2))
+        elif self._anim_textures:
+            tex = self._anim_textures[self._anim_idx]
+            Color(1, 1, 1, 1)
+            # Frames ya compuestos a 800×480: llenan el preview (el icono
+            # queda al tamaño de diseño; el negro es alpha).
+            Rectangle(texture=tex, size=(pw, ph), pos=(px, py))
         elif self._preview_tex is not None:
             tw, th = self._preview_tex.size
             # FIT con margen mínimo del 10% por lado (máx 80% del área)

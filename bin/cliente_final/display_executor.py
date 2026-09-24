@@ -168,6 +168,7 @@ class DisplayExecutor:
         self._resume_gen = 0
         self._pending_live = False
         self._overlay_image: Optional[bytes] = None
+        self._idle_over_fondo = False  # idle (ojos o desconectado) sobre el slideshow
         
         self._render_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -353,6 +354,11 @@ class DisplayExecutor:
             self._frame_accumulator = 0
             fps = config.fps if config.fps and config.fps > 0 else 20
             self._animation_interval = 1.0 / fps
+            # Ojos y desconectado se mezclan si hay slideshow.
+            # Sin slideshow (el fondo no cargó) la animación sigue a pantalla llena.
+            self._idle_over_fondo = (
+                source == "idle" and bool(self._slideshow_images)
+            )
             
             self.stats['animations_started'] += 1
             logger.info(
@@ -415,7 +421,11 @@ class DisplayExecutor:
             else:
                 self.scenes.set_scene(None)
                 self._overlay_image = None
-                if self._current_type == "scene":
+                self._idle_over_fondo = False
+                self._close_pack()
+                self._current_animation = None
+                self._waiting_until = None
+                if self._current_type in ("scene", "animation"):
                     self._current_type = None
 
     def _arm_live_resume(self, hold_s: float):
@@ -628,13 +638,19 @@ class DisplayExecutor:
                         self._current_type == 'animation'
                         and self._current_animation
                         and not self._want_live
+                        and not self._idle_over_fondo
                     )
                     live_anim = (
                         self._want_live
                         and self._current_type == 'animation'
                         and self._current_animation
                     )
-                    if live_anim or (mdcc_anim):
+                    idle_over = (
+                        self._idle_over_fondo
+                        and self._current_type == 'animation'
+                        and self._current_animation
+                    )
+                    if live_anim or idle_over or mdcc_anim:
                         if self._waiting_until:
                             if time.time() >= self._waiting_until:
                                 self._animation_frame_idx = 0
@@ -644,7 +660,7 @@ class DisplayExecutor:
                         else:
                             current_time = time.time()
                             if self._last_frame_time == 0:
-                                self._render_animation_frame()
+                                self._advance_animation()
                                 self._last_frame_time = current_time
                                 self._frame_accumulator = 0
                             else:
@@ -652,12 +668,15 @@ class DisplayExecutor:
                                     current_time - self._last_frame_time)
                                 self._last_frame_time = current_time
                                 if self._frame_accumulator >= self._animation_interval:
-                                    self._render_animation_frame()
+                                    self._advance_animation()
                                     self._frame_accumulator -= self._animation_interval
-                    elif self._want_live:
+                    if (live_anim or idle_over or self._want_live
+                            or self._current_type == 'scene'):
+                        # Canción o pausa con fondo: slideshow/plasma sigue
+                        # y la animación se mezcla encima.
                         self._write_live_frame()
-                    elif self._current_type == 'scene':
-                        self._write_live_frame()
+                    elif mdcc_anim and self._current_image is not None:
+                        pass  # idle sin slideshow: el frame ya se escribió a pantalla llena
             
             except Exception as e:
                 logger.error(f"❌ Error en render loop: {e}")
@@ -669,8 +688,12 @@ class DisplayExecutor:
         
         logger.debug("🏁 Loop de renderizado terminado")
     
-    def _render_animation_frame(self):
-        """Renderiza el frame actual de la animación."""
+    def _advance_animation(self):
+        """Pasa al siguiente frame del pack.
+
+        En canción (`_want_live`) y en idle con slideshow el frame queda
+        como overlay. En idle sin slideshow se escribe a pantalla llena.
+        """
         if not self._current_animation or not self._animation_pack_file:
             return
         
@@ -683,6 +706,7 @@ class DisplayExecutor:
                 logger.debug("🏁 Clip de MDCC terminado, vuelve live")
                 self._pending_live = True
                 return
+            # idle overlay (ojos): cae al loop de abajo, el fondo sigue
             if config.loop:
                 min_delay = config.max_delay / 5.0
                 max_delay = config.max_delay
@@ -712,7 +736,12 @@ class DisplayExecutor:
                 logger.error(f"❌ Frame {self._animation_frame_idx} sin datos")
                 self.stats['fb_writes_failed'] += 1
                 return
-            
+
+            if self._want_live or self._idle_over_fondo:
+                self._overlay_image = frame_data
+                self._animation_frame_idx += 1
+                return
+
             write_ok = self.fb_writer.write(frame_data)
             
             if write_ok:
