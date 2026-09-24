@@ -111,11 +111,20 @@ class EventOrchestrator:
         logger.info(f"⚙️  Config aplicada: debug={debug}, ruido={ruido}, pantalla={pantalla}")
 
     def set_connection_status(self, connected: bool, host: str = "", port: int = 0):
-        """Actualiza el estado de conexión y cambia la animación idle si no se está reproduciendo."""
+        """Actualiza el estado de conexión y cambia la animación idle.
+
+        Si se cae el TCP a mitad de canción hay que salir de ``_playing``:
+        si no, se queda el fondo solo (sin ojos ni «sin red») y el Play
+        del sinte ya no llega.
+        """
         self.status_runner.set_connection_status(connected, host, port)
         if connected != self._connected:
             self._connected = connected
-            if not self._playing:
+            if not connected:
+                self._playing = False
+                self.display_executor.set_live(False)
+                self._show_idle()
+            elif not self._playing:
                 self._show_idle()
 
     # ── Gestión de idle ───────────────────────────────────────────────────────
@@ -394,16 +403,27 @@ class EventOrchestrator:
             # se conserva el último slideshow para no dejar la pantalla a negro.
             self._song_wants_fondo = False
             return
-        # Cache hit: mismo fondo ya cargado
+        # Cache hit: mismo fondo ya cargado (p.ej. idle DEFAULT_FONDO ==
+        # la carpeta de la canción). Hay que marcar que la canción SÍ
+        # quiere slideshow: si no, handle_start hace clear_slideshow()
+        # y al PLAY se va el fondo que en pausa se veía bien.
         if self._fondo_config.get("name") == name and self._fondo_images:
             logger.info(f"🖼️  Fondo '{name}' cache hit ({len(self._fondo_images)} frames)")
+            self._song_wants_fondo = True
+            if self._playing:
+                self.display_executor.set_slideshow(
+                    self._fondo_images,
+                    interval=self._fondo_config.get("interval", FONDO_BASE_INTERVAL),
+                    transition=self._fondo_config.get("transition", "cut"),
+                    fade_s=self._fondo_config.get("fade_s", 0.5),
+                )
             return
         loaded = self.media_manager.load_fondo_images(name)
         self._fondo_config = {"name": name, "interval": FONDO_BASE_INTERVAL, "transition": "cut"}
         self._fondo_images = loaded
         self._song_wants_fondo = bool(loaded)
         logger.info(f"🖼️  Fondo '{name}': {len(loaded)} frames @ {FONDO_BASE_INTERVAL}s/frame")
-        if not self._playing and loaded:
+        if loaded:
             self.display_executor.set_slideshow(
                 loaded, interval=FONDO_BASE_INTERVAL, transition="cut")
 

@@ -83,6 +83,43 @@ class TestDelayedStop(unittest.TestCase):
         disp.play_animation.assert_called()
         self.assertEqual(disp.play_animation.call_args.kwargs.get("source"), "idle")
 
+    def test_desconexion_a_mitad_de_cancion_vuelve_a_idle(self):
+        """Si se cae el TCP con START ya aplicado, hay que mostrar
+        desconectado sobre el fondo, no quedarse en live sin overlay."""
+        orch, sched, disp = _orch(delay_ms=0)
+        orch._connected = True
+        orch._playing = True
+        orch._debug = False
+        orch._pantalla = True
+        orch._fondo_images = [b"fondo"]
+        orch._fondo_config = {"name": "001", "interval": 0.08, "transition": "cut"}
+        orch.media_manager.get_animation.return_value = MagicMock()
+        disp.set_live.reset_mock()
+        disp.play_animation.reset_mock()
+        orch.set_connection_status(False, "192.168.0.2", 8888)
+        self.assertFalse(orch._playing)
+        self.assertFalse(orch._connected)
+        disp.set_live.assert_called_with(False)
+        disp.play_animation.assert_called()
+        self.assertEqual(disp.play_animation.call_args.kwargs.get("source"), "idle")
+
+    def test_fondo_cache_hit_no_borra_slideshow_al_play(self):
+        """Idle carga 001; la canción pide 001 (cache hit). START debe
+        conservar el slideshow, no irse a plasma."""
+        orch, sched, disp = _orch(delay_ms=0)
+        orch._pantalla = True
+        orch._playing = False
+        orch._fondo_images = [b"frame"]
+        orch._fondo_config = {"name": "001", "interval": 0.08, "transition": "cut"}
+        orch._song_wants_fondo = False
+        orch.handle_fondo("001")
+        self.assertTrue(orch._song_wants_fondo)
+        disp.clear_slideshow.reset_mock()
+        disp.set_slideshow.reset_mock()
+        orch.handle_start(int(time.time() * 1000))
+        disp.clear_slideshow.assert_not_called()
+        disp.set_slideshow.assert_called()
+
     def test_start_anula_el_stop_pendiente(self):
         orch, sched, disp = _orch(delay_ms=0)
         orch.handle_stop(int(time.time() * 1000) - 50)

@@ -235,14 +235,29 @@ class LiveGrid(Widget):
         self._clear_anim()
         path = None
         if self.cc is not None and self.value is not None:
-            # CC=2 (TXT): leer línea de texto directamente del banco de lyrics
-            if self.cc == CC_LYRIC and self._images_dir:
-                lines = lyric_lines(self._images_dir)
-                idx = max(0, self.value)  # 0-based, igual que lgpt_engine
-                self._lyric_text = lines[idx] if idx < len(lines) else f"TXT {self.value:03d}"
-                self._preview_tex = None
-                self._preview_path = None
-                return
+            # CC=2 (TXT): miniatura ya renderizada (glow real). Si no hay
+            # thumb, cae a pintar la línea del banco (mismo criterio que
+            # el navegador: se puede elegir igual).
+            if self.cc == CC_LYRIC:
+                path = ayuda_preview_path(self.ayuda_dir, self.cc, self.value)
+                if path is not None:
+                    key = f"lyric:{path}"
+                    if key == self._preview_path:
+                        return
+                    if key not in self._img_cache:
+                        self._img_cache[key] = _load_rgba_texture(
+                            path, punch_dark=True)
+                    self._preview_path = key
+                    self._preview_tex = self._img_cache[key]
+                    self._lyric_text = None
+                    return
+                if self._images_dir:
+                    lines = lyric_lines(self._images_dir)
+                    idx = max(0, self.value)
+                    self._lyric_text = lines[idx] if idx < len(lines) else f"TXT {self.value:03d}"
+                    self._preview_tex = None
+                    self._preview_path = None
+                    return
             if self._images_dir:
                 kind = classify_folder(self._images_dir / f"{self.cc:03d}")
                 if kind == "anim" and self._load_anim(self.cc, self.value):
@@ -323,7 +338,7 @@ class LiveGrid(Widget):
             from kivy.core.text import Label as CoreLabel
             font_path = None
             if self._images_dir:
-                for fname in ("fuente.ttf", "fuente2.ttf", "fuente22.ttf"):
+                for fname in ("fuente.ttf",):
                     p = self._images_dir / "002" / fname
                     if p.exists():
                         font_path = str(p)
@@ -393,6 +408,9 @@ class LiveGrid(Widget):
             Color(*COLOR_SCREEN)
             Rectangle(texture=tex, size=(dw, dh),
                       pos=(px + (pw - dw) / 2, py + (ph - dh) / 2))
+        elif self.cc == CC_LYRIC and self._preview_tex is not None:
+            Color(1, 1, 1, 1)
+            Rectangle(texture=self._preview_tex, size=(pw, ph), pos=(px, py))
         elif self._anim_textures:
             tex = self._anim_textures[self._anim_idx]
             Color(1, 1, 1, 1)
