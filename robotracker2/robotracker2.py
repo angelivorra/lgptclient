@@ -55,7 +55,7 @@ from lgpt_model import (EMPTY, NUM_TRACKS, compact_instruments,
                         ensure_lights_track, ensure_track_0)
 from midi_ctrl import POTS_KNOBS, MidiControl
 from midi_input import MidiNotesInput, midi_input_names, resolve_midi_port
-from sinte_bridge import DmxOut, save_project
+from sinte_bridge import DmxOut, VOCODER_TRACK, save_project
 try:
     from evdev_triggers import GamepadReader  # entrada evdev (Odin)
 except ImportError:
@@ -1682,7 +1682,10 @@ class Robotracker2App(App):
         hits = self._song_hits(p.engine)
         self._robot_play.update(p.engine)
         if ed.current == "live":
+            ed.live_grid.set_bpm(p.engine.tempo, p.engine.base_tempo)
             ed.live_grid.set_from(self._robot_play)
+            voz = p.engine.channels[VOCODER_TRACK]
+            ed.live_grid.set_vocoder(voz.acrd_seq, voz.acrd_notes, voz.acrd_vel)
             if not is_handheld():
                 ed.live_grid.tick_pulse(dt)
         if ed.current == "song":

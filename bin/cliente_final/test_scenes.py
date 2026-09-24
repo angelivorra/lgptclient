@@ -203,3 +203,37 @@ class TestLiveResume(unittest.TestCase):
             self.assertEqual(self.ex._current_type, "animation")
             self.assertIsNotNone(self.ex._overlay_image)
             self.assertEqual(len(self.ex._overlay_image), FRAME_BYTES)
+
+
+class TestKickShake(unittest.TestCase):
+    def test_shake_desplaza_y_rellena_negro(self):
+        import numpy as np
+        from display_executor import shake_rgb565
+
+        rgb = np.full((HEIGHT, WIDTH), 0xFFFF, dtype="<u2")
+        rgb[10, 20] = 0x001F
+        out = np.frombuffer(
+            shake_rgb565(rgb.tobytes(), 3, 2), dtype="<u2"
+        ).reshape(HEIGHT, WIDTH)
+        self.assertEqual(int(out[12, 23]), 0x001F)
+        self.assertTrue((out[:2, :] == 0).all())
+        self.assertTrue((out[:, :3] == 0).all())
+
+    def test_shake_cero_no_toca_el_frame(self):
+        from display_executor import shake_rgb565
+        frame = b"\x12\x34" * (FRAME_BYTES // 2)
+        self.assertIs(shake_rgb565(frame, 0, 0), frame)
+
+    def test_solo_el_bombo_enciende_shake(self):
+        import display_executor as de
+        ex = de.DisplayExecutor(simulate=True)
+        try:
+            self.assertEqual(ex._shake, 0.0)
+            ex.pulse_hit("snare", 127)
+            self.assertEqual(ex._shake, 0.0)
+            ex.pulse_hit("crash", 127)
+            self.assertEqual(ex._shake, 0.0)
+            ex.pulse_hit("kick", 127)
+            self.assertGreater(ex._shake, 0.9)
+        finally:
+            ex.cleanup()

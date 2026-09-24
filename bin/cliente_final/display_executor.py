@@ -18,7 +18,11 @@ from typing import Optional
 import numpy as np
 
 from media_manager import AnimationConfig
-from scenes import SceneEngine
+from ribbon import BPM_CURVE, FondoRibbon, overlay_block_cols
+from scenes import HEIGHT, WIDTH, SceneEngine
+from fade_black import FadeBlack
+from spark_hit import SPARK_CC, SPARK_VALUE, SparkHit
+from vocoder_neon import VocoderNeon
 
 logger = logging.getLogger("cliente.display")
 
@@ -30,9 +34,30 @@ FRAME_INTERVAL = 1.0 / SYSTEM_FPS
 # Con TEMPO_BOOST_MAX=0.12 del sinte: 1.12**8 ≈ 2.5x → ~0.031 s/frame arriba,
 # justo el ritmo del render (30 FPS); más rápido ya se saltaría frames.
 FONDO_BASE_INTERVAL = 0.076
-FONDO_BPM_CURVE = 8
+FONDO_BPM_CURVE = BPM_CURVE  # también la usa la línea (ribbon.speed_px_s)
 # Imagen estática durante una canción: se ve un rato y vuelve al plasma.
 IMAGE_HOLD_S = 2.0
+# Bombo: temblor sobre el frame ya compuesto (fondo + letra). Barato: roll.
+SHAKE_HALF_LIFE_S = 0.11
+SHAKE_MAX_PX = 8
+
+
+def shake_rgb565(frame: bytes, dx: int, dy: int,
+                 width: int = WIDTH, height: int = HEIGHT) -> bytes:
+    """Desplaza el frame; el borde que entra es negro (no wrap)."""
+    if (not dx and not dy) or len(frame) != width * height * 2:
+        return frame
+    arr = np.frombuffer(frame, dtype="<u2").reshape(height, width)
+    out = np.roll(arr, (dy, dx), axis=(0, 1))
+    if dy > 0:
+        out[:dy, :] = 0
+    elif dy < 0:
+        out[dy:, :] = 0
+    if dx > 0:
+        out[:, :dx] = 0
+    elif dx < 0:
+        out[:, dx:] = 0
+    return out.astype("<u2").tobytes()
 
 
 class FramebufferWriter:
@@ -162,6 +187,10 @@ class DisplayExecutor:
         self.simulate = simulate
         self.invert = invert
         self.scenes = SceneEngine(invert=invert)
+        self.ribbon = FondoRibbon()
+        self.neon = VocoderNeon()
+        self.spark = SparkHit()
+        self.fade = FadeBlack()
         self._want_live = False
         self._scene_resume_at: Optional[float] = None
         self._overlay_gen = 0
@@ -169,6 +198,8 @@ class DisplayExecutor:
         self._pending_live = False
         self._overlay_image: Optional[bytes] = None
         self._idle_over_fondo = False  # idle (ojos o desconectado) sobre el slideshow
+        self._shake = 0.0
+        self._shake_t = time.time()
         
         self._render_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -275,6 +306,15 @@ class DisplayExecutor:
     def _show_image_internal(self, data: bytes, cc: int, value: int):
         """Implementación interna de show_image."""
         with self._state_lock:
+            if self._want_live and cc == SPARK_CC and value == SPARK_VALUE:
+                # La 01 ya no es el 404: chispazo, y la 01 es el fundido
+                # a negro de 8 filas.
+                self.spark.trigger()
+                self.fade.start(self.scenes.bpm)
+                self.stats['images_shown'] += 1
+                logger.info(f"✨ Chispazo: CC {cc:03d}/{value:03d}")
+                return
+
             if self._animation_pack_file:
                 try:
                     self._animation_pack_file.close()
@@ -390,6 +430,7 @@ class DisplayExecutor:
             self._slideshow_start = time.time()
             self._slideshow_last_idx = 0
             self._slideshow_fade_from = None
+            self.ribbon.reset_tempo_base()
             self._slideshow_fade_begin = 0.0
         logger.info(
             f"🖼️  Slideshow: {len(images)} imágenes, "
@@ -401,6 +442,7 @@ class DisplayExecutor:
         with self._state_lock:
             self._slideshow_images = []
             self._slideshow_fade_from = None
+            self.ribbon.reset_tempo_base()
         logger.info("🖼️  Slideshow desactivado")
 
     def set_live(self, on: bool):
@@ -413,6 +455,10 @@ class DisplayExecutor:
             self._pending_live = False
             if on:
                 self.scenes.set_scene("live")
+                self.ribbon.reset_beat()
+                self.neon.clear()
+                self.spark.clear()
+                self.fade.clear()
                 self._current_type = "scene"
                 self._close_pack()
                 self._current_animation = None
@@ -420,6 +466,9 @@ class DisplayExecutor:
                 self._overlay_image = None
             else:
                 self.scenes.set_scene(None)
+                self.neon.release()
+                self.spark.clear()
+                self.fade.clear()
                 self._overlay_image = None
                 self._idle_over_fondo = False
                 self._close_pack()
@@ -464,15 +513,40 @@ class DisplayExecutor:
             self.scenes.set_scene(name)
             logger.info(f"🌌 Escena procedural: {name}")
 
+    def pulse_chord(self, notes, velocity: int = 127):
+        """Latigazo del vocoder (ACRD). Solo la raíz pinta; el acorde no."""
+        self.neon.pulse(notes, velocity)
+
     def pulse_hit(self, kind: str, velocity: int = 127):
         """Impulso de bombo/caja/crash. El render lo consume; el GPIO no."""
         self.scenes.pulse(kind, velocity)
+        self.ribbon.pulse(kind, velocity)
+        if kind == "kick":
+            v = max(0.25, min(1.0, velocity / 127.0))
+            with self._state_lock:
+                self._shake = min(1.0, self._shake + v)
+
+    def _apply_kick_shake(self, frame: bytes, now: float) -> bytes:
+        """Temblor del bombo: 2–8 px, más horizontal, ~110 ms de vida."""
+        dt = min(0.08, max(0.0, now - self._shake_t))
+        self._shake_t = now
+        if self._shake <= 1e-3:
+            self._shake = 0.0
+            return frame
+        self._shake *= 0.5 ** (dt / SHAKE_HALF_LIFE_S)
+        amp = min(SHAKE_MAX_PX, int(round(self._shake * SHAKE_MAX_PX)))
+        if amp <= 0:
+            return frame
+        dx = random.randint(-amp, amp)
+        dy = random.randint(-(amp // 2), amp // 2)
+        return shake_rgb565(frame, dx, dy)
 
     def set_slideshow_bpm(self, bpm: float):
         """Actualiza el intervalo del slideshow en tiempo real (sin delay).
         No toca scenes — solo el fondo."""
         if bpm <= 0:
             return
+        ribbon_base = None
         with self._state_lock:
             n = len(self._slideshow_images)
             if n and self._slideshow_base_interval:
@@ -483,6 +557,7 @@ class DisplayExecutor:
                         self._slideshow_base_bpm = bpm
                         logger.info(f"[FONDO] base_bpm fijado={bpm:.2f} (inmediato)")
                     base_bpm = self._slideshow_base_bpm
+                ribbon_base = base_bpm
                 ratio = bpm / base_bpm
                 new_interval = max(0.01, self._slideshow_base_interval / ratio ** FONDO_BPM_CURVE)
                 # El frame se calcula como (now - start) / interval: si solo
@@ -498,10 +573,12 @@ class DisplayExecutor:
                     f"interval {self._slideshow_interval:.4f}→{new_interval:.4f}s"
                 )
                 self._slideshow_interval = new_interval
+        self.ribbon.set_bpm(bpm, base=ribbon_base)
 
     def set_bpm(self, bpm: float):
         """Actualiza scenes al instante audible (sincronizado). No toca el fondo."""
         self.scenes.set_bpm(bpm)
+        self.ribbon.set_bpm(bpm)
 
     @staticmethod
     def _blend_rgb565(plasma: bytes, image: bytes, img_w: float) -> bytes:
@@ -586,11 +663,19 @@ class DisplayExecutor:
             bg = self.scenes.render()
             if not bg:
                 return
-        # Imagen CC: composite sobre el fondo animado (muestra fondo a través de píxeles oscuros/azules)
+        # Fondo → cinta → latigazo del vocoder → overlay. La letra tapa
+        # los márgenes si los invade; la cinta no pinta donde hay tinta.
         if self._overlay_image:
-            frame = self._composite_rgb565(bg, self._overlay_image)
+            block = overlay_block_cols(self._overlay_image)
+            frame = self.ribbon.blit_rgb565(bg, now, block_cols=block)
+            frame = self.neon.blit_rgb565(frame, now)
+            frame = self._composite_rgb565(frame, self._overlay_image)
         else:
-            frame = bg
+            frame = self.ribbon.blit_rgb565(bg, now)
+            frame = self.neon.blit_rgb565(frame, now)
+        frame = self.spark.blit_rgb565(frame, now)
+        frame = self.fade.blit_rgb565(frame, now)
+        frame = self._apply_kick_shake(frame, now)
         write_ok = self.fb_writer.write(frame, skip_black_check=True)
         if write_ok:
             self.stats['frames_rendered'] += 1

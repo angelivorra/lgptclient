@@ -160,13 +160,13 @@ class TestEngineLuces(unittest.TestCase):
         ch = engine.channels[LIGHTS_TRACK]
         self.assertEqual(ch.voices, [], "la pista LUCES nunca suena")
 
-    def test_muteada_no_manda(self):
+    def test_muteada_sigue_mandando(self):
         engine = lights_engine()
         engine.muted = {LIGHTS_TRACK}
         engine.start()
         for _ in range(TICKS_PER_STEP * 3 + 1):
             engine._process_tick()
-        self.assertEqual(engine.lights_out.events, [])
+        self.assertEqual(len(engine.lights_out.events), 2)
 
     def test_stop_apaga(self):
         engine = lights_engine()

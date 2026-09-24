@@ -86,7 +86,7 @@ class SceneEngine:
         with self._lock:
             if kind == "kick":
                 self.kick = min(1.0, self.kick + v)
-            elif kind == "snare":
+            elif kind in ("snare", "snare1", "snare2"):
                 self.snare = min(1.0, self.snare + v)
             elif kind == "crash":
                 self.crash = min(1.0, self.crash + v)

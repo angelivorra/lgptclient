@@ -195,6 +195,40 @@ class TestVoices(unittest.TestCase):
         engine.render(512)
         self.assertFalse(engine.channels[0].releases)
 
+    def test_pause_corta_la_nota(self):
+        """Pausar calla la voz. Un sample largo no debe seguir sonando."""
+        engine = make_engine()
+        note_row(engine.project, 0, note=60)
+        engine.render(2048)
+        self.assertIsNotNone(engine.channels[0].voice)
+        engine.push_event("pause")
+        engine.render(2048)
+        self.assertFalse(engine.playing)
+        self.assertIsNone(engine.channels[0].voice)
+        self.assertFalse(engine.channels[0].releases)
+        tail = engine.render(2048)
+        self.assertLess(float(np.abs(tail).max()), 1e-4)
+
+    def test_stop_corta_fade_anulado_por_volm(self):
+        """FADE marca la voz como releasing; VOLM le devuelve el volumen
+        pero la dejaba en ese estado, y el corte de stop no hacía nada."""
+        engine = make_engine()
+        note_row(engine.project, 0, note=60)
+        engine.project.cmd1[0] = "FADE"
+        engine.project.param1[0] = 1
+        engine.project.cmd1[1] = "VOLM"
+        engine.project.param1[1] = 0x00FF
+        for _ in range(TICKS_PER_STEP * 2 + 2):
+            engine._process_tick()
+        self.assertIsNotNone(engine.channels[0].voice)
+        engine.render(int(engine.samples_per_tick * TICKS_PER_STEP))
+        engine.push_event("stop")
+        engine.render(2048)
+        self.assertIsNone(engine.channels[0].voice)
+        self.assertFalse(engine.channels[0].releases)
+        tail = engine.render(2048)
+        self.assertLess(float(np.abs(tail).max()), 1e-4)
+
     def test_fade_en_filas(self):
         # FADE 03 rampa el volumen actual a 0 en 3 filas
         engine = make_engine()
@@ -532,6 +566,28 @@ class TestMidiOut(unittest.TestCase):
         note_row(engine.project, 0, note=60, instr=0x80)
         engine.project.cmd1[1] = "MDCC"
         engine.project.param1[1] = (74 << 8) | 100   # CC74 = 100
+        for _ in range(TICKS_PER_STEP + 1):
+            engine._process_tick()
+        self.assertIn(("cc", 3, 74, 100), engine.midi_out.events)
+
+    def test_mdcc_sin_nota(self):
+        """Una fila de pantalla sin golpe también emite el CC."""
+        engine = self.make_midi_engine()
+        engine.project.cmd1[0] = "MDCC"
+        engine.project.param1[0] = (3 << 8) | 8
+        engine._process_tick()
+        self.assertIn(("cc", 0, 3, 8), engine.midi_out.events)
+
+    def test_mute_no_corta_nota_ni_cc(self):
+        """El mute solo calla el audio local; NOTA/MDCC salen igual."""
+        engine = self.make_midi_engine()
+        engine.muted = {0}
+        engine.snap_mute_gains()
+        note_row(engine.project, 0, note=60, instr=0x80)
+        engine.project.cmd1[1] = "MDCC"
+        engine.project.param1[1] = (74 << 8) | 100
+        engine._process_tick()
+        self.assertIn(("note_on", 3, 60, 127), engine.midi_out.events)
         for _ in range(TICKS_PER_STEP + 1):
             engine._process_tick()
         self.assertIn(("cc", 3, 74, 100), engine.midi_out.events)
@@ -921,6 +977,22 @@ class TestChrd(unittest.TestCase):
         chords = [e for e in engine.midi_out.events if e[0] == "chord_on"]
         self.assertEqual(len(chords), 1)
         self.assertEqual(chords[0][1], 0)               # canal del tracker
+        self.assertEqual(chords[0][2], (60, 63, 67))
+        self.assertEqual(engine.channels[0].acrd_notes, [60, 63, 67])
+        self.assertEqual(engine.channels[0].acrd_seq, 1)
+
+    def test_mute_no_corta_acrd(self):
+        engine = make_engine()
+        engine.midi_out = MidiCollector()
+        engine.channels[0].vocoder_out = True
+        engine.muted = {0}
+        engine.snap_mute_gains()
+        note_row(engine.project, 0, note=60, instr=0x80)
+        engine.project.cmd1[0] = "CHRD"
+        engine.project.param1[0] = 1
+        engine._process_tick()
+        chords = [e for e in engine.midi_out.events if e[0] == "chord_on"]
+        self.assertEqual(len(chords), 1)
         self.assertEqual(chords[0][2], (60, 63, 67))
 
     def test_vocoder_canal_6_activo_por_defecto(self):

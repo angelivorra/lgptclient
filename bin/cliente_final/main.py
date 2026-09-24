@@ -14,6 +14,7 @@ Protocolo de mensajes (ASCII, terminados en \\n):
   CONFIG,<delay_ms>,<debug>,<ruido>,<pantalla>
   SYNC,<server_ts_ms>
   NOTA,<server_ts_ms>,<note>,<channel>,<velocity>
+  ACRD,<server_ts_ms>,<canal>,<velocity>,<nota1>,...  <- latigazo del vocoder
   CC,<server_ts_ms>,<value>,<channel>,<controller>
   START,<server_ts_ms>
   STOP,<server_ts_ms>    <- Corta en ts+delay (mismo reloj que las notas)
@@ -91,6 +92,7 @@ from gpio_executor import GPIOExecutor
 from media_manager import MediaManager
 from display_executor import DisplayExecutor
 from event_orchestrator import EventOrchestrator
+from vocoder_neon import parse_acrd
 import timing_log   # LOG TEMPORAL de timing (quitar tras depurar)
 
 
@@ -245,7 +247,16 @@ class MIDIClient:
                 timing_log.log("NOTA_recv", note=note, ch=channel,
                                server_ts=server_ts_ms)  # LOG TEMPORAL
                 self.orchestrator.handle_nota(server_ts_ms, note, channel, velocity)
-                
+
+            elif msg_type == 'ACRD':
+                parsed = parse_acrd(parts)
+                if parsed is None:
+                    logger.warning(f"⚠️  ACRD incompleto: {line}")
+                else:
+                    server_ts_ms, _channel, velocity, notes = parsed
+                    logger.debug(f"🎤 ACRD {notes} vel {velocity}")
+                    self.orchestrator.handle_acrd(server_ts_ms, notes, velocity)
+
             elif msg_type == 'CC' and len(parts) >= 5:
                 server_ts_ms = int(parts[1])
                 value = int(parts[2])

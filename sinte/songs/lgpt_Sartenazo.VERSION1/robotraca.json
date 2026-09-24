@@ -1,10 +1,11 @@
 {
+  "fondo": "001",
+  "master": 136,
   "mute": [
     5,
     6
   ],
   "pots": {
     "pot8": "0:tempo"
-  },
-  "master": 136
+  }
 }

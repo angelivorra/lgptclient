@@ -215,6 +215,22 @@ class EventOrchestrator:
 
     # ── Handlers de eventos ───────────────────────────────────────────────────
 
+    def handle_acrd(self, server_ts_ms: int, notes: list, velocity: int):
+        """Latigazo de la pista de voz. Mismo reloj que CC/NOTA (ts + delay).
+
+        El mute no entra: el sinte manda el ACRD igual, y la pantalla
+        también. Sin note-off; el fade lo hace el propio latigazo.
+        """
+        if not self._pantalla or not notes:
+            return
+        execution_time_ms = server_ts_ms + self.base_delay_ms
+        self.scheduler.schedule_at_walltime(
+            wall_time_ms=execution_time_ms,
+            callback=self.display_executor.pulse_chord,
+            args=(list(notes), int(velocity)),
+            description=f"ACRD {notes[0]}"
+        )
+
     def handle_nota(self, server_ts_ms: int, note: int, channel: int, velocity: int):
         self.stats['notas_recibidas'] += 1
 
@@ -291,8 +307,12 @@ class EventOrchestrator:
                 self.config.get_pin_config(p).nombre.lower() for p in pins)
             if "bombo" in blob:
                 kinds.append("kick")
-            if "caja" in blob:
-                kinds.append("snare")
+            if "caja1" in blob or "caja 1" in blob:
+                kinds.append("snare1")
+            if "caja2" in blob or "caja 2" in blob:
+                kinds.append("snare2")
+            elif "caja" in blob and "snare1" not in kinds:
+                kinds.append("snare1")
             if "crash" in blob or "platillo" in blob:
                 kinds.append("crash")
         if kinds:
@@ -300,8 +320,10 @@ class EventOrchestrator:
         # Fallback: mismas notas que NOTAS.md / cliente.maleta.json
         if note in (36, 39, 41, 42, 62, 64, 66, 70):
             kinds.append("kick")
-        if note in (37, 38, 39, 43, 63, 64, 65, 67, 71):
-            kinds.append("snare")
+        if note in (37, 39, 43, 63, 64, 67, 71):
+            kinds.append("snare1")
+        if note in (38, 65, 66, 67):
+            kinds.append("snare2")
         if note in (40, 42, 43, 66, 67, 72):
             kinds.append("crash")
         return kinds

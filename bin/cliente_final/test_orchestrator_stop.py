@@ -120,6 +120,26 @@ class TestDelayedStop(unittest.TestCase):
         disp.clear_slideshow.assert_not_called()
         disp.set_slideshow.assert_called()
 
+    def test_acrd_espera_el_delay(self):
+        orch, sched, disp = _orch(delay_ms=1000)
+        orch._pantalla = True
+        orch.handle_acrd(int(time.time() * 1000), [48, 52], 110)
+        disp.pulse_chord.assert_not_called()
+        self.assertGreater(sched.get_pending_count(), 0)
+
+    def test_acrd_dispara_al_vencer(self):
+        orch, sched, disp = _orch(delay_ms=0)
+        orch._pantalla = True
+        orch.handle_acrd(int(time.time() * 1000), [48], 80)
+        _run_due(sched)
+        disp.pulse_chord.assert_called_once_with([48], 80)
+
+    def test_acrd_sin_pantalla_no_programa(self):
+        orch, sched, disp = _orch(delay_ms=0)
+        orch.handle_acrd(int(time.time() * 1000), [48], 80)
+        disp.pulse_chord.assert_not_called()
+        self.assertEqual(sched.get_pending_count(), 0)
+
     def test_start_anula_el_stop_pendiente(self):
         orch, sched, disp = _orch(delay_ms=0)
         orch.handle_stop(int(time.time() * 1000) - 50)

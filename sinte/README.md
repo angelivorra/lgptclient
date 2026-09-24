@@ -83,7 +83,7 @@ VIOLETA, MAGENTA, ROSA, BLANCO, CALIDO), **instrumento** = luz (vacío = todas,
 1 = la primera de `[luces]`…), y en FX1/FX2 `BRIL xx` (brillo), `FADE xx`
 (fundido en xx steps) y `STRB xx` (estrobo, 00 = apagado). Cada luz
 mantiene su estado hasta el siguiente cambio; STOP/fin de canción = todo
-apagado. Muteada, la pista no cambia las luces.
+apagado. El mute no corta las luces: solo calla el audio local.
 
 Hardware probado: cable Eurolite USB-DMX512 (FTDI FT232R, protocolo Open
 DMX: 250 kbaud 8N2, break + start code 0, refresco continuo a 40 fps) y

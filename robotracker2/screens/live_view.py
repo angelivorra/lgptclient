@@ -20,36 +20,47 @@ from kivy.uix.widget import Widget
 from robots import (CC_LYRIC, HIT_PADS, anim_frame_paths, anim_fps,
                     ayuda_preview_path, classify_folder, hit_label,
                     hit_pad_notes, lyric_lines, screen_label)
+from shared_visuals import HEIGHT as RIBBON_H
+from shared_visuals import WIDTH as RIBBON_W
+from shared_visuals import SPARK_CC, SPARK_VALUE, FadeBlack, FondoRibbon, SparkHit, VocoderNeon
 from screens.hit_icons import draw_kick, draw_snare
 from theme import (COLOR_BG, COLOR_BORDER, COLOR_EMPTY, COLOR_HEADER_TXT,
-                   COLOR_HIT, COLOR_MUTE_OVERLAY, COLOR_SCREEN, core_label)
+                   COLOR_HIT, COLOR_SCREEN, core_label)
 
-def _punch_dark_alpha(img):
+def _punch_dark_alpha(img, lyric=False):
     """Si el PNG es opaco, el negro/casi-negro (y el azul-oscuro de la
     rejilla tron) pasa a alpha=0 — el mismo criterio que
-    `DisplayExecutor._composite_rgb565` en el dispositivo."""
+    `DisplayExecutor._composite_rgb565` en el dispositivo.
+
+    En letras el halo oscuro del glow taparía el fondo: se anula también
+    la cola dim (rgb_sum < 70), igual que ``lyric_render``.
+    """
     import numpy as np
     arr = np.array(img)
-    if arr[:, :, 3].min() < 255:
-        return img
-    r5 = arr[:, :, 0].astype(np.uint16) >> 3
-    g6 = arr[:, :, 1].astype(np.uint16) >> 2
-    b5 = arr[:, :, 2].astype(np.uint16) >> 3
-    lum = r5 + g6 + b5
-    transparent = (lum <= 6) | ((b5 > r5) & (lum <= 25))
+    r = arr[:, :, 0].astype(np.uint16)
+    g = arr[:, :, 1].astype(np.uint16)
+    b = arr[:, :, 2].astype(np.uint16)
+    if lyric:
+        transparent = (r + g + b) < 160
+    else:
+        if arr[:, :, 3].min() < 255:
+            return img
+        r5, g6, b5 = r >> 3, g >> 2, b >> 3
+        lum = r5 + g6 + b5
+        transparent = (lum <= 6) | ((b5 > r5) & (lum <= 25))
     arr[:, :, 3] = np.where(transparent, 0, 255)
     from PIL import Image as _PIL
     return _PIL.fromarray(arr, 'RGBA')
 
 
-def _load_rgba_texture(path, punch_dark=False):
+def _load_rgba_texture(path, punch_dark=False, punch_lyric=False):
     """Carga un PNG como textura RGBA preservando el canal alpha (via PIL)."""
     try:
         from PIL import Image as _PIL
         from kivy.graphics.texture import Texture as _Tex
         img = _PIL.open(str(path)).convert('RGBA')
-        if punch_dark:
-            img = _punch_dark_alpha(img)
+        if punch_lyric or punch_dark:
+            img = _punch_dark_alpha(img, lyric=punch_lyric)
         tex = _Tex.create(size=(img.width, img.height), colorfmt='rgba')
         tex.blit_buffer(img.tobytes(), colorfmt='rgba', bufferfmt='ubyte')
         tex.flip_vertical()
@@ -71,6 +82,7 @@ _PAD_DRAW = {62: lambda cx, cy, s, c: draw_kick(cx, cy, s, c),
              63: lambda cx, cy, s, c: draw_snare(cx, cy, s, c, hoop=False),
              65: lambda cx, cy, s, c: draw_snare(cx, cy, s, c, hoop=True)}
 _PAD_NAME = {62: "BOMBO", 63: "CAJA1", 65: "CAJA2"}
+_PAD_RIBBON = {62: "kick", 63: "snare1", 65: "snare2"}
 LIGHT_W = dp(96)          # columna de cada foco a los lados de la pantalla
 
 
@@ -111,6 +123,14 @@ class LiveGrid(Widget):
         self._anim_elapsed: float = 0.0
         self._anim_interval: float = 1.0 / 30
         self.lights: list = []   # DmxOut.snapshot(): (nombre, rgb, dim, strobe, color)
+        self.ribbon = FondoRibbon()
+        self.neon = VocoderNeon()
+        self.spark = SparkHit()
+        self.fade = FadeBlack()
+        self._spark_tex: dict = {}
+        self._spark_on = False
+        self._bpm = 180.0
+        self._acrd_seq = None
         self.bind(pos=self._redraw, size=self._redraw)
 
     def set_lights(self, states):
@@ -138,6 +158,11 @@ class LiveGrid(Widget):
         self._fondo_elapsed = 0.0
         self._images_dir = None
         self._clear_anim()
+        self.ribbon = FondoRibbon()
+        self.neon = VocoderNeon()
+        self.spark.clear()
+        self.fade.clear()
+        self._acrd_seq = None
         self._redraw()
 
     def set_fondo(self, fondo_dir, images_dir=None, loop_s=1.0):
@@ -175,24 +200,51 @@ class LiveGrid(Widget):
             self._fondo_interval = max(0.05, float(loop_s) / n)
         self._redraw()
 
+    def set_bpm(self, bpm, base=None):
+        """`base` es el tempo de la canción; `bpm` ya lleva el knob."""
+        self._bpm = bpm if bpm and bpm > 0 else 180.0
+        self.ribbon.set_bpm(bpm, base=base)
+
     def set_from(self, pb):
         """Copia RobotPlayback; destella pads si hay hit_note este tick."""
+        started = pb.playing and not self.playing
         screen = (pb.cc, pb.value)
         changed = ((self.cc, self.value) != screen
                    or self.muted != pb.muted
                    or self.note != pb.note
                    or self.playing != pb.playing)
+        if started:
+            self.ribbon.reset_beat()
         self.cc, self.value = pb.cc, pb.value
         self.note = pb.note
         self.playing = pb.playing
         self.muted = pb.muted
         if screen != self._loaded:
-            self._load_preview()
+            if self.playing and screen == (SPARK_CC, SPARK_VALUE):
+                # La 01 no es el 404: chispazo, y fundido de 8 filas.
+                self.spark.trigger()
+                self.fade.start(self._bpm)
+                self._loaded = screen
+            else:
+                self._load_preview()
             changed = True
         if pb.hit_note is not None:
             self.hit(pb.hit_note)
             changed = True
         if changed:
+            self._redraw()
+
+    def set_vocoder(self, seq, notes, vel):
+        """Latigazo al avanzar la pista de voz. El primer seq solo engancha
+        (no dispara el acorde que ya estaba sonando)."""
+        if self._acrd_seq is None:
+            self._acrd_seq = seq
+            return
+        if seq == self._acrd_seq:
+            return
+        self._acrd_seq = seq
+        if notes:
+            self.neon.pulse(notes, vel or 100)
             self._redraw()
 
     def _clear_anim(self):
@@ -239,16 +291,10 @@ class LiveGrid(Widget):
             # thumb, cae a pintar la línea del banco (mismo criterio que
             # el navegador: se puede elegir igual).
             if self.cc == CC_LYRIC:
-                path = ayuda_preview_path(self.ayuda_dir, self.cc, self.value)
-                if path is not None:
-                    key = f"lyric:{path}"
-                    if key == self._preview_path:
-                        return
-                    if key not in self._img_cache:
-                        self._img_cache[key] = _load_rgba_texture(
-                            path, punch_dark=True)
-                    self._preview_path = key
-                    self._preview_tex = self._img_cache[key]
+                tex = self._lyric_overlay_texture(self.value)
+                if tex is not None:
+                    self._preview_path = f"lyric-render:{self.value}"
+                    self._preview_tex = tex
                     self._lyric_text = None
                     return
                 if self._images_dir:
@@ -257,6 +303,16 @@ class LiveGrid(Widget):
                     self._lyric_text = lines[idx] if idx < len(lines) else f"TXT {self.value:03d}"
                     self._preview_tex = None
                     self._preview_path = None
+                    return
+                path = ayuda_preview_path(self.ayuda_dir, self.cc, self.value)
+                if path is not None:
+                    key = f"lyric:{path}"
+                    if key not in self._img_cache:
+                        self._img_cache[key] = _load_rgba_texture(
+                            path, punch_lyric=True)
+                    self._preview_path = key
+                    self._preview_tex = self._img_cache[key]
+                    self._lyric_text = None
                     return
             if self._images_dir:
                 kind = classify_folder(self._images_dir / f"{self.cc:03d}")
@@ -296,9 +352,40 @@ class LiveGrid(Widget):
             self._img_cache[key] = tex
         self._preview_tex = self._img_cache[key]
 
+    def _lyric_overlay_texture(self, value):
+        """Letras con el mismo renderer de las robotas; el negro es alpha.
+
+        No usa la miniatura de ayuda (a menudo trae el fondo baked y tapa
+        el slideshow).
+        """
+        if not self._images_dir or value is None:
+            return None
+        key = f"lyric-render:{value}"
+        if key in self._img_cache:
+            return self._img_cache[key]
+        tex = None
+        try:
+            from lyric_render import find_fuente, render_lyric_rgba
+            from kivy.graphics.texture import Texture as _Tex
+            font = find_fuente(self._images_dir / "002")
+            lines = lyric_lines(self._images_dir)
+            if font is not None and 0 <= value < len(lines):
+                img = _punch_dark_alpha(
+                    render_lyric_rgba(lines[value], font), lyric=True)
+                tex = _Tex.create(size=img.size, colorfmt="rgba")
+                tex.blit_buffer(img.tobytes(), colorfmt="rgba", bufferfmt="ubyte")
+                tex.flip_vertical()
+        except Exception:
+            tex = None
+        self._img_cache[key] = tex
+        return tex
+
     def hit(self, note):
         for n in hit_pad_notes(note):
             self.pulse[n] = 1.0
+            kind = _PAD_RIBBON.get(n)
+            if kind:
+                self.ribbon.pulse(kind)
 
     def tick_pulse(self, dt):
         decay = dt * 4.0
@@ -307,12 +394,21 @@ class LiveGrid(Widget):
             if self.pulse[n] > 0:
                 self.pulse[n] = max(0.0, self.pulse[n] - decay)
                 alive = True
+        spark_on = self.spark.pending() > 0
+        fade_on = self.fade.pending()
+        if self.neon.level() > 0.03 or spark_on or fade_on:
+            alive = True
+            self._spark_on = spark_on
+        elif self._spark_on:
+            self._spark_on = False
+            alive = True
         if self._fondo_textures:
+            self.ribbon.step(time.time())
             self._fondo_elapsed += dt
             new_idx = int(self._fondo_elapsed / self._fondo_interval) % len(self._fondo_textures)
             if new_idx != self._fondo_idx:
                 self._fondo_idx = new_idx
-                alive = True
+            alive = True
         if self._anim_textures:
             self._anim_elapsed += dt
             new_idx = int(self._anim_elapsed / self._anim_interval) % len(self._anim_textures)
@@ -379,7 +475,7 @@ class LiveGrid(Widget):
             tag = "----"
             if self.cc is not None and self.value is not None:
                 tag = screen_label(self.cc, self.value)
-            ink = COLOR_SCREEN if not self.muted else COLOR_EMPTY
+            ink = COLOR_SCREEN
             self._text_center(px, py - dp(28), pw, tag, ink,
                               h=dp(28), font_size=FONT)
             hit_txt = hit_label(self.note) if self.note is not None else "----"
@@ -399,6 +495,8 @@ class LiveGrid(Widget):
                 Color(1, 1, 1, 1)
                 Rectangle(texture=tex, size=(dw, dh),
                           pos=(px + (pw - dw) / 2, py + (ph - dh) / 2))
+            self._draw_ribbon(px, py, pw, ph)
+        self._draw_neon(px, py, pw, ph)
         if self._lyric_text is not None:
             tex = self._lyric_texture(self._lyric_text, FONT_LYRIC)
             tw, th = tex.size
@@ -425,12 +523,125 @@ class LiveGrid(Widget):
             Color(1, 1, 1, 1)
             Rectangle(texture=self._preview_tex, size=(dw, dh),
                       pos=(px + (pw - dw) / 2, py + (ph - dh) / 2))
-        if self.muted:
-            Color(*COLOR_MUTE_OVERLAY)
+        self._draw_spark(px, py, pw, ph)
+        a = self.fade.alpha()
+        if a > 0.0:
+            Color(0.0, 0.0, 0.0, a)
             Rectangle(pos=(px, py), size=(pw, ph))
         ScissorPop()
         Color(*COLOR_BORDER)
         Line(rectangle=(px, py, pw, ph), width=1.2)
+
+    def _spark_texture(self, color, index):
+        frames = self._spark_tex.get(color)
+        if frames is None:
+            from kivy.graphics.texture import Texture as _Tex
+            frames = []
+            for i in range(self.spark.frames):
+                packed = self.spark.frame_rgba(i, color)
+                if packed is None:
+                    break
+                raw, w, h = packed
+                tex = _Tex.create(size=(w, h), colorfmt="rgba")
+                tex.blit_buffer(raw, colorfmt="rgba", bufferfmt="ubyte")
+                tex.flip_vertical()
+                frames.append(tex)
+            self._spark_tex[color] = frames
+        if index < 0 or index >= len(frames):
+            return None
+        return frames[index]
+
+    def _draw_spark(self, px, py, pw, ph):
+        hits = self.spark.active_hits()
+        if not hits:
+            return
+        sx = pw / RIBBON_W
+        sy = ph / RIBBON_H
+        for index, x, y, color in hits:
+            tex = self._spark_texture(color, index)
+            if tex is None:
+                continue
+            tw, th = tex.size
+            Color(1, 1, 1, 1)
+            Rectangle(
+                texture=tex,
+                size=(tw * sx, th * sy),
+                pos=(px + x * sx, py + ph - (y + th) * sy),
+            )
+
+    def _draw_neon(self, px, py, pw, ph):
+        """Mismos márgenes que el framebuffer: índice 0 = borde exterior."""
+        cols = self.neon.columns()
+        if cols is None:
+            return
+        sx = pw / RIBBON_W
+        for i, (r, g, b, a) in enumerate(cols):
+            a = float(a)
+            if a < 0.02:
+                break
+            Color(float(r), float(g), float(b), a)
+            w = sx + 0.6
+            Rectangle(pos=(px + i * sx, py), size=(w, ph))
+            Rectangle(pos=(px + pw - (i + 1) * sx, py), size=(w, ph))
+
+    def _draw_ribbon(self, px, py, pw, ph):
+        """Línea de reposo + figuras (mismo ribbon que las robotas)."""
+        ys = self.ribbon.path_ys()
+        sx = pw / RIBBON_W
+        sy = ph / RIBBON_H
+        figs = self.ribbon.snapshot_figures()
+
+        def fb_to_kv(x, y):
+            return px + x * sx, py + ph - float(y) * sy
+
+        def in_gap(x):
+            for fig in figs:
+                half = fig["side"] / 2.0
+                if half >= 0.5 and fig["x"] - half <= x <= fig["x"] + half:
+                    return True
+            return False
+
+        def stroke(points):
+            if len(points) < 4:
+                return
+            beat = self.ribbon.beat_pulse()
+            Color(0.0, 0.90, 1.0, 0.16 + 0.22 * beat)
+            Line(points=points, width=2.8 + 2.2 * beat, cap="round", joint="round")
+            Color(0.0, 0.90, 1.0, 0.42 + 0.38 * beat)
+            Line(points=points, width=1.6 + 1.4 * beat, cap="round", joint="round")
+            Color(0.75, 1.0, 1.0, 0.80 + 0.20 * beat)
+            Line(points=points, width=1.05 + 0.55 * beat, cap="round", joint="round")
+
+        seg = []
+        for x, y in enumerate(ys):
+            if in_gap(x):
+                stroke(seg)
+                seg = []
+                continue
+            seg.extend(fb_to_kv(x, y))
+        stroke(seg)
+
+        for fig in figs:
+            side = fig["side"]
+            if side < 1.0:
+                continue
+            cx, cy = fig["x"], fig["y"]
+            x0, y_top = fb_to_kv(cx - side / 2.0, cy - side / 2.0)
+            x1, y_bot = fb_to_kv(cx + side / 2.0, cy + side / 2.0)
+            rx, ry = min(x0, x1), min(y_top, y_bot)
+            rw, rh = abs(x1 - x0), abs(y_bot - y_top)
+            fr, fg, fb = [c / 255.0 for c in fig["fill"]]
+            Color(fr, fg, fb, 1)
+            if fig["shape"] == "circle":
+                Ellipse(pos=(rx, ry), size=(rw, rh))
+            else:
+                Rectangle(pos=(rx, ry), size=(rw, rh))
+            or_, og, ob = [c / 255.0 for c in fig["outline"]]
+            Color(or_, og, ob, 1)
+            if fig["shape"] == "circle":
+                Line(ellipse=(rx, ry, rw, rh), width=1.4)
+            else:
+                Line(rectangle=(rx, ry, rw, rh), width=1.4)
 
     def _draw_lights(self, px, py, pw, ph):
         """Focos PAR a los lados de la pantalla: la 1ª a la izquierda, la 2ª

@@ -104,8 +104,8 @@ def glch_unpack(param: int) -> tuple[int, int]:
 # de amplitud.
 DECLICK_SECONDS = 0.004
 # Tope de aceleración del knob de tempo: +12% son 125->140 / 180->202 BPM.
-# Si se cambia, reajustar FONDO_BPM_CURVE en bin/cliente_final/display_executor.py
-# (velocidad del fondo de las robotas con el knob arriba).
+# Si se cambia, reajustar ribbon.BPM_CURVE (FONDO_BPM_CURVE en
+# display_executor): fondo y línea de las robotas comparten esa curva.
 TEMPO_BOOST_MAX = 0.12
 
 # Compensación de presencia tras los FX de tono (no los `after_presence`
@@ -446,12 +446,18 @@ class Voice:
         ramp_samples = self.declick if ss == 0 else ss * 4.0 * self._samples_per_tick
         self.vol_kinc = (target - self.vol_cur) * KRATE / ramp_samples
         self.vol_target = target
+        # VOLM con volumen anula un FADE en curso: si no, la voz se queda
+        # `releasing` a volumen alto y ningún corte posterior la apaga.
+        if target > 0.5:
+            self.releasing = False
 
     def start_release(self):
         """Declick al robar la voz: fundido rápido a 0 (~4 ms) en vez de
-        cortar en seco. La voz se apaga sola al llegar a silencio."""
-        if self.releasing:
-            return
+        cortar en seco. La voz se apaga sola al llegar a silencio.
+
+        Se reimpone aunque ya hubiera un FADE lento. Si no, un VOLM posterior
+        puede dejar `releasing` a True con el volumen arriba y stop/pause
+        no consiguen callar la nota."""
         self.releasing = True
         self.vol_target = 0.0
         self.vol_kinc = -self.vol_cur * KRATE / self.declick
@@ -1478,6 +1484,7 @@ class Channel:
         "groove", "g_pos", "g_ticks",
         "fx_amounts", "fx_objs", "fx_gain", "fx_presence", "fx_mix",
         "vocoder_out", "mute_gain", "arp_root", "arp_param", "glitch",
+        "acrd_notes", "acrd_vel", "acrd_seq",
     )
 
     @property
@@ -1554,8 +1561,13 @@ class Channel:
         # nombre -> 0-1, ausencia = 1.0 (100% wet, igual que sin esto)
         self.fx_mix: dict[str, float] = {}
         # Pista de voz -> vocoder: canal 6 es fijo (como las robotas en 7).
-        # El mute solo silencia el audio local; ACRD sale igual.
+        # El mute solo silencia el audio local; ACRD/NOTA/CC/DMX salen igual.
         self.vocoder_out = idx == VOCODER_TRACK
+        # Último ACRD de esta pista (raíz primero). `acrd_seq` sube en cada
+        # disparo para que el LIVE reaccione sin repetir el frame.
+        self.acrd_notes: list[int] = []
+        self.acrd_vel = 0
+        self.acrd_seq = 0
         # Ganancia de mute (0-1). El mute en vivo rampa ~4 ms para no
         # chasquear; al cargar/arrancar se ajusta de golpe (snap_mute_gains).
         self.mute_gain = 1.0
@@ -1674,7 +1686,7 @@ class Engine:
         self.events: queue.SimpleQueue = queue.SimpleQueue()
         self.unsupported_cmds: set[str] = set()
         self._rng = random.Random()
-        self.muted: set[int] = set()    # canales silenciados (índice 0-8)
+        self.muted: set[int] = set()    # solo audio local; eventos salen igual
         # Delay de audio POR CANAL (segundos): el secuenciador y los
         # eventos MIDI van en tiempo real (t=0); el audio sale retrasado.
         # La modulación del controlador (vol/pan/drive/LP) se aplica a la
@@ -2290,7 +2302,15 @@ class Engine:
                 else:
                     self.playing = True
             elif kind == "pause":
+                # El secuenciador se congela, pero un sample largo (o un loop)
+                # seguiría sonando hasta agotarse: la pausa corta las voces
+                # con declick, igual que el stop. El audio ya metido en el
+                # delay de canal sale igual (va alineado con los eventos
+                # que los clientes ya tienen encolados).
                 self.playing = False
+                for ch in self.channels:
+                    self._cut_voice(ch)
+                    self._midi_stop_note(ch)
             elif kind == "stop":
                 self.playing = False
                 self.finished = True
@@ -2694,13 +2714,17 @@ class Engine:
             self._midi_start_notes(ch, mdef, midi_notes)
             ch.kind = "midi"
         ch.last_note = notes[0]
-        if ch.vocoder_out and self.midi_out is not None:
+        if ch.vocoder_out:
             vel = ch.midi_vel if ch.midi_vel is not None else 100
             if ch.arp_param is not None:
                 acrd = notes
             else:
                 acrd = self._vocoder_notes(row, root)
-            self.midi_out.chord_on(ch.idx, acrd, vel)
+            ch.acrd_notes = list(acrd)
+            ch.acrd_vel = int(vel)
+            ch.acrd_seq += 1
+            if self.midi_out is not None:
+                self.midi_out.chord_on(ch.idx, acrd, vel)
         if clean:
             table = idef.table if idef is not None else mdef.table
             if table >= 0 and table in self.project.tables:
@@ -2856,10 +2880,10 @@ class Engine:
 
     def _trigger_lights(self, ch: Channel, row: int):
         """Step de la pista LUCES -> evento DMX a la hora audible (ver
-        lights.py). Nunca suena ni dispara instrumentos. Muteada = las
-        luces se quedan como están."""
+        lights.py). Nunca suena ni dispara instrumentos. El mute no las
+        corta: solo calla el audio local."""
         out = self.lights_out
-        if out is None or ch.idx in self.muted:
+        if out is None:
             return
         p = self.project
         note = p.notes[row]
@@ -2925,6 +2949,21 @@ class Engine:
             self.unsupported_cmds.add(cmd)
 
     def _instrument_command(self, ch: Channel, cmd: str, param: int):
+        if cmd == "MDCC" and ch.kind != "sample":
+            # Pantalla: también en filas sin nota. Si no, el 3-2-1 y los
+            # chispazos (instrumento vacío) no salen hasta que suena un golpe.
+            control = (param >> 8) & 0x7F
+            value = param & 0x7F
+            if self.midi_out is not None:
+                mch = ch.midi_def.channel if ch.midi_def is not None else 0
+                self.midi_out.cc(mch, control, value)
+            if control == 2 and 0 <= value < len(self.lyric_lines):
+                line = self.lyric_lines[value]
+                if line.strip():
+                    due = (self._samples_rendered
+                           + int(self.LYRIC_DELAY_S * self.sr))
+                    self._lyric_queue.append((due, line))
+            return
         if ch.kind == "sample" and ch.voices:
             for i, v in enumerate(ch.voices):
                 if cmd == "VOLM":
@@ -2950,22 +2989,6 @@ class Engine:
             mch = ch.midi_def.channel
             if cmd == "VOLM" and self.midi_out is not None:
                 self.midi_out.cc(mch, 7, (param // 2) & 0x7F)
-            elif cmd == "MDCC":
-                control = (param >> 8) & 0x7F
-                value = param & 0x7F
-                if self.midi_out is not None:
-                    self.midi_out.cc(mch, control, value)
-                # Banco de textos (control=2, ver __init__/lyric_lines): la
-                # letra se actualiza en local aunque no haya midi_out — no
-                # depende de si se está emitiendo por TCP. Encolada con
-                # LYRIC_DELAY_S: se aplica en render() cuando ese instante
-                # llegue a t+1, no ahora mismo (t=0).
-                if control == 2 and 0 <= value < len(self.lyric_lines):
-                    line = self.lyric_lines[value]
-                    if line.strip():
-                        due = (self._samples_rendered
-                               + int(self.LYRIC_DELAY_S * self.sr))
-                        self._lyric_queue.append((due, line))
             elif cmd == "MDPG" and self.midi_out is not None:
                 self.midi_out.program_change(mch, param & 0x7F)
             elif cmd == "MVEL":

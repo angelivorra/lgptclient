@@ -141,6 +141,58 @@ def test_live_grid_combo_pulse():
     print("  LiveGrid.hit combo enciende pads OK")
 
 
+def test_live_grid_ribbon_comparte_el_modulo_de_las_robotas():
+    from kivy.app import App
+    from screens.live_view import LiveGrid
+    from shared_visuals import FondoRibbon
+
+    class _App(App):
+        def build(self):
+            return None
+
+    _App().build()
+    g = LiveGrid()
+    assert isinstance(g.ribbon, FondoRibbon)
+    g.hit(62)
+    assert g.ribbon.env["kick"] > 0.9
+    g.set_vocoder(3, [40], 100)          # engancha, no dispara historia
+    assert g.neon.level() == 0.0
+    g.set_vocoder(4, [48], 127)
+    assert g.neon.level() > 0.9
+    print("  LIVE usa el mismo FondoRibbon que las robotas OK")
+
+
+def test_live_grid_01_es_chispazo():
+    from types import SimpleNamespace
+    from kivy.app import App
+    from screens.live_view import LiveGrid
+    from shared_visuals import SPARK_CC, SPARK_VALUE
+
+    class _App(App):
+        def build(self):
+            return None
+
+    _App().build()
+    g = LiveGrid()
+    g._preview_path = "foto"
+    g._preview_tex = None
+    g._loaded = (1, 30)
+    g.cc, g.value = 1, 30
+    pb = SimpleNamespace(cc=SPARK_CC, value=SPARK_VALUE, note=None,
+                         playing=True, muted=False, hit_note=None)
+    g.set_from(pb)
+    assert g._preview_path == "foto"
+    assert g.spark.pending() == 1
+    assert g.fade.pending()
+    g.set_from(pb)
+    assert g.spark.pending() == 1, "el hold de la 01 no dispara otro"
+
+    pb.value = 30
+    g.set_from(pb)
+    assert g.spark.pending() == 1, "la imagen nueva no apaga el chispazo"
+    print("  LIVE: 01 estampa chispazo y no quita la imagen OK")
+
+
 if __name__ == "__main__":
     test_hit_pad_notes()
     test_mdcc_hold_and_hit()
@@ -148,4 +200,6 @@ if __name__ == "__main__":
     test_mute_flag()
     test_anim_helpers()
     test_live_grid_combo_pulse()
+    test_live_grid_ribbon_comparte_el_modulo_de_las_robotas()
+    test_live_grid_01_es_chispazo()
     print("TODOS LOS TESTS OK")

@@ -87,7 +87,8 @@ def _survive_composite(rgba: np.ndarray) -> np.ndarray:
     slideshow). Halo cian lum≤25 se sube para que no lo coma la rejilla."""
     rgb_sum = (rgba[:, :, 0].astype(np.uint16)
                + rgba[:, :, 1] + rgba[:, :, 2])
-    rgba[rgb_sum < 70] = (0, 0, 0, 255)
+    # Umbral alto: si no, el glow deja una pastilla que tapa el slideshow.
+    rgba[rgb_sum < 160] = (0, 0, 0, 255)
 
     r5 = rgba[:, :, 0].astype(np.uint16) >> 3
     g6 = rgba[:, :, 1].astype(np.uint16) >> 2
@@ -101,11 +102,12 @@ def _survive_composite(rgba: np.ndarray) -> np.ndarray:
 
 
 def render_lyric_rgba(text: str, font_path: Path,
-                      width: int = SCREEN_W, height: int = SCREEN_H) -> Image.Image:
+                      width: int = SCREEN_W, height: int = SCREEN_H,
+                      max_h_frac: float = 0.70) -> Image.Image:
     """Tilt Neon hueco a tamaño de título, glow de tubo, fondo negro = slideshow."""
     palabra = text
     max_w = width * 0.96
-    max_h = height * 0.70
+    max_h = height * max_h_frac
     font, _font_size, sw = _fit_font(font_path, palabra, max_w, max_h)
 
     canvas = Image.new("RGBA", (width, height), (0, 0, 0, 255))
@@ -141,6 +143,68 @@ def render_lyric_rgba(text: str, font_path: Path,
         canvas, _texto(size, xy, palabra, font, _mezcla(color, 0.72), core_w))
 
     return Image.fromarray(_survive_composite(np.array(canvas)), "RGBA")
+
+
+# Cuenta atrás 3-2-1. Una fila LGPT a groove 6 son 15/BPM segundos
+# (6 ticks × 2.5/BPM). A 180 BPM, 4 filas = 1/3 s. 10 frames a 30 fps
+# caben justo en ese hueco: el render de la Pi ya va a 30 y no da para más.
+COUNTDOWN_FPS = 30
+COUNTDOWN_FRAMES = 10
+COUNTDOWN_BLOCK = 32
+# Frames enteros antes de empezar a caer. El hueco sigue siendo 4 filas;
+# sin esta espera el número se deshace en el primer frame.
+COUNTDOWN_HOLD = 7
+# Slots que gobiernoIA (y Bulebule) disparan al empezar: frase cada 4 filas.
+COUNTDOWN_SLOTS = {"3": "005", "2": "002", "1": "006", "0": "007"}
+
+
+def _ink_mask(arr: np.ndarray) -> np.ndarray:
+    return (arr[:, :, 0].astype(np.uint16)
+            + arr[:, :, 1] + arr[:, :, 2]) > 0
+
+
+def _clear_background(arr: np.ndarray) -> np.ndarray:
+    """El negro del neón es el slideshow: alpha 0, no una pastilla opaca."""
+    out = arr.copy()
+    clear = ~_ink_mask(out)
+    out[clear] = (0, 0, 0, 0)
+    return out
+
+
+def countdown_frames(text: str, font_path: Path,
+                     n: int = COUNTDOWN_FRAMES,
+                     block: int = COUNTDOWN_BLOCK,
+                     hold: int = COUNTDOWN_HOLD,
+                     width: int = SCREEN_W,
+                     height: int = SCREEN_H) -> list:
+    """Número en el mismo neón que las letras. Se queda entero `hold`
+    frames y luego los bloques de `block` px se apagan. El fondo queda
+    con alpha 0. El último frame está vacío."""
+    base = _clear_background(np.array(render_lyric_rgba(
+        text, font_path, width, height, max_h_frac=0.85)))
+    ink = _ink_mask(base)
+    ys, xs = np.where(ink)
+    keys = sorted({(int(x) // block, int(y) // block) for x, y in zip(xs, ys)})
+    rng = random.Random(text)
+    rng.shuffle(keys)
+    hold = max(1, min(hold, n - 1))
+
+    frames = []
+    for i in range(n):
+        if i < hold or not keys:
+            frames.append(Image.fromarray(base.copy(), "RGBA"))
+            continue
+        if i == n - 1:
+            keep_n = 0
+        else:
+            t = (i - hold + 1) / (n - hold)
+            keep_n = int(round(((1 - t) ** 2) * len(keys)))
+        frame = base.copy()
+        for bx, by in keys[keep_n:]:
+            frame[by * block:(by + 1) * block,
+                  bx * block:(bx + 1) * block] = (0, 0, 0, 0)
+        frames.append(Image.fromarray(frame, "RGBA"))
+    return frames
 
 
 def rgba_to_rgb565(img: Image.Image) -> bytes:

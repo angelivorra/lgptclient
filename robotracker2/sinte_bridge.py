@@ -16,7 +16,8 @@ if str(SINTE_DIR) not in sys.path:
     sys.path.insert(0, str(SINTE_DIR))
 
 from lgpt_parser import (CHANNEL_COUNT, EXTRA_TRACK, LIGHTS_TRACK,  # noqa: E402
-                         LGPTProject, expand_song, note_byte_to_name)
+                         LGPTProject, VOCODER_TRACK, expand_song,
+                         note_byte_to_name)
 from lgpt_engine import (  # noqa: E402
     EFFECT_PRESETS, Engine, glch_pack, glch_unpack, slid_pack, slid_unpack,
 )
@@ -36,7 +37,8 @@ from midi_control import _apply_pad_volume, apply_song_config, \
     record_hw_pot_cc, save_song_cfg  # noqa: E402
 
 __all__ = ["LGPTProject", "EFFECT_PRESETS", "Engine",
-           "CHANNEL_COUNT", "EXTRA_TRACK", "LIGHTS_TRACK", "expand_song",
+           "CHANNEL_COUNT", "EXTRA_TRACK", "LIGHTS_TRACK", "VOCODER_TRACK",
+           "expand_song",
            "LIGHT_FX", "LIGHT_FX_HELP", "PALETTE", "DmxOut", "color_label",
            "color_rgb", "luz_label",
            "note_byte_to_name", "save_project",
