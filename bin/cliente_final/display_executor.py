@@ -199,7 +199,7 @@ class DisplayExecutor:
         self._overlay_image: Optional[bytes] = None
         self._idle_over_fondo = False  # idle (ojos o desconectado) sobre el slideshow
         self._shake = 0.0
-        self._shake_t = time.time()
+        self._shake_t = time.monotonic()
         
         self._render_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -427,7 +427,7 @@ class DisplayExecutor:
             self._slideshow_base_bpm = 0.0  # se fija en el primer set_bpm tras set_slideshow
             self._slideshow_transition = transition if transition in ("cut", "fade") else "cut"
             self._slideshow_fade_s = max(0.1, float(fade_s))
-            self._slideshow_start = time.time()
+            self._slideshow_start = time.monotonic()
             self._slideshow_last_idx = 0
             self._slideshow_fade_from = None
             self.ribbon.reset_tempo_base()
@@ -482,7 +482,7 @@ class DisplayExecutor:
             return
         self._overlay_gen += 1
         self._resume_gen = self._overlay_gen
-        self._scene_resume_at = time.time() + hold_s
+        self._scene_resume_at = time.monotonic() + hold_s
 
     def _resume_live_now(self):
         self._scene_resume_at = None
@@ -565,7 +565,7 @@ class DisplayExecutor:
                 # el índice salta (carrera mientras se gira el knob, marcha
                 # atrás al bajarlo). Re-anclamos start para que la fase actual
                 # sea continua y solo cambie la velocidad a partir de ahora.
-                now = time.time()
+                now = time.monotonic()
                 phase = (now - self._slideshow_start) / self._slideshow_interval
                 self._slideshow_start = now - phase * new_interval
                 logger.debug(
@@ -653,7 +653,7 @@ class DisplayExecutor:
         return images[idx]
 
     def _write_live_frame(self):
-        now = time.time()
+        now = time.monotonic()
         slideshow = self._get_slideshow_frame(now)
         if slideshow is not None:
             bg = slideshow
@@ -688,7 +688,7 @@ class DisplayExecutor:
         logger.debug("🎬 Iniciando loop de renderizado")
         
         while not self._stop_event.is_set():
-            frame_start = time.time()
+            frame_start = time.monotonic()
             
             # Si está pausado, solo dormir
             with self._state_lock:
@@ -711,7 +711,7 @@ class DisplayExecutor:
                 pass
 
             if (self._want_live and self._scene_resume_at is not None
-                    and time.time() >= self._scene_resume_at
+                    and time.monotonic() >= self._scene_resume_at
                     and self._resume_gen == self._overlay_gen):
                 self._resume_live_now()
             elif self._pending_live:
@@ -737,20 +737,25 @@ class DisplayExecutor:
                     )
                     if live_anim or idle_over or mdcc_anim:
                         if self._waiting_until:
-                            if time.time() >= self._waiting_until:
+                            if time.monotonic() >= self._waiting_until:
                                 self._animation_frame_idx = 0
                                 self._waiting_until = None
                                 self._last_frame_time = 0
                                 self._frame_accumulator = 0
                         else:
-                            current_time = time.time()
+                            current_time = time.monotonic()
                             if self._last_frame_time == 0:
                                 self._advance_animation()
                                 self._last_frame_time = current_time
                                 self._frame_accumulator = 0
                             else:
-                                self._frame_accumulator += (
-                                    current_time - self._last_frame_time)
+                                dt = current_time - self._last_frame_time
+                                # Un salto de reloj hacia atrás no debe
+                                # dejar el acumulador en negativo (animación
+                                # parada hasta que el reloj lo alcance).
+                                if dt < 0:
+                                    dt = 0.0
+                                self._frame_accumulator += dt
                                 self._last_frame_time = current_time
                                 if self._frame_accumulator >= self._animation_interval:
                                     self._advance_animation()
@@ -766,10 +771,13 @@ class DisplayExecutor:
             except Exception as e:
                 logger.error(f"❌ Error en render loop: {e}")
             
-            elapsed = time.time() - frame_start
+            # Reloj monotónico: al conectar se hace `date -s` para igualar
+            # el sinte, y un salto hacia atrás entre las dos lecturas dejaba
+            # elapsed negativo y el sleep en semanas (pantalla congelada).
+            elapsed = time.monotonic() - frame_start
             sleep_time = FRAME_INTERVAL - elapsed
             if sleep_time > 0:
-                time.sleep(sleep_time)
+                time.sleep(min(sleep_time, FRAME_INTERVAL))
         
         logger.debug("🏁 Loop de renderizado terminado")
     
@@ -797,7 +805,7 @@ class DisplayExecutor:
                 max_delay = config.max_delay
                 delay = random.uniform(min_delay, max_delay)
                 
-                self._waiting_until = time.time() + delay
+                self._waiting_until = time.monotonic() + delay
                 logger.debug(f"⏸️  Animación completa, esperando {delay:.2f}s")
             else:
                 logger.debug(f"🏁 Animación completa (no-loop)")

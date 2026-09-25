@@ -105,7 +105,7 @@ class VocoderNeon:
     def pulse(self, notes, velocity: int = 127, now: float | None = None) -> None:
         if not notes:
             return
-        now = time.time() if now is None else now
+        now = time.monotonic() if now is None else now
         v = max(0.0, min(1.0, int(velocity) / 127.0))
         color = color_for_note(int(notes[0]))
         with self._lock:
@@ -116,7 +116,7 @@ class VocoderNeon:
 
     def release(self, now: float | None = None) -> None:
         """STOP/END: el brillo que haya empieza a fundirse desde ya."""
-        now = time.time() if now is None else now
+        now = time.monotonic() if now is None else now
         with self._lock:
             if not self._on:
                 return
@@ -154,7 +154,7 @@ class VocoderNeon:
             color = self._color
             if not self._on:
                 return 0.0, color
-            now = time.time() if now is None else now
+            now = time.monotonic() if now is None else now
             age = max(0.0, now - self._born)
             amp = self._peak * math.exp(-age / TAU)
             if amp < 0.02:

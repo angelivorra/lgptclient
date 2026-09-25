@@ -136,7 +136,7 @@ class FondoRibbon:
     def pulse(self, kind: str, velocity: int = 127) -> None:
         """Nace una figura a la izquierda, tamaño 0, en ese punto de la línea."""
         v = max(0.25, min(1.0, velocity / 127.0))
-        born = self._last if self._last > 0 else time.time()
+        born = self._last if self._last > 0 else time.monotonic()
         with self._lock:
             if kind not in self.env:
                 self.env[kind] = 0.0
@@ -189,7 +189,7 @@ class FondoRibbon:
             self._base_bpm = bpm
         if bpm == self.bpm:
             return
-        now = self._last if self._last > 0 else time.time()
+        now = self._last if self._last > 0 else time.monotonic()
         if self._beat_t0 is not None:
             old_period = 60.0 / max(self.bpm, 1.0)
             phase = (now - self._beat_t0) / old_period
@@ -204,14 +204,14 @@ class FondoRibbon:
         """Alinea el pulso al instante actual (START de la canción)."""
         self._beat_t0 = (
             now if now is not None
-            else (self._last if self._last > 0 else time.time())
+            else (self._last if self._last > 0 else time.monotonic())
         )
 
     def beat_pulse(self, now: float | None = None) -> float:
         """0 en el valle, 1 en el golpe del tempo. No se hornea en el historial."""
         now = self._last if now is None else now
         if now <= 0:
-            now = time.time()
+            now = time.monotonic()
         if self._beat_t0 is None:
             self._beat_t0 = now
         period = 60.0 / max(self.bpm, 1.0)

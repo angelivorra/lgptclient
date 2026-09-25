@@ -51,7 +51,7 @@ class FadeBlack:
     def start(self, bpm: float, now: float | None = None) -> float:
         dur = fade_seconds(bpm)
         with self._lock:
-            self._born = time.time() if now is None else now
+            self._born = time.monotonic() if now is None else now
             self._dur = dur
             self._on = True
         return dur
@@ -63,7 +63,7 @@ class FadeBlack:
         with self._lock:
             if not self._on or self._dur <= 0:
                 return 0.0
-            now = time.time() if now is None else now
+            now = time.monotonic() if now is None else now
             t = (now - self._born) / self._dur
             if t >= 1.0:
                 self._on = False

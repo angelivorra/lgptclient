@@ -105,7 +105,7 @@ class SparkHit:
         x = pick.randint(0, max(0, WIDTH - w))
         y = pick.randint(0, max(0, HEIGHT - h))
         color = pick.choice(NEON_COLORS)
-        t0 = time.time() if now is None else now
+        t0 = time.monotonic() if now is None else now
         with self._lock:
             self._hits.append((t0, x, y, color))
             if len(self._hits) > 4:
@@ -118,7 +118,7 @@ class SparkHit:
     def active_hits(self, now: float | None = None
                     ) -> list[tuple[int, int, int, tuple[int, int, int]]]:
         """(frame, x, y, color) de los que siguen en pantalla."""
-        now = time.time() if now is None else now
+        now = time.monotonic() if now is None else now
         with self._lock:
             live = []
             out = []
@@ -152,7 +152,7 @@ class SparkHit:
         return int((now - t0) * SPARK_FPS)
 
     def blit_rgb565(self, frame: bytes, now: float | None = None) -> bytes:
-        now = time.time() if now is None else now
+        now = time.monotonic() if now is None else now
         if len(frame) != WIDTH * HEIGHT * 2 or self.frames == 0:
             return frame
         with self._lock:
