@@ -251,10 +251,13 @@ class DmxOut:
 
     def _send(self, levels: bytes):
         ser = self._ser
+        # El break tiene que durar más que el lote USB del FTDI: con 120 µs
+        # el chip no llega a sacarlo y el PAR ignora la trama. 2 ms sigue
+        # dentro del DMX (mínimo 88 µs) y cabe en el refresco de 40 fps.
         ser.break_condition = True
-        time.sleep(0.00012)                  # break >= 88 us
+        time.sleep(0.002)
         ser.break_condition = False
-        time.sleep(0.000012)                 # mark after break >= 8 us
+        time.sleep(0.0001)                   # mark after break >= 8 us
         ser.write(b"\x00" + levels)
         ser.flush()
 
@@ -284,7 +287,20 @@ class DmxOut:
             self._stop.wait(max(0.0, period - (time.monotonic() - t0)))
 
 
+def _set_low_latency(port: str):
+    """El FT232 sale con latency_timer=16 ms y agrupa el break con los
+    datos. 1 ms es lo que usa Open DMX. Lo deja puesto la regla udev;
+    si el proceso puede escribir el sysfs, lo refuerza al abrir."""
+    path = f"/sys/bus/usb-serial/devices/{port.rsplit('/', 1)[-1]}/latency_timer"
+    try:
+        with open(path, "w", encoding="ascii") as f:
+            f.write("1\n")
+    except OSError:
+        pass
+
+
 def _open_serial(port: str):
     import serial                               # pyserial (opcional)
+    _set_low_latency(port)
     return serial.Serial(port, baudrate=250000, bytesize=8, parity="N",
                          stopbits=2, timeout=0, write_timeout=0.5)

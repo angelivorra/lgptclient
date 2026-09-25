@@ -87,6 +87,24 @@
       - "--exclude=*"
   register: textos_sync
 
+# El cable Eurolite USB-DMX512 es un FT232. Con el latency_timer de fábrica
+# (16 ms) el break del Open DMX no sale a la línea y los PAR no responden.
+- name: Regla udev del cable DMX (latency 1 ms)
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/udev/rules.d/99-lgpt-dmx.rules
+    mode: "0644"
+    content: |
+      # Open DMX (Eurolite USB-DMX512, FT232 0403:6001).
+      ACTION=="add", SUBSYSTEM=="usb-serial", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTR{latency_timer}="1"
+  register: dmx_udev
+
+- name: Aplicar la regla del cable DMX
+  become: true
+  ansible.builtin.shell: udevadm control --reload-rules && udevadm trigger --subsystem-match=usb-serial --action=add
+  when: dmx_udev.changed
+  changed_when: true
+
 # ── Entorno del player (sinte/) ───────────────────────────────────────────
 - name: Check whether the sinte venv already exists
   ansible.builtin.stat:
