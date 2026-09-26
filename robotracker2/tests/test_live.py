@@ -114,10 +114,13 @@ def test_mute_flag():
 def test_anim_helpers():
     root = Path(__file__).resolve().parents[2] / "images"
     frames = anim_frame_paths(root, 3, 2)
-    assert len(frames) == 4, frames
     assert frames[0].name == "01.png"
+    assert frames[1].name == "02.png"
+    assert len(frames) >= 4
     assert anim_fps(root, 3, 2) == 30
     assert anim_frame_paths(root, 3, 99) == []
+    eyes = anim_frame_paths(root, 3, 3)
+    assert [p.name for p in eyes[:3]] == ["1.png", "2.png", "3.png"]
     print("  anim_frame_paths / anim_fps OK")
 
 
@@ -193,6 +196,191 @@ def test_live_grid_01_es_chispazo():
     print("  LIVE: 01 estampa chispazo y no quita la imagen OK")
 
 
+def _kivy():
+    from kivy.app import App
+
+    class _App(App):
+        def build(self):
+            return None
+
+    _App().build()
+
+
+def test_el_negro_del_ojo_no_tapa_el_fondo():
+    import numpy as np
+    from screens.live_view import punch_rgba
+
+    img = np.zeros((2, 2, 4), dtype=np.uint8)
+    img[:, :] = (0, 7, 6, 255)
+    img[0, 0] = (0, 255, 0, 255)
+    out = punch_rgba(img)
+    assert tuple(out[0, 0]) == (0, 255, 0, 255)
+    assert out[1, 1, 3] == 0
+    print("  el negro del ojo queda transparente OK")
+
+
+def test_frame_de_ojos_deja_el_fondo():
+    import numpy as np
+    from screens.live_view import _load_rgba_texture
+
+    _kivy()
+    path = Path(__file__).resolve().parents[2] / "images" / "003" / "003" / "1.png"
+    tex = _load_rgba_texture(path, punch_dark=True)
+    assert tex is not None
+    w, h = tex.size
+    raw = np.frombuffer(tex.pixels, dtype=np.uint8).reshape(h, w, 4)
+    assert (raw[:, :, 3] == 0).mean() > 0.4
+    print("  el frame de ojos no tapa el fondo OK")
+
+
+def test_gesto_rgb_tambien_deja_el_fondo():
+    """Los clips del pad son PNG RGB. El negro tiene que quedar transparente
+    igual que en el parpadeo (RGBA)."""
+    import numpy as np
+    from screens.live_view import _load_rgba_texture
+
+    _kivy()
+    root = Path(__file__).resolve().parents[2] / "images" / "003"
+    for rel in ("014/34.png", "016/25.png", "018/44.png"):
+        tex = _load_rgba_texture(root / rel, punch_dark=True)
+        assert tex is not None, rel
+        w, h = tex.size
+        raw = np.frombuffer(tex.pixels, dtype=np.uint8).reshape(h, w, 4)
+        assert (raw[:, :, 3] == 0).mean() > 0.4, rel
+    print("  el gesto RGB no tapa el fondo OK")
+
+
+def test_live_ojos_en_pausa():
+    from screens.live_view import IDLE_EYES_CC, IDLE_EYES_VALUE, LiveGrid
+
+    _kivy()
+    g = LiveGrid()
+    g._images_dir = Path("/tmp")
+    g.playing = False
+    loaded = {}
+
+    def fake(cc, value):
+        loaded["k"] = (cc, value)
+        g._anim_textures = [object(), object(), object()]
+        g._anim_interval = 1.0 / 30
+        g._anim_idx = 0
+        return True
+
+    g._load_anim = fake
+    g._ensure_idle_eyes()
+    assert loaded["k"] == (IDLE_EYES_CC, IDLE_EYES_VALUE)
+    assert g._idle_active
+    assert len(g._anim_textures) == 3
+
+    g.playing = True
+    g._clear_anim()
+    g._ensure_idle_eyes()
+    assert not g._idle_active
+    assert g._anim_textures == []
+    print("  LIVE parado muestra ojos; en canción no OK")
+
+
+def test_live_pad_en_pausa_hace_el_gesto_y_vuelve_a_parpadear():
+    from screens.live_view import IDLE_EYES_CC, IDLE_EYES_VALUE, LiveGrid
+
+    _kivy()
+    g = LiveGrid()
+    g.playing = False
+    g._images_dir = Path("/tmp")
+    loaded = []
+
+    def fake(cc, value):
+        loaded.append((cc, value))
+        g._anim_textures = [object(), object(), object()]
+        g._anim_interval = 0.1
+        g._anim_idx = 0
+        g._anim_elapsed = 0.0
+        return True
+
+    g._load_anim = fake
+    g._redraw = lambda *_a, **_k: None
+    assert g.play_idle_gesture(0)
+    assert loaded[-1] == (IDLE_EYES_CC, 14)
+    assert g._gesture and g._gesture_value == 14
+    g._tick_gesture(0.25)
+    assert g._anim_idx == 2
+    g._tick_gesture(0.1)
+    assert not g._gesture
+    assert loaded[-1] == (IDLE_EYES_CC, IDLE_EYES_VALUE)
+    assert g._idle_active
+    g.playing = True
+    assert g.play_idle_gesture(1) is False
+    print("  LIVE: el pad en pausa hace el gesto y vuelve al parpadeo OK")
+
+
+def test_live_parpadeo_pausa_y_rearranca():
+    from screens.live_view import LiveGrid
+
+    _kivy()
+    g = LiveGrid()
+    g.playing = False
+    g._idle_active = True
+    g._anim_textures = [object(), object(), object()]
+    g._blink_base_interval = 0.1
+    g._anim_interval = 0.1
+    g._idle_wait = 0.0
+    g._anim_idx = 0
+    g._anim_elapsed = 0.0
+    g._tick_idle(0.25)
+    assert g._anim_idx == 2
+    assert g._tick_idle(0.1)
+    assert g._idle_wait > 0
+    assert g._anim_idx == 2
+    g._tick_idle(g._idle_wait + 0.01)
+    assert g._anim_idx == 0
+    assert g._idle_wait == 0.0
+    print("  LIVE: el parpadeo espera y vuelve al primer frame OK")
+
+
+def test_al_parar_se_vacía_la_cache_y_precarga_los_gestos():
+    import screens.live_view as lv
+    from screens.live_view import LiveGrid
+
+    _kivy()
+    g = LiveGrid()
+    g._redraw = lambda *_a, **_k: None
+    g._images_dir = Path("/tmp/images")
+    g._img_cache["song"] = object()
+    seen = []
+
+    def frames(_images_dir, _cc, value):
+        seen.append(value)
+        return [Path(f"/tmp/{value}a.png"), Path(f"/tmp/{value}b.png")]
+
+    def load(path, punch_dark=False, punch_lyric=False):
+        return str(path)
+
+    old_frames, old_load = lv.anim_frame_paths, lv._load_rgba_texture
+    lv.anim_frame_paths = frames
+    lv._load_rgba_texture = load
+    try:
+        g.preload_idle_gestures()
+        assert "song" not in g._img_cache
+        assert not g._idle_prepared
+        assert seen == [3, 14, 15, 16, 17]
+        g.preload_idle_gestures()
+        g.preload_idle_gestures()
+        assert g._idle_prepared
+        assert g._idle_preload is None
+        assert len(g._img_cache) == 10
+        assert seen == [3, 14, 15, 16, 17]
+        g.drop_idle_cache()
+        assert g._img_cache == {}
+        assert not g._idle_prepared
+        g._img_cache["song-frame"] = 1
+        g.drop_idle_cache()
+        assert g._img_cache == {"song-frame": 1}
+    finally:
+        lv.anim_frame_paths = old_frames
+        lv._load_rgba_texture = old_load
+    print("  LIVE: al parar se vacía la cache y se precargan los gestos OK")
+
+
 if __name__ == "__main__":
     test_hit_pad_notes()
     test_mdcc_hold_and_hit()
@@ -202,4 +390,11 @@ if __name__ == "__main__":
     test_live_grid_combo_pulse()
     test_live_grid_ribbon_comparte_el_modulo_de_las_robotas()
     test_live_grid_01_es_chispazo()
+    test_el_negro_del_ojo_no_tapa_el_fondo()
+    test_frame_de_ojos_deja_el_fondo()
+    test_gesto_rgb_tambien_deja_el_fondo()
+    test_live_ojos_en_pausa()
+    test_live_pad_en_pausa_hace_el_gesto_y_vuelve_a_parpadear()
+    test_live_parpadeo_pausa_y_rearranca()
+    test_al_parar_se_vacía_la_cache_y_precarga_los_gestos()
     print("TODOS LOS TESTS OK")

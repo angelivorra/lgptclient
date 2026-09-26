@@ -198,6 +198,15 @@ class TestFondoRibbon(unittest.TestCase):
         if block[cx]:
             self.assertEqual(int(out[cy, cx]), 0x07E0)
 
+    def test_recorte_solo_tapa_sus_columnas(self):
+        fw, fh = 4, 4
+        overlay = np.full((fh, fw), 0xFFFF, dtype="<u2")
+        block = overlay_block_cols(
+            overlay.tobytes(), ox=100, oy=BAND_CENTER - 2, fw=fw, fh=fh)
+        self.assertTrue(block[101])
+        self.assertFalse(block[50])
+        self.assertFalse(block[200])
+
     def test_el_hueco_entre_ojos_no_se_tapa(self):
         overlay = np.zeros((HEIGHT, WIDTH), dtype="<u2")
         overlay[BAND_CENTER - 20: BAND_CENTER + 20, 180:280] = 0xFFFF

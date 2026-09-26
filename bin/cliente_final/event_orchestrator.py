@@ -27,6 +27,8 @@ logger = logging.getLogger("cliente.orchestrator")
 # Modos de pantalla (CC = carpeta, VALUE = subcarpeta dentro de /images/)
 IDLE_CC           = 3  # Conectado, no reproduciendo  → 003/003
 IDLE_VALUE        = 3
+# Mismos valores que display_executor.IDLE_PAD_VALUES (pads en pausa).
+IDLE_PAD_VALUES   = (14, 15, 16, 17)
 DISCONNECTED_CC   = 3  # Sin conexión al servidor     → 003/001
 DISCONNECTED_VALUE = 1
 DEFAULT_FONDO     = "001"  # slideshow en pausa si la canción no trajo FONDO
@@ -67,6 +69,10 @@ class EventOrchestrator:
         # que reencolaba play_animation cada ciclo dejaba comandos sueltos
         # que pintaban frames de ojos a mitad de la canción.
         self._idle_active = False
+        # None hasta preparar la pausa. "gestos" = parpadeo + pads en RAM.
+        # "vacio" = cache soltada (desconectado o debug). Un gesto que
+        # vuelve al parpadeo no vuelve a leer los packs.
+        self._idle_media_key = None
 
         # Slideshow de fondo: config recibida por FONDO antes del START
         self._fondo_config: dict = {}
@@ -92,6 +98,7 @@ class EventOrchestrator:
             invertir=self.config.invertir
         )
         self._status_screen_active = False
+        self.display_executor.on_gesture_done = self._resume_idle_after_gesture
 
         # Iniciar idle según modo (producción por defecto)
         logger.info("🤖 Iniciando pantalla idle...")
@@ -136,6 +143,7 @@ class EventOrchestrator:
         - connected=False  → el mismo fondo + animación sin enlace (003/001)
         """
         self._stop_production_idle()
+        self._prepare_idle_media()
         if self._debug:
             self.start_status_screen()
         elif self._connected:
@@ -145,6 +153,23 @@ class EventOrchestrator:
             # Igual que los ojos: el slideshow sigue y 003/001 se mezcla encima.
             self._ensure_idle_fondo()
             self._start_idle_animation(DISCONNECTED_CC, DISCONNECTED_VALUE, "desconectado")
+
+    def _prepare_idle_media(self):
+        """Al entrar en pausa suelta las imágenes de la canción y, si hay
+        enlace, deja leída la ficha del parpadeo y de los cuatro gestos.
+
+        Volver del gesto al parpadeo no repite la carga.
+        """
+        key = "gestos" if (self._connected and not self._debug) else "vacio"
+        if self._idle_media_key == key:
+            return
+        self.media_manager.clear_cache()
+        self.media_manager.release_animation_cache()
+        if key == "gestos":
+            pairs = [(IDLE_CC, IDLE_VALUE)]
+            pairs.extend((IDLE_CC, value) for value in IDLE_PAD_VALUES)
+            self.media_manager.preload_animations(pairs)
+        self._idle_media_key = key
 
     def _ensure_idle_fondo(self):
         """Deja un slideshow activo para la pausa (el de la canción o 001)."""
@@ -190,6 +215,26 @@ class EventOrchestrator:
         self._idle_active = True
         self.display_executor.play_animation(anim_config, source="idle")
         logger.info(f"🎬 Animación {mode_name} activa ({cc:03d}/{value:03d})")
+
+    def _play_idle_gesture(self, anim_config):
+        """Un pad en pausa: un pase del gesto encima del fondo, luego parpadeo."""
+        if not self._pantalla or self._playing or self._debug or not self._connected:
+            return
+        if self._status_screen_active:
+            self._status_screen_active = False
+            self.status_runner.stop()
+            self.display_executor.resume()
+        self._ensure_idle_fondo()
+        self._idle_active = True
+        self.display_executor.play_animation(anim_config, source="gesture")
+        logger.info(
+            f"🎬 Gesto de pad {anim_config.cc:03d}/{anim_config.value:03d}"
+        )
+
+    def _resume_idle_after_gesture(self):
+        if self._playing or not self._pantalla:
+            return
+        self._show_idle()
 
     def _stop_production_idle(self):
         """Deja de considerar idle activo. El display ignora source=idle
@@ -383,7 +428,11 @@ class EventOrchestrator:
         logger.debug(f"   ⏰ Programado para ejecutar en {delta_ms:.1f}ms")
 
     def _execute_animation(self, anim_config, cc: int, value: int):
-        if not self._pantalla or not self._playing:
+        if not self._pantalla:
+            return
+        if not self._playing:
+            if cc == IDLE_CC and value in IDLE_PAD_VALUES:
+                self._play_idle_gesture(anim_config)
             return
         try:
             self.display_executor.play_animation(anim_config)
@@ -457,6 +506,10 @@ class EventOrchestrator:
         if self._status_screen_active:
             self.stop_status_screen()
         self.display_executor.set_live(True)
+        # La pausa ya no necesita los gestos: suelta el mapeo antes de la canción.
+        self._idle_media_key = None
+        self.media_manager.release_animation_cache()
+        self.media_manager.clear_cache()
         # Escena live al mismo reloj que el audio. Sin MDCC en la canción.
         if self._pantalla:
             if self.current_bpm > 0:

@@ -23,54 +23,101 @@ from robots import (CC_LYRIC, HIT_PADS, anim_frame_paths, anim_fps,
 from shared_visuals import HEIGHT as RIBBON_H
 from shared_visuals import WIDTH as RIBBON_W
 from shared_visuals import SPARK_CC, SPARK_VALUE, FadeBlack, FondoRibbon, SparkHit, VocoderNeon
+from display_executor import (
+    IDLE_EYES_CC, IDLE_EYES_VALUE, IDLE_PAD_VALUES,
+    idle_blink_gap, idle_blink_interval,
+)
 from screens.hit_icons import draw_kick, draw_snare
 from theme import (COLOR_BG, COLOR_BORDER, COLOR_EMPTY, COLOR_HEADER_TXT,
                    COLOR_HIT, COLOR_SCREEN, core_label)
 
-def _punch_dark_alpha(img, lyric=False):
-    """Si el PNG es opaco, el negro/casi-negro (y el azul-oscuro de la
-    rejilla tron) pasa a alpha=0 — el mismo criterio que
-    `DisplayExecutor._composite_rgb565` en el dispositivo.
+def punch_rgba(arr, lyric=False):
+    """El negro del overlay pasa a transparente, como en la Pi.
 
-    En letras el halo oscuro del glow taparía el fondo: se anula también
-    la cola dim (rgb_sum < 70), igual que ``lyric_render``.
+    Mismo corte que ``DisplayExecutor._composite_rgb565``: muy oscuro
+    (suma RGB565 ≤ 6) o azul oscuro de la rejilla. El verde del ojo se
+    queda. En letras también se anula el halo dim.
     """
     import numpy as np
-    arr = np.array(img)
+    arr = np.array(arr, dtype=np.uint8, copy=True)
+    if arr.ndim != 3 or arr.shape[2] < 4:
+        return arr
     r = arr[:, :, 0].astype(np.uint16)
     g = arr[:, :, 1].astype(np.uint16)
     b = arr[:, :, 2].astype(np.uint16)
     if lyric:
         transparent = (r + g + b) < 160
-    else:
-        if arr[:, :, 3].min() < 255:
-            return img
-        r5, g6, b5 = r >> 3, g >> 2, b >> 3
-        lum = r5 + g6 + b5
-        transparent = (lum <= 6) | ((b5 > r5) & (lum <= 25))
-    arr[:, :, 3] = np.where(transparent, 0, 255)
+        arr[:, :, 3] = np.where(transparent, 0, 255)
+        return arr
+    r5, g6, b5 = r >> 3, g >> 2, b >> 3
+    lum = r5 + g6 + b5
+    transparent = (lum <= 6) | ((b5 > r5) & (lum <= 25))
+    arr[:, :, 3] = np.where(transparent, 0, arr[:, :, 3])
+    return arr
+
+
+def _punch_dark_alpha(img, lyric=False):
+    """Versión Pillow de ``punch_rgba``."""
     from PIL import Image as _PIL
-    return _PIL.fromarray(arr, 'RGBA')
+    return _PIL.fromarray(punch_rgba(img, lyric=lyric), "RGBA")
+
+
+def _texture_from_rgba(arr, flip=False):
+    from kivy.graphics.texture import Texture as _Tex
+    h, w = arr.shape[:2]
+    tex = _Tex.create(size=(w, h), colorfmt="rgba")
+    tex.blit_buffer(arr.tobytes(), colorfmt="rgba", bufferfmt="ubyte")
+    if flip:
+        tex.flip_vertical()
+    return tex
+
+
+def _punch_core_texture(tex, lyric=False):
+    """CoreImage no recorta el negro. Lo hace numpy sobre sus píxeles.
+
+    Un PNG sin canal alfa (los gestos) llega con colorfmt ``rgb``, pero el
+    buffer de Kivy sigue siendo de 4 bytes por pixel. Si se fía del
+    formato, el tamaño no cuadra, no se recorta y el negro tapa el fondo.
+    El parpadeo ya es RGBA y no caía en ese caso.
+    """
+    import numpy as np
+    w, h = tex.size
+    raw = np.frombuffer(tex.pixels, dtype=np.uint8)
+    if raw.size == w * h * 4:
+        ch = 4
+    elif raw.size == w * h * 3:
+        ch = 3
+    else:
+        return tex
+    arr = raw.reshape(h, w, ch)
+    if ch == 3:
+        alpha = np.full((h, w, 1), 255, dtype=np.uint8)
+        arr = np.concatenate([arr, alpha], axis=2)
+    # La textura de Kivy ya está en su orientación: no hay que voltearla.
+    return _texture_from_rgba(punch_rgba(arr, lyric=lyric), flip=False)
 
 
 def _load_rgba_texture(path, punch_dark=False, punch_lyric=False):
-    """Carga un PNG como textura RGBA preservando el canal alpha (via PIL)."""
+    """Carga un PNG como RGBA. El negro del overlay no tapa el fondo."""
     try:
         from PIL import Image as _PIL
-        from kivy.graphics.texture import Texture as _Tex
-        img = _PIL.open(str(path)).convert('RGBA')
+        img = _PIL.open(str(path)).convert("RGBA")
         if punch_lyric or punch_dark:
             img = _punch_dark_alpha(img, lyric=punch_lyric)
-        tex = _Tex.create(size=(img.width, img.height), colorfmt='rgba')
-        tex.blit_buffer(img.tobytes(), colorfmt='rgba', bufferfmt='ubyte')
-        tex.flip_vertical()
-        return tex
+        import numpy as np
+        return _texture_from_rgba(np.array(img), flip=True)
     except Exception:
         pass
     try:
-        return CoreImage(str(path)).texture
+        tex = CoreImage(str(path)).texture
     except Exception:
         return None
+    if tex is None or not (punch_dark or punch_lyric):
+        return tex
+    try:
+        return _punch_core_texture(tex, lyric=punch_lyric)
+    except Exception:
+        return tex
 
 
 PAD_H = dp(120)
@@ -122,6 +169,13 @@ class LiveGrid(Widget):
         self._anim_idx: int = 0
         self._anim_elapsed: float = 0.0
         self._anim_interval: float = 1.0 / 30
+        self._idle_active = False
+        self._idle_wait = 0.0
+        self._gesture = False
+        self._gesture_value = None
+        self._idle_prepared = False
+        self._idle_preload = None  # cola de PNG de gestos, o None si no hay
+        self._blink_base_interval = 1.0 / 30
         self.lights: list = []   # DmxOut.snapshot(): (nombre, rgb, dim, strobe, color)
         self.ribbon = FondoRibbon()
         self.neon = VocoderNeon()
@@ -157,6 +211,9 @@ class LiveGrid(Widget):
         self._fondo_idx = 0
         self._fondo_elapsed = 0.0
         self._images_dir = None
+        self._idle_prepared = False
+        self._idle_preload = None
+        self._img_cache.clear()
         self._clear_anim()
         self.ribbon = FondoRibbon()
         self.neon = VocoderNeon()
@@ -175,6 +232,8 @@ class LiveGrid(Widget):
         self._fondo_interval = 1.0  # se recalcula tras cargar imágenes
         self._images_dir = Path(images_dir) if images_dir else None
         self._img_cache.clear()
+        self._idle_prepared = False
+        self._idle_preload = None
         # Limpia texturas líricas cacheadas (fuente puede cambiar por canción)
         self._tex = {k: v for k, v in self._tex.items()
                      if not (isinstance(k, tuple) and k[0] == "lyric")}
@@ -252,6 +311,122 @@ class LiveGrid(Widget):
         self._anim_idx = 0
         self._anim_elapsed = 0.0
         self._anim_interval = 1.0 / 30
+        self._idle_active = False
+        self._idle_wait = 0.0
+        self._gesture = False
+        self._gesture_value = None
+
+    def play_idle_gesture(self, pad_index):
+        """Un pad sampler en pausa: un pase de enfadado/contento/corazones/triste."""
+        if self.playing or not self._images_dir:
+            return False
+        if not 0 <= pad_index < len(IDLE_PAD_VALUES):
+            return False
+        value = IDLE_PAD_VALUES[pad_index]
+        if not self._load_anim(IDLE_EYES_CC, value):
+            return False
+        self._gesture = True
+        self._gesture_value = value
+        self._idle_active = True
+        self._idle_wait = 0.0
+        self._anim_idx = 0
+        self._anim_elapsed = 0.0
+        self._redraw()
+        return True
+
+    def preload_idle_gestures(self):
+        """Al parar: tira las texturas de la canción y va cargando
+        parpadeo y los cuatro gestos, unos frames por tick."""
+        if self._idle_prepared or not self._images_dir:
+            return
+        if self._idle_preload is None:
+            if self._gesture:
+                return
+            self._img_cache.clear()
+            self._preview_path = None
+            self._preview_tex = None
+            jobs = []
+            for value in (IDLE_EYES_VALUE, *IDLE_PAD_VALUES):
+                for png in anim_frame_paths(self._images_dir, IDLE_EYES_CC, value):
+                    jobs.append(png)
+            self._idle_preload = jobs
+        n = 0
+        while self._idle_preload and n < 4:
+            png = self._idle_preload.pop(0)
+            key = f"rgba:{png}"
+            if key not in self._img_cache:
+                self._img_cache[key] = _load_rgba_texture(png, punch_dark=True)
+            n += 1
+        if not self._idle_preload:
+            self._idle_preload = None
+            self._idle_prepared = True
+
+    def drop_idle_cache(self):
+        """Al empezar la canción suelta los gestos para no acumularlos."""
+        if self._idle_preload is None and not self._idle_prepared:
+            return
+        self._img_cache.clear()
+        self._idle_preload = None
+        self._idle_prepared = False
+
+    def _tick_gesture(self, dt):
+        """Avanza el gesto al fps del clip. Al terminar vuelve el parpadeo."""
+        self._anim_elapsed += dt
+        n = len(self._anim_textures)
+        if n <= 0 or self._anim_interval <= 0:
+            return False
+        if self._anim_elapsed >= self._anim_interval * n:
+            self._gesture = False
+            self._gesture_value = None
+            self._idle_active = False
+            self._anim_textures = []
+            self._ensure_idle_eyes()
+            return True
+        new_idx = min(n - 1, int(self._anim_elapsed / self._anim_interval))
+        if new_idx != self._anim_idx:
+            self._anim_idx = new_idx
+            return True
+        return False
+
+    def _ensure_idle_eyes(self):
+        """Parado: los ojos de idle van encima del slideshow, como en la Pi."""
+        if self.playing or not self._images_dir:
+            return
+        if self._idle_active and self._anim_textures:
+            return
+        if not self._load_anim(IDLE_EYES_CC, IDLE_EYES_VALUE):
+            return
+        self._idle_active = True
+        self._idle_wait = 0.0
+        self._blink_base_interval = self._anim_interval
+        self._anim_interval = idle_blink_interval(self._blink_base_interval)
+
+    def _tick_idle(self, dt):
+        """Avanza un parpadeo. Al terminar el clip espera y cambia de velocidad."""
+        changed = False
+        if self._idle_wait > 0:
+            self._idle_wait -= dt
+            if self._idle_wait > 0:
+                return False
+            self._idle_wait = 0.0
+            self._anim_idx = 0
+            self._anim_elapsed = 0.0
+            self._anim_interval = idle_blink_interval(self._blink_base_interval)
+            return True
+        self._anim_elapsed += dt
+        n = len(self._anim_textures)
+        if n <= 0 or self._anim_interval <= 0:
+            return False
+        if self._anim_elapsed >= self._anim_interval * n:
+            self._anim_idx = n - 1
+            self._idle_wait = idle_blink_gap()
+            self._anim_elapsed = 0.0
+            return True
+        new_idx = min(n - 1, int(self._anim_elapsed / self._anim_interval))
+        if new_idx != self._anim_idx:
+            self._anim_idx = new_idx
+            changed = True
+        return changed
 
     def _load_anim(self, cc, value):
         """Carga los frames de una animación como RGBA (alpha real o punch)."""
@@ -402,6 +577,10 @@ class LiveGrid(Widget):
         elif self._spark_on:
             self._spark_on = False
             alive = True
+        if self.playing and self._gesture:
+            self._clear_anim()
+        if not self.playing:
+            self._ensure_idle_eyes()
         if self._fondo_textures:
             self.ribbon.step(time.time())
             self._fondo_elapsed += dt
@@ -409,7 +588,13 @@ class LiveGrid(Widget):
             if new_idx != self._fondo_idx:
                 self._fondo_idx = new_idx
             alive = True
-        if self._anim_textures:
+        if self._anim_textures and self._gesture and not self.playing:
+            if self._tick_gesture(dt):
+                alive = True
+        elif self._anim_textures and self._idle_active and not self.playing:
+            if self._tick_idle(dt):
+                alive = True
+        elif self._anim_textures:
             self._anim_elapsed += dt
             new_idx = int(self._anim_elapsed / self._anim_interval) % len(self._anim_textures)
             if new_idx != self._anim_idx:
@@ -473,7 +658,11 @@ class LiveGrid(Widget):
             if self.lights:
                 self._draw_lights(px, py, pw, ph)
             tag = "----"
-            if self.cc is not None and self.value is not None:
+            if self._gesture and self._gesture_value is not None and not self.playing:
+                tag = screen_label(IDLE_EYES_CC, self._gesture_value)
+            elif self._idle_active and not self.playing:
+                tag = screen_label(IDLE_EYES_CC, IDLE_EYES_VALUE)
+            elif self.cc is not None and self.value is not None:
                 tag = screen_label(self.cc, self.value)
             ink = COLOR_SCREEN
             self._text_center(px, py - dp(28), pw, tag, ink,

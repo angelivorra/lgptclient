@@ -307,6 +307,17 @@ class EventMidiOut:
             return
         self.server.emit("CC", self._ts(), value, channel, control)
 
+    def cc_immediate(self, channel, control, value):
+        """CC que el cliente pinta ya (gesto de un pad en pausa).
+
+        El ts normal espera al audio (`event_time_ms` menos el delay). Aquí
+        el cliente debe ejecutarlo en este instante: ts = ahora - delay.
+        """
+        if self.suppress_notes:
+            return
+        self.server.emit(
+            "CC", now_ms() - self.client_delay_ms, value, channel, control)
+
     def chord_on(self, channel, notes, velocity):
         # Evento nuevo para la pista de voz -> vocoder: nota raíz + acorde,
         # sin mezclar con NOTA/CC. `channel` es el índice del canal del

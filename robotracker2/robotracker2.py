@@ -1644,9 +1644,12 @@ class Robotracker2App(App):
         p = self.player
         while True:
             try:
-                ed.pads_grid.hit(self._pad_hits.get_nowait())
+                pad_idx = self._pad_hits.get_nowait()
             except queue.Empty:
                 break
+            ed.pads_grid.hit(pad_idx)
+            if p is None or not p.playing:
+                ed.live_grid.play_idle_gesture(pad_idx)
         if self._midi_ctrl is not None:
             ed.pots_grid.set_live(self._midi_ctrl.live_pot_cc())
         ed.pads_grid.tick_pulse(dt)
@@ -1669,15 +1672,19 @@ class Robotracker2App(App):
             ed.chain_grid.set_play(None)
             ed.phrase_grid.set_play(None)
             self._play_keys = [None] * NUM_TRACKS
+            entered_idle = False
             if (self._robot_play.playing or self._robot_play.cc is not None
                     or self._robot_play.note is not None
                     or self._robot_play.hit_note is not None):
+                entered_idle = True
                 self._robot_play.reset()
                 ed.live_grid.reset()
                 self._apply_fondo_live(self._midi_ctrl.fondo_state())
-            elif ed.current == "live":
+            ed.live_grid.preload_idle_gestures()
+            if not entered_idle and ed.current == "live":
                 ed.live_grid.tick_pulse(dt)
             return
+        ed.live_grid.drop_idle_cache()
         chans = p.engine.channels
         hits = self._song_hits(p.engine)
         self._robot_play.update(p.engine)

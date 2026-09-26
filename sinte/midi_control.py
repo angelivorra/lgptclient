@@ -56,6 +56,47 @@ def parse_button_spec(spec: str) -> tuple | None:
     return None
 
 
+# images/003/014..017, en orden sample1..4. Mismo tuple que
+# bin/cliente_final/display_executor.IDLE_PAD_VALUES.
+IDLE_PAD_CC = 3
+IDLE_PAD_VALUES = (14, 15, 16, 17)
+
+
+def handle_sample_action(action: str, engine_ref: dict, event_out) -> None:
+    """Pad sampler. Sin canción cargada igual manda el gesto a las pantallas.
+
+    Con una canción sonando solo dispara el sample.
+    """
+    engine = engine_ref.get("engine")
+    try:
+        idx = int(action[6:]) - 1
+    except ValueError:
+        idx = 0
+    if engine is not None:
+        hook = engine_ref.get("on_trigger")
+        if hook is not None:
+            try:
+                hook(idx)
+            except TypeError:
+                hook()
+        engine.push_event("trigger", idx)
+    playing = engine is not None and bool(getattr(engine, "playing", False))
+    gesture = idle_pad_gesture(idx, playing)
+    if gesture is not None and event_out is not None \
+            and hasattr(event_out, "cc_immediate"):
+        event_out.cc_immediate(0, gesture[0], gesture[1])
+
+
+def idle_pad_gesture(pad_index: int, playing: bool):
+    """CC de ojos si un pad sampler se pulsa con el transporte parado.
+
+    Devuelve (control, value) o None. En canción el pad solo dispara el sample.
+    """
+    if playing or not 0 <= pad_index < len(IDLE_PAD_VALUES):
+        return None
+    return IDLE_PAD_CC, IDLE_PAD_VALUES[pad_index]
+
+
 def match_button(mapping: dict, msg) -> str | None:
     """Devuelve la acción del botón que coincide con el mensaje, o None.
 
@@ -230,24 +271,10 @@ def open_midi_input(port_name: str | None, engine_ref: dict,
         if action is not None:
             if action.startswith("sample"):
                 # pads sampler: disparan WAVs del banco (sample1 -> pad 1,
-                # ver wavs_dir/pads.json). Pero en la lista (sin canción
-                # cargada) no hay samples, así que cualquiera de esos pads
-                # abre la calibración de motores.
-                engine = engine_ref.get("engine")
-                if engine is None:
-                    ui_queue.put("calib")
-                else:
-                    try:
-                        idx = int(action[6:]) - 1
-                    except ValueError:
-                        idx = 0
-                    hook = engine_ref.get("on_trigger")
-                    if hook is not None:
-                        try:
-                            hook(idx)
-                        except TypeError:
-                            hook()
-                    engine.push_event("trigger", idx)
+                # ver wavs_dir/pads.json). En la lista no hay canción: no
+                # abren la calibración (eso es el botón stop), pero sí
+                # mandan el gesto a las pantallas.
+                handle_sample_action(action, engine_ref, event_out)
             else:
                 ui_queue.put(action)
             return

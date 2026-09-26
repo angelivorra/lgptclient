@@ -29,6 +29,15 @@ logger = logging.getLogger("cliente.display")
 SYSTEM_FPS = 30
 FRAME_INTERVAL = 1.0 / SYSTEM_FPS
 
+# Ojos de idle (images/003/003). El clip es un solo parpadeo a fps fijo;
+# el ritmo vivo se arma aquí, no en el pack. El desconectado (003/001)
+# sigue el max_delay de su anim.cfg.
+IDLE_EYES_CC = 3
+IDLE_EYES_VALUE = 3
+# Pads sampler (sample1..4) en pausa: enfadado, contento, corazones, triste.
+# El sinte emite estos valores por CC 3; ver midi_control.idle_pad_gesture.
+IDLE_PAD_VALUES = (14, 15, 16, 17)
+
 # Fondo slideshow: segundos por frame al tempo base de la canción (knob de
 # tempo abajo) y exponente con el que el knob acelera (interval / ratio**N).
 # Con TEMPO_BOOST_MAX=0.12 del sinte: 1.12**8 ≈ 2.5x → ~0.031 s/frame arriba,
@@ -58,6 +67,47 @@ def shake_rgb565(frame: bytes, dx: int, dy: int,
     elif dx < 0:
         out[:, dx:] = 0
     return out.astype("<u2").tobytes()
+
+
+def idle_blink_gap() -> float:
+    """Segundos quieto entre parpadeos.
+
+    No es un uniforme de 1–5 s: a veces el segundo parpadeo va pegado,
+    a veces se queda mirando, y el resto cae en pausas cortas con cola.
+    """
+    roll = random.random()
+    if roll < 0.18:
+        return random.uniform(0.12, 0.38)
+    if roll < 0.30:
+        return random.uniform(7.0, 14.0)
+    return min(6.0, 0.6 + random.expovariate(0.55))
+
+
+def idle_blink_interval(base: float) -> float:
+    """Intervalo entre frames de este parpadeo. `base` es 1/fps del clip.
+
+    Mayor intervalo = parpadeo más lento. La mayoría sale cerca del
+    clip; unos pocos son perezosos o rápidos.
+    """
+    roll = random.random()
+    if roll < 0.15:
+        scale = random.uniform(1.45, 1.9)
+    elif roll < 0.35:
+        scale = random.uniform(0.55, 0.8)
+    else:
+        scale = random.uniform(0.85, 1.2)
+    return base * scale
+
+
+def loop_restart_delay(max_delay: float, idle_eyes: bool) -> float:
+    """Pausa al terminar un loop. Los ojos no usan max_delay."""
+    if idle_eyes:
+        return idle_blink_gap()
+    hi = float(max_delay)
+    lo = hi / 5.0
+    if hi <= lo:
+        return hi
+    return random.uniform(lo, hi)
 
 
 class FramebufferWriter:
@@ -198,6 +248,9 @@ class DisplayExecutor:
         self._pending_live = False
         self._overlay_image: Optional[bytes] = None
         self._idle_over_fondo = False  # idle (ojos o desconectado) sobre el slideshow
+        self._anim_source = ""
+        self._gesture_done = False
+        self.on_gesture_done = None  # un pase de pad terminó: volver al parpadeo
         self._shake = 0.0
         self._shake_t = time.monotonic()
         
@@ -211,7 +264,9 @@ class DisplayExecutor:
         self._current_animation: Optional[AnimationConfig] = None
         self._animation_frame_idx: int = 0
         self._animation_pack_file = None
+        self._mem_frames = None  # frames ya mapeados; si no, se lee el pack
         self._animation_interval: float = 1.0 / 20
+        self._blink_base_interval: float = 1.0 / 20
         self._waiting_until: Optional[float] = None
         self._paused = False
         self._last_frame_time: float = 0
@@ -281,6 +336,7 @@ class DisplayExecutor:
         logger.debug(f"🎬 Thread de renderizado iniciado ({SYSTEM_FPS} FPS)")
     
     def _close_pack(self):
+        self._mem_frames = None
         if self._animation_pack_file:
             try:
                 self._animation_pack_file.close()
@@ -315,13 +371,8 @@ class DisplayExecutor:
                 logger.info(f"✨ Chispazo: CC {cc:03d}/{value:03d}")
                 return
 
-            if self._animation_pack_file:
-                try:
-                    self._animation_pack_file.close()
-                except Exception:
-                    pass
-                self._animation_pack_file = None
-            
+            self._close_pack()
+
             self._current_type = 'image'
             self._current_image = data
             self._current_animation = None
@@ -362,6 +413,16 @@ class DisplayExecutor:
         except queue.Full:
             self._play_animation_internal(config, source)
     
+    def _is_idle_eyes(self, config: Optional[AnimationConfig]) -> bool:
+        """El clip de ojos en pausa. En canción el mismo pack no se altera."""
+        return (
+            config is not None
+            and not self._want_live
+            and config.loop
+            and config.cc == IDLE_EYES_CC
+            and config.value == IDLE_EYES_VALUE
+        )
+
     def _play_animation_internal(self, config: AnimationConfig,
                                  source: str = "mdcc"):
         """Implementación interna de play_animation."""
@@ -374,16 +435,29 @@ class DisplayExecutor:
                 self._current_animation and
                 self._current_animation.cc == config.cc and
                 self._current_animation.value == config.value):
+                if source == "gesture":
+                    # El mismo gesto otra vez: desde el primer frame.
+                    self._animation_frame_idx = 0
+                    self._waiting_until = None
+                    self._last_frame_time = 0
+                    self._frame_accumulator = 0
+                    self._gesture_done = False
+                    self._anim_source = "gesture"
+                    return
                 logger.debug(f"⏭️  Animación {animation_id} ya está activa")
                 return
             
             self._close_pack()
-            
-            try:
-                self._animation_pack_file = open(config.pack_path, 'rb')
-            except Exception as e:
-                logger.error(f"❌ Error abriendo {config.pack_path}: {e}")
-                return
+
+            mem = config.frame_bytes
+            if mem:
+                self._mem_frames = mem
+            else:
+                try:
+                    self._animation_pack_file = open(config.pack_path, 'rb')
+                except Exception as e:
+                    logger.error(f"❌ Error abriendo {config.pack_path}: {e}")
+                    return
             
             self._current_type = 'animation'
             self._current_image = None
@@ -393,11 +467,18 @@ class DisplayExecutor:
             self._last_frame_time = 0
             self._frame_accumulator = 0
             fps = config.fps if config.fps and config.fps > 0 else 20
-            self._animation_interval = 1.0 / fps
+            self._blink_base_interval = 1.0 / fps
+            if self._is_idle_eyes(config):
+                self._animation_interval = idle_blink_interval(
+                    self._blink_base_interval)
+            else:
+                self._animation_interval = self._blink_base_interval
             # Ojos y desconectado se mezclan si hay slideshow.
             # Sin slideshow (el fondo no cargó) la animación sigue a pantalla llena.
+            self._anim_source = source
+            self._gesture_done = False
             self._idle_over_fondo = (
-                source == "idle" and bool(self._slideshow_images)
+                source in ("idle", "gesture") and bool(self._slideshow_images)
             )
             
             self.stats['animations_started'] += 1
@@ -464,6 +545,8 @@ class DisplayExecutor:
                 self._current_animation = None
                 self._waiting_until = None
                 self._overlay_image = None
+                self._anim_source = ""
+                self._gesture_done = False
             else:
                 self.scenes.set_scene(None)
                 self.neon.release()
@@ -471,6 +554,8 @@ class DisplayExecutor:
                 self.fade.clear()
                 self._overlay_image = None
                 self._idle_over_fondo = False
+                self._anim_source = ""
+                self._gesture_done = False
                 self._close_pack()
                 self._current_animation = None
                 self._waiting_until = None
@@ -619,6 +704,41 @@ class DisplayExecutor:
         transparent = (lum <= 6) | ((b > r) & (lum <= 25))
         return np.where(transparent, bg_arr, fg_arr).astype("<u2").tobytes()
 
+    @staticmethod
+    def _composite_sprite(bg: bytes, fg: bytes, ox: int, oy: int,
+                          fw: int, fh: int) -> bytes:
+        """Mezcla un recorte sobre el fotograma. El negro del recorte no tapa."""
+        if len(bg) != WIDTH * HEIGHT * 2 or len(fg) != fw * fh * 2:
+            return bg
+        bg_arr = np.frombuffer(bg, dtype="<u2").reshape(HEIGHT, WIDTH).copy()
+        fg_arr = np.frombuffer(fg, dtype="<u2").reshape(fh, fw)
+        x0 = max(0, ox)
+        y0 = max(0, oy)
+        x1 = min(WIDTH, ox + fw)
+        y1 = min(HEIGHT, oy + fh)
+        if x1 <= x0 or y1 <= y0:
+            return bg
+        sx0, sy0 = x0 - ox, y0 - oy
+        patch = fg_arr[sy0:sy0 + (y1 - y0), sx0:sx0 + (x1 - x0)]
+        pix = patch.astype(np.uint32)
+        r = (pix >> 11) & 0x1F
+        g = (pix >> 5) & 0x3F
+        b = pix & 0x1F
+        lum = r + g + b
+        transparent = (lum <= 6) | ((b > r) & (lum <= 25))
+        region = bg_arr[y0:y1, x0:x1]
+        bg_arr[y0:y1, x0:x1] = np.where(transparent, region, patch)
+        return bg_arr.astype("<u2").tobytes()
+
+    def _overlay_is_sprite(self, fg: bytes) -> bool:
+        cfg = self._current_animation
+        if cfg is None:
+            return False
+        return len(fg) == cfg.width * cfg.height * 2 and (
+            cfg.width != WIDTH or cfg.height != HEIGHT
+            or cfg.origin_x or cfg.origin_y
+        )
+
     def _get_slideshow_frame(self, now: float) -> Optional[bytes]:
         """Devuelve el frame del slideshow para el instante `now`.
 
@@ -666,10 +786,21 @@ class DisplayExecutor:
         # Fondo → cinta → latigazo del vocoder → overlay. La letra tapa
         # los márgenes si los invade; la cinta no pinta donde hay tinta.
         if self._overlay_image:
-            block = overlay_block_cols(self._overlay_image)
-            frame = self.ribbon.blit_rgb565(bg, now, block_cols=block)
-            frame = self.neon.blit_rgb565(frame, now)
-            frame = self._composite_rgb565(frame, self._overlay_image)
+            if self._overlay_is_sprite(self._overlay_image):
+                cfg = self._current_animation
+                block = overlay_block_cols(
+                    self._overlay_image, ox=cfg.origin_x, oy=cfg.origin_y,
+                    fw=cfg.width, fh=cfg.height)
+                frame = self.ribbon.blit_rgb565(bg, now, block_cols=block)
+                frame = self.neon.blit_rgb565(frame, now)
+                frame = self._composite_sprite(
+                    frame, self._overlay_image,
+                    cfg.origin_x, cfg.origin_y, cfg.width, cfg.height)
+            else:
+                block = overlay_block_cols(self._overlay_image)
+                frame = self.ribbon.blit_rgb565(bg, now, block_cols=block)
+                frame = self.neon.blit_rgb565(frame, now)
+                frame = self._composite_rgb565(frame, self._overlay_image)
         else:
             frame = self.ribbon.blit_rgb565(bg, now)
             frame = self.neon.blit_rgb565(frame, now)
@@ -689,6 +820,7 @@ class DisplayExecutor:
         
         while not self._stop_event.is_set():
             frame_start = time.monotonic()
+            resume_gesture = False
             
             # Si está pausado, solo dormir
             with self._state_lock:
@@ -735,13 +867,19 @@ class DisplayExecutor:
                         and self._current_type == 'animation'
                         and self._current_animation
                     )
+                    gesture_done = False
                     if live_anim or idle_over or mdcc_anim:
-                        if self._waiting_until:
+                        if self._anim_source == "gesture-done":
+                            pass
+                        elif self._waiting_until:
                             if time.monotonic() >= self._waiting_until:
                                 self._animation_frame_idx = 0
                                 self._waiting_until = None
                                 self._last_frame_time = 0
                                 self._frame_accumulator = 0
+                                if self._is_idle_eyes(self._current_animation):
+                                    self._animation_interval = idle_blink_interval(
+                                        self._blink_base_interval)
                         else:
                             current_time = time.monotonic()
                             if self._last_frame_time == 0:
@@ -760,6 +898,9 @@ class DisplayExecutor:
                                 if self._frame_accumulator >= self._animation_interval:
                                     self._advance_animation()
                                     self._frame_accumulator -= self._animation_interval
+                        gesture_done = self._gesture_done
+                        if gesture_done:
+                            self._gesture_done = False
                     if (live_anim or idle_over or self._want_live
                             or self._current_type == 'scene'):
                         # Canción o pausa con fondo: slideshow/plasma sigue
@@ -767,9 +908,17 @@ class DisplayExecutor:
                         self._write_live_frame()
                     elif mdcc_anim and self._current_image is not None:
                         pass  # idle sin slideshow: el frame ya se escribió a pantalla llena
+                    resume_gesture = gesture_done and not self._want_live
             
             except Exception as e:
+                resume_gesture = False
                 logger.error(f"❌ Error en render loop: {e}")
+
+            if resume_gesture and self.on_gesture_done is not None:
+                try:
+                    self.on_gesture_done()
+                except Exception as e:
+                    logger.error(f"❌ Error volviendo al idle tras el gesto: {e}")
             
             # Reloj monotónico: al conectar se hace `date -s` para igualar
             # el sinte, y un salto hacia atrás entre las dos lecturas dejaba
@@ -787,12 +936,22 @@ class DisplayExecutor:
         En canción (`_want_live`) y en idle con slideshow el frame queda
         como overlay. En idle sin slideshow se escribe a pantalla llena.
         """
-        if not self._current_animation or not self._animation_pack_file:
+        if not self._current_animation:
+            return
+        if self._mem_frames is None and not self._animation_pack_file:
             return
         
         config = self._current_animation
         
         if self._animation_frame_idx >= len(config.frames):
+            if self._anim_source == "gesture":
+                # Un pase y se queda el último frame hasta que el
+                # orquestador vuelve a poner el parpadeo.
+                self._anim_source = "gesture-done"
+                self._gesture_done = True
+                return
+            if self._anim_source == "gesture-done":
+                return
             if self._want_live:
                 # Durante la canción el clip (loop o no) no se queda dueño
                 # de la pantalla: al terminar una pasada vuelve el plasma.
@@ -801,29 +960,27 @@ class DisplayExecutor:
                 return
             # idle overlay (ojos): cae al loop de abajo, el fondo sigue
             if config.loop:
-                min_delay = config.max_delay / 5.0
-                max_delay = config.max_delay
-                delay = random.uniform(min_delay, max_delay)
-                
+                delay = loop_restart_delay(
+                    config.max_delay,
+                    self._is_idle_eyes(config),
+                )
                 self._waiting_until = time.monotonic() + delay
                 logger.debug(f"⏸️  Animación completa, esperando {delay:.2f}s")
             else:
                 logger.debug(f"🏁 Animación completa (no-loop)")
                 self._current_type = None
                 self._current_animation = None
-                if self._animation_pack_file:
-                    try:
-                        self._animation_pack_file.close()
-                    except Exception:
-                        pass
-                    self._animation_pack_file = None
+                self._close_pack()
             return
         
         frame_info = config.frames[self._animation_frame_idx]
         
         try:
-            self._animation_pack_file.seek(frame_info['offset'])
-            frame_data = self._animation_pack_file.read(frame_info['size'])
+            if self._mem_frames is not None:
+                frame_data = self._mem_frames[self._animation_frame_idx]
+            else:
+                self._animation_pack_file.seek(frame_info['offset'])
+                frame_data = self._animation_pack_file.read(frame_info['size'])
             
             if not frame_data:
                 logger.error(f"❌ Frame {self._animation_frame_idx} sin datos")
@@ -835,6 +992,11 @@ class DisplayExecutor:
                 self._animation_frame_idx += 1
                 return
 
+            if self._overlay_is_sprite(frame_data):
+                frame_data = self._composite_sprite(
+                    b"\x00\x00" * (WIDTH * HEIGHT), frame_data,
+                    config.origin_x, config.origin_y,
+                    config.width, config.height)
             write_ok = self.fb_writer.write(frame_data)
             
             if write_ok:
@@ -858,13 +1020,8 @@ class DisplayExecutor:
             self._render_thread.join(timeout=1.0)
         
         with self._state_lock:
-            if self._animation_pack_file:
-                try:
-                    self._animation_pack_file.close()
-                except Exception:
-                    pass
-                self._animation_pack_file = None
-        
+            self._close_pack()
+
         self.fb_writer.close()
         logger.info("🧹 DisplayExecutor limpiado")
     

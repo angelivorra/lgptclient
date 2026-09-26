@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tests headless del motor de escenas (sin framebuffer)."""
 import json
+import random
 import sys
 import time
 import unittest
@@ -179,6 +180,42 @@ class TestLiveResume(unittest.TestCase):
             self.assertEqual(self.ex._current_animation.cc, 3)
             self.assertEqual(self.ex._current_animation.value, 1)
 
+    def test_gesto_precargado_no_abre_el_pack(self):
+        """Si los frames ya están en memoria, el gesto no toca el disco."""
+        from media_manager import AnimationConfig
+
+        frame = b"\xFF\xFF" * (FRAME_BYTES // 2)
+        cfg = AnimationConfig(
+            cc=3, value=14, fps=30, loop=True, max_delay=1,
+            pack_path="/no/existe/pack.bin", index_path="",
+            frames=[{"file": "000.bin", "offset": 0, "size": len(frame)}],
+            width=800, height=480, bpp=16,
+            frame_bytes=[frame],
+        )
+        self.ex.set_live(False)
+        self.ex.set_slideshow([b"\x00\x00" * (FRAME_BYTES // 2)], interval=1.0)
+        self.ex.play_animation(cfg, source="gesture")
+        time.sleep(0.12)
+        self.assertIsNone(self.ex._animation_pack_file)
+        self.assertEqual(self.ex._overlay_image, frame)
+        self.assertIn(self.ex._anim_source, ("gesture", "gesture-done"))
+
+    def test_sprite_no_tapa_el_resto_de_la_pantalla(self):
+        """Un recorte de ojos solo pisa su rectángulo. El negro no tapa."""
+        import numpy as np
+        from display_executor import DisplayExecutor
+
+        bg = b"\xFF\xFF" * (800 * 480)
+        green = (0xFFE0).to_bytes(2, "little")
+        black = b"\x00\x00"
+        fg = green + black + black + green
+        out = DisplayExecutor._composite_sprite(bg, fg, 10, 20, 2, 2)
+        arr = np.frombuffer(out, dtype="<u2").reshape(480, 800)
+        self.assertEqual(int(arr[0, 0]), 0xFFFF)
+        self.assertEqual(int(arr[20, 10]), 0xFFE0)
+        self.assertEqual(int(arr[20, 11]), 0xFFFF)
+        self.assertEqual(int(arr[21, 11]), 0xFFE0)
+
     def test_animacion_en_live_es_overlay(self):
         """Un MDCC de animación no sustituye el fondo: queda de overlay."""
         import json
@@ -237,3 +274,34 @@ class TestKickShake(unittest.TestCase):
             self.assertGreater(ex._shake, 0.9)
         finally:
             ex.cleanup()
+
+
+class TestIdleBlinkRhythm(unittest.TestCase):
+    def test_la_pausa_no_cabe_en_el_uniforme_de_antes(self):
+        from display_executor import idle_blink_gap
+
+        random.seed(0)
+        gaps = [idle_blink_gap() for _ in range(500)]
+        self.assertTrue(any(g < 0.4 for g in gaps))
+        self.assertTrue(any(g > 7.0 for g in gaps))
+        self.assertTrue(all(0.12 <= g <= 14.0 for g in gaps))
+
+    def test_la_velocidad_del_parpadeo_cambia(self):
+        from display_executor import idle_blink_interval
+
+        random.seed(1)
+        base = 1.0 / 30.0
+        rates = [idle_blink_interval(base) for _ in range(300)]
+        self.assertGreater(max(rates), base * 1.4)
+        self.assertLess(min(rates), base * 0.85)
+        self.assertTrue(all(base * 0.55 <= r <= base * 1.9 for r in rates))
+
+    def test_el_desconectado_sigue_el_max_delay(self):
+        from display_executor import loop_restart_delay
+
+        random.seed(2)
+        delays = [loop_restart_delay(2.0, idle_eyes=False) for _ in range(80)]
+        self.assertTrue(all(0.4 <= d <= 2.0 for d in delays))
+        eyes = [loop_restart_delay(5.0, idle_eyes=True) for _ in range(400)]
+        self.assertTrue(any(d < 0.4 for d in eyes))
+        self.assertTrue(any(d > 5.0 for d in eyes))

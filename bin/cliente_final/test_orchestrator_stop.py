@@ -36,6 +36,118 @@ def _run_due(sched):
         asyncio.run(sched._execute_task(task))
 
 
+class TestIdlePadGesture(unittest.TestCase):
+    def test_en_pausa_el_pad_lanza_el_gesto(self):
+        orch, sched, disp = _orch(delay_ms=0)
+        orch._playing = False
+        orch._pantalla = True
+        orch._connected = True
+        orch._debug = False
+        orch._fondo_images = [b"fondo"]
+        orch._fondo_config = {"name": "001", "interval": 1, "transition": "cut"}
+        cfg = MagicMock(cc=3, value=14)
+        orch.media_manager.is_animation.return_value = True
+        orch.media_manager.get_animation.return_value = cfg
+        disp.play_animation.reset_mock()
+        orch.handle_cc(int(time.time() * 1000), 14, 0, 3)
+        _run_due(sched)
+        disp.play_animation.assert_called_with(cfg, source="gesture")
+
+    def test_en_cancion_el_mismo_cc_sigue_siendo_mdcc(self):
+        orch, sched, disp = _orch(delay_ms=0)
+        orch._playing = True
+        orch._pantalla = True
+        cfg = MagicMock(cc=3, value=14)
+        orch.media_manager.is_animation.return_value = True
+        orch.media_manager.get_animation.return_value = cfg
+        disp.play_animation.reset_mock()
+        orch.handle_cc(int(time.time() * 1000), 14, 0, 3)
+        _run_due(sched)
+        disp.play_animation.assert_called_with(cfg)
+
+    def test_en_pausa_otro_cc_no_cambia_los_ojos(self):
+        orch, sched, disp = _orch(delay_ms=0)
+        orch._playing = False
+        orch._pantalla = True
+        orch._connected = True
+        orch.media_manager.is_animation.return_value = True
+        orch.media_manager.get_animation.return_value = MagicMock(cc=3, value=3)
+        disp.play_animation.reset_mock()
+        orch.handle_cc(int(time.time() * 1000), 3, 0, 3)
+        _run_due(sched)
+        disp.play_animation.assert_not_called()
+
+
+class TestIdleGestureCache(unittest.TestCase):
+    def test_al_parar_precarga_los_gestos_una_sola_vez(self):
+        orch, sched, disp = _orch(delay_ms=0)
+        orch._playing = True
+        orch._connected = True
+        orch._pantalla = True
+        orch._debug = False
+        orch._fondo_images = [b"fondo"]
+        orch._fondo_config = {"name": "001", "interval": 1, "transition": "cut"}
+        orch.media_manager.get_animation.return_value = MagicMock()
+        orch.media_manager.clear_cache.reset_mock()
+        orch.media_manager.release_animation_cache.reset_mock()
+        orch.media_manager.preload_animations.reset_mock()
+        orch.handle_stop(int(time.time() * 1000))
+        _run_due(sched)
+        orch.media_manager.clear_cache.assert_called()
+        orch.media_manager.release_animation_cache.assert_called()
+        orch.media_manager.preload_animations.assert_called_once()
+        pairs = orch.media_manager.preload_animations.call_args.args[0]
+        self.assertEqual(pairs, [(3, 3), (3, 14), (3, 15), (3, 16), (3, 17)])
+        orch.media_manager.preload_animations.reset_mock()
+        orch.media_manager.clear_cache.reset_mock()
+        orch._show_idle()
+        orch.media_manager.preload_animations.assert_not_called()
+        orch.media_manager.clear_cache.assert_not_called()
+
+    def test_start_suelta_la_cache_de_gestos(self):
+        orch, sched, disp = _orch(delay_ms=0)
+        orch._pantalla = True
+        orch._idle_media_key = "gestos"
+        orch.media_manager.release_animation_cache.reset_mock()
+        orch.media_manager.clear_cache.reset_mock()
+        orch.handle_start(int(time.time() * 1000))
+        orch.media_manager.release_animation_cache.assert_called_once()
+        orch.media_manager.clear_cache.assert_called_once()
+        self.assertIsNone(orch._idle_media_key)
+
+    def test_preload_mapea_el_pack_y_get_animation_lo_reutiliza(self):
+        import json
+        import tempfile
+        from media_manager import MediaManager
+
+        payload = b"\x01\x02" * 8
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            anim = root / "003" / "014"
+            anim.mkdir(parents=True)
+            (anim / "anim.cfg").write_text(json.dumps(
+                {"fps": 24, "loop": True, "max_delay": 0.4}))
+            (anim / "pack.bin").write_bytes(payload)
+            (anim / "pack.bin.index.json").write_text(json.dumps({
+                "width": 2, "height": 2, "bpp": 16,
+                "entries": [{"file": "01.bin", "offset": 0, "size": len(payload)}],
+            }))
+            mm = MediaManager(str(root))
+            mm._image_cache[(1, 1)] = b"foto"
+            n = mm.preload_animations([(3, 14), (3, 99)])
+            self.assertEqual(n, 1)
+            cfg = mm.get_animation(3, 14)
+            self.assertIsNotNone(cfg)
+            self.assertIsNone(cfg.frame_bytes)
+            self.assertEqual(cfg.frames[0]["size"], len(payload))
+            again = mm.get_animation(3, 14)
+            self.assertIs(again, cfg)
+            mm.release_animation_cache()
+            self.assertIsNone(mm._anim_cache.get((3, 14)))
+            disk = mm.get_animation(3, 14)
+            self.assertIsNone(disk.frame_bytes)
+
+
 class TestDelayedStop(unittest.TestCase):
     def test_stop_no_corta_al_recibir(self):
         orch, sched, disp = _orch(delay_ms=1000)

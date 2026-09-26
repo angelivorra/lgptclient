@@ -69,12 +69,19 @@ _OVERLAY_DILATE = 8
 
 
 def overlay_block_cols(fg: bytes, width: int = WIDTH,
-                       height: int = HEIGHT) -> np.ndarray:
-    """True = esa columna la cubre el overlay; la línea no pinta ahí."""
+                       height: int = HEIGHT, ox: int = 0, oy: int = 0,
+                       fw: int | None = None, fh: int | None = None) -> np.ndarray:
+    """True = esa columna la cubre el overlay; la línea no pinta ahí.
+
+    ``fw``/``fh`` y ``ox``/``oy`` describen un recorte colocado en la
+    pantalla. Sin ellos, ``fg`` es el fotograma entero.
+    """
     block = np.zeros(width, dtype=bool)
-    if len(fg) != width * height * 2:
+    if fw is None or fh is None:
+        fw, fh, ox, oy = width, height, 0, 0
+    if len(fg) != fw * fh * 2:
         return block
-    pix = np.frombuffer(fg, dtype="<u2").reshape(height, width).astype(np.uint32)
+    pix = np.frombuffer(fg, dtype="<u2").reshape(fh, fw).astype(np.uint32)
     r = (pix >> 11) & 0x1F
     g5 = (pix >> 5) & 0x3F
     b = pix & 0x1F
@@ -82,7 +89,17 @@ def overlay_block_cols(fg: bytes, width: int = WIDTH,
     opaque = ~((lum <= 6) | ((b > r) & (lum <= 25)))
     y0 = max(0, BAND_CENTER - _OVERLAY_BAND)
     y1 = min(height, BAND_CENTER + _OVERLAY_BAND)
-    cols = opaque[y0:y1].any(axis=0)
+    sy0 = max(0, y0 - oy)
+    sy1 = min(fh, y1 - oy)
+    if sy1 <= sy0:
+        return block
+    cols_local = opaque[sy0:sy1].any(axis=0)
+    x_end = min(width, ox + fw)
+    x0 = max(0, ox)
+    if x_end <= x0:
+        return block
+    cols = np.zeros(width, dtype=bool)
+    cols[x0:x_end] = cols_local[x0 - ox:x_end - ox]
     if not cols.any():
         return block
     k = _OVERLAY_DILATE

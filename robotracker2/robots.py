@@ -130,12 +130,21 @@ def anim_dir(images_dir, cc, value):
     return folder if folder.is_dir() else None
 
 
+def _png_frame_key(path):
+    """1, 2, 10 y no 1, 10, 2. Los nombres ya rellenos (01, 02) no cambian."""
+    stem = path.stem
+    if stem.isdigit():
+        return (0, int(stem))
+    return (1, stem)
+
+
 def anim_frame_paths(images_dir, cc, value):
-    """PNG de frames de (cc, value), ordenados, o lista vacía."""
+    """PNG de frames de (cc, value), en orden de número, o lista vacía."""
     folder = anim_dir(images_dir, cc, value)
     if folder is None:
         return []
-    return sorted(p for p in folder.glob("*.png") if p.is_file())
+    frames = [p for p in folder.glob("*.png") if p.is_file()]
+    return sorted(frames, key=_png_frame_key)
 
 
 def anim_fps(images_dir, cc, value, default=30):

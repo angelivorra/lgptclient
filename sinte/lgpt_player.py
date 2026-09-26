@@ -412,7 +412,7 @@ class Player:
         self._expected_dac_time: float | None = None  # reloj real esperado
         self.estado_audio = EstadoAudio(
             args.blocksize / float(args.samplerate) * 1000.0)
-        self._restart = False               # STOP en el menú: relanzar
+        self._restart = False               # tecla r en el menú: relanzar
         # Clic de calibración (metrónomo): golpe percusivo corto que el
         # callback de audio mezcla en la salida con el mismo retardo que
         # una canción, para afinar el motor de oído. Ver _mix_calib_clicks.
@@ -636,8 +636,9 @@ class Player:
         except queue.Empty:
             return None
         if context == "list":
+            # stop abre la calibración. En canción sigue volviendo a la lista.
             return {"up": "up", "down": "down",
-                    "play": "\n", "stop": "restart", "calib": "calib"}.get(action)
+                    "play": "\n", "stop": "calib", "calib": "calib"}.get(action)
         return {"up": "p", "down": "n",
                 "play": " ", "stop": "q"}.get(action)
 

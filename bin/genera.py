@@ -67,7 +67,7 @@ DATOS_TERMINAL: Dict[str, Dict[str, Any]] = {
 
 # Versión de la lógica de generación/empaquetado. Incrementar para forzar la
 # regeneración completa (invalida todos los .manifest.json existentes).
-GENERATOR_VERSION = 10
+GENERATOR_VERSION = 11
 
 
 class Cartera(Enum):  # alias semántico (evita conflicto con folder) (unused but placeholder)
@@ -103,7 +103,8 @@ def vacia_carpeta(path: Path):
             logger.warning(f"No se pudo eliminar {item}: {e}")
 
 
-def crear_pack(bin_paths: List[Path], out_dir: Path, pack_name: str = 'pack.bin', remove_bins: bool = True) -> Dict[str, Any]:
+def crear_pack(bin_paths: List[Path], out_dir: Path, pack_name: str = 'pack.bin', remove_bins: bool = True,
+               width: int = 800, height: int = 480, x: int = 0, y: int = 0) -> Dict[str, Any]:
     """Concatena binarios (frames) en un único archivo pack.bin y genera un índice JSON.
     Estructura:
       pack.bin: concatenación cruda en el orden dado.
@@ -135,7 +136,7 @@ def crear_pack(bin_paths: List[Path], out_dir: Path, pack_name: str = 'pack.bin'
                     "size": size
                 })
                 offset += size
-        meta = {"width": 800, "height": 480, "bpp": 16, "entries": entries}
+        meta = {"width": width, "height": height, "x": x, "y": y, "bpp": 16, "entries": entries}
         index_path.write_text(json.dumps(meta, indent=2), encoding='utf-8')
         logger.info(f"Pack creado: {pack_path} ({len(entries)} frames)")
         if remove_bins:
@@ -155,7 +156,8 @@ def note_from_index(index: int) -> str:
 
 
 def png_to_bin(img: Image.Image, bin_path: Path, width: int = 800, height: int = 480, bpp: int = 16):
-    img = img.resize((width, height))
+    if img.size != (width, height):
+        img = img.resize((width, height))
     img = img.convert("RGB")
     if bpp == 16:  # RGB565 vectorizado con numpy
         arr = np.asarray(img, dtype=np.uint16)  # (H, W, 3), recorrido row-major
@@ -395,6 +397,53 @@ def procesa_imagenes(path: Path, config: Dict[str, Any]) -> Dict:
     return {"procesadas": procesadas, "existentes": existentes, "out": str(out_dir)}
 
 
+def _orden_frame(path: Path):
+    """1, 2, 10 y no 1, 10, 2. Los nombres rellenos (01, 02) no cambian."""
+    stem = path.stem
+    if stem.isdigit():
+        return (0, int(stem))
+    return (1, stem)
+
+
+# Ojos de idle: el resto del fotograma es negro que la Pi recorta.
+# Se guarda solo el rectángulo con tinta y se pinta en su sitio.
+IDLE_EYE_DIRS = {"003", "013", "014", "015", "016", "017", "018", "019"}
+SCREEN_W, SCREEN_H = 800, 480
+
+
+def _contenido_bbox(img: Image.Image):
+    """Caja de los píxeles que la Pi no trata como transparentes."""
+    arr = np.asarray(img.convert("RGB"), dtype=np.uint16)
+    r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+    r5, g6, b5 = r >> 3, g >> 2, b >> 3
+    lum = r5 + g6 + b5
+    transparent = (lum <= 6) | ((b5 > r5) & (lum <= 25))
+    ys, xs = np.where(~transparent)
+    if len(xs) == 0:
+        return None
+    return int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+
+
+def _rect_sprite(boxes, pad: int = 8):
+    """Une las cajas, deja un margen y fuerza tamaño par."""
+    x0 = max(0, min(b[0] for b in boxes) - pad)
+    y0 = max(0, min(b[1] for b in boxes) - pad)
+    x1 = min(SCREEN_W, max(b[2] for b in boxes) + pad)
+    y1 = min(SCREEN_H, max(b[3] for b in boxes) + pad)
+    if (x1 - x0) % 2:
+        x1 = min(SCREEN_W, x1 + 1)
+    if (y1 - y0) % 2:
+        y1 = min(SCREEN_H, y1 + 1)
+    return x0, y0, x1 - x0, y1 - y0
+
+
+def _frame_pantalla(path: Path, invert: bool) -> Image.Image:
+    img = Image.open(path).convert("RGBA").resize((SCREEN_W, SCREEN_H))
+    if invert:
+        img = img.transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
+    return img
+
+
 def procesa_animaciones(path: Path, config: Dict[str, Any]) -> Dict:
     """Cada subcarpeta => animación, frames *.png -> se exportan centrados en canvas 800x480 si posible."""
     subdirs = [d for d in path.iterdir() if d.is_dir()]
@@ -412,7 +461,7 @@ def procesa_animaciones(path: Path, config: Dict[str, Any]) -> Dict:
     frames_total = 0
     invert = bool(config.get("invert"))
     for d in subdirs:
-        frames = sorted(d.glob('*.png'))
+        frames = sorted(d.glob('*.png'), key=_orden_frame)
         if not frames:
             continue
         animaciones += 1
@@ -430,19 +479,46 @@ def procesa_animaciones(path: Path, config: Dict[str, Any]) -> Dict:
             except Exception as e_cfg:
                 logger.warning(f"No se pudo copiar config {cfg_src}: {e_cfg}")
         bin_paths: List[Path] = []
+        sprite = None
+        loaded: List[Image.Image] = []
+        if path.name == "003" and d.name in IDLE_EYE_DIRS:
+            boxes = []
+            for frame in frames:
+                try:
+                    full = _frame_pantalla(frame, invert)
+                except Exception as e_load:
+                    logger.error(f"Frame {frame} error: {e_load}")
+                    loaded.append(None)
+                    continue
+                loaded.append(full)
+                box = _contenido_bbox(full)
+                if box:
+                    boxes.append(box)
+            if boxes:
+                sprite = _rect_sprite(boxes)
+                logger.info(
+                    f"Anim {d.name}: sprite {sprite[2]}x{sprite[3]} "
+                    f"en ({sprite[0]},{sprite[1]})"
+                )
         for idx, frame in enumerate(frames):
             try:
-                img = Image.open(frame).convert('RGBA')
-                img = img.resize((800, 480))
-                if invert:
-                    img = img.transpose(Image.FLIP_TOP_BOTTOM).transpose(Image.FLIP_LEFT_RIGHT)
+                if loaded:
+                    full = loaded[idx]
+                    if full is None:
+                        continue
+                    img = full
+                else:
+                    full = img = _frame_pantalla(frame, invert)
+                if sprite:
+                    sx, sy, sw, sh = sprite
+                    img = img.crop((sx, sy, sx + sw, sy + sh))
                 frame_num = idx
                 bin_dest = anim_dir / f"{frame_num:03d}.bin"
-                png_to_bin(img, bin_dest)
+                png_to_bin(img, bin_dest, width=img.size[0], height=img.size[1])
                 bin_paths.append(bin_dest)
                 if anim_thumbs is not None:
                     try:
-                        prev = img.copy().convert('RGB')
+                        prev = full.copy().convert('RGB')
                         new_w = 300
                         scale = new_w / prev.width
                         new_h = int(prev.height * scale)
@@ -456,7 +532,13 @@ def procesa_animaciones(path: Path, config: Dict[str, Any]) -> Dict:
             except Exception as e:
                 logger.error(f"Frame {frame} error: {e}")
         if bin_paths:
-            crear_pack(bin_paths, anim_dir, pack_name='pack.bin')
+            if sprite:
+                crear_pack(
+                    bin_paths, anim_dir, pack_name='pack.bin',
+                    width=sprite[2], height=sprite[3], x=sprite[0], y=sprite[1],
+                )
+            else:
+                crear_pack(bin_paths, anim_dir, pack_name='pack.bin')
     return {"animaciones": animaciones, "frames": frames_total, "configs": configs_copiados, "out": str(base_out)}
 
 

@@ -31,6 +31,11 @@ class AnimationConfig:
     width: int
     height: int
     bpp: int
+    # Frames ya en memoria (vistas del pack). None: se lee pack.bin al vuelo.
+    frame_bytes: Optional[List[bytes]] = None
+    # Si el pack es un recorte, esquina superior izquierda en la pantalla.
+    origin_x: int = 0
+    origin_y: int = 0
     
     @property
     def frame_interval(self) -> float:
@@ -50,6 +55,10 @@ class MediaManager:
         self.base_path = Path(base_path)
         self.max_image_cache = max_image_cache
         self._image_cache: OrderedDict[Tuple[int, int], bytes] = OrderedDict()
+        # Metadatos de los gestos de pausa. Los frames se leen del pack al
+        # vuelo: una Pi 3 tiene 512 MB y mapear los cinco clips (~200 MB)
+        # llena el swap y deja la pantalla clavada.
+        self._anim_cache: Dict[Tuple[int, int], AnimationConfig] = {}
         
         self.stats = {
             'image_cache_hits': 0,
@@ -107,10 +116,17 @@ class MediaManager:
     def get_animation(self, cc: int, value: int) -> Optional[AnimationConfig]:
         """
         Carga configuración de una animación desde disco.
-        
-        Returns:
-            AnimationConfig con toda la información, o None si no existe
+
+        Si el clip se precargó al entrar en pausa, devuelve esa copia
+        (con los frames ya mapeados).
         """
+        cached = self._anim_cache.get((cc, value))
+        if cached is not None:
+            return cached
+        return self._read_animation(cc, value)
+
+    def _read_animation(self, cc: int, value: int) -> Optional[AnimationConfig]:
+        """Lee anim.cfg y el índice. No toca la cache de gestos."""
         anim_dir = self.base_path / f"{cc:03d}" / f"{value:03d}"
         
         if not anim_dir.is_dir():
@@ -147,6 +163,8 @@ class MediaManager:
             width = index_data.get('width', 800)
             height = index_data.get('height', 480)
             bpp = index_data.get('bpp', 16)
+            origin_x = int(index_data.get('x', 0))
+            origin_y = int(index_data.get('y', 0))
             frames = index_data.get('entries', [])
             
             if not frames:
@@ -170,7 +188,9 @@ class MediaManager:
                 frames=frames,
                 width=width,
                 height=height,
-                bpp=bpp
+                bpp=bpp,
+                origin_x=origin_x,
+                origin_y=origin_y,
             )
             
         except Exception as e:
@@ -288,6 +308,31 @@ class MediaManager:
         count = len(self._image_cache)
         self._image_cache.clear()
         logger.info(f"🗑️  Cache limpiado: {count} imágenes eliminadas")
+
+    def preload_animations(self, pairs: List[Tuple[int, int]]) -> int:
+        """Deja en cache la ficha de cada clip (fps, índice), no los pixels.
+
+        Los frames siguen saliendo de pack.bin de uno en uno. Traer los
+        cinco gestos a RAM no cabe en la Pi 3.
+        """
+        loaded = 0
+        for cc, value in pairs:
+            cfg = self._read_animation(cc, value)
+            if cfg is None:
+                continue
+            self._anim_cache[(cc, value)] = cfg
+            loaded += 1
+            logger.info(
+                f"🎬 Gesto en cache {cc:03d}/{value:03d}: {len(cfg.frames)} frames"
+            )
+        return loaded
+
+    def release_animation_cache(self):
+        """Suelta las fichas de los gestos al empezar la canción."""
+        count = len(self._anim_cache)
+        self._anim_cache.clear()
+        if count:
+            logger.info(f"🗑️  Cache de gestos liberada: {count} clips")
     
     def get_stats(self) -> dict:
         """Retorna estadísticas del gestor."""
